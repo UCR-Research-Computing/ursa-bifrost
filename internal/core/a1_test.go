@@ -479,3 +479,15 @@ func TestCancelBeforeStartReleasesDayCap(t *testing.T) {
 		t.Errorf("running job's worst case released: $%v", usd)
 	}
 }
+
+func TestNoValTimestamps(t *testing.T) {
+	if got := ts(4294967294); got != "" {
+		t.Errorf("Slurm NO_VAL time shown as %q", got)
+	}
+	if got := ts(4294967295); got != "" {
+		t.Errorf("Slurm INFINITE time shown as %q", got)
+	}
+	if ts(1790875000) == "" {
+		t.Error("real time hidden")
+	}
+}

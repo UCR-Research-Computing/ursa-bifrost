@@ -282,8 +282,13 @@ func firstNonEmpty(v ...string) string {
 	return ""
 }
 
+// tsNever is how Slurm encodes "no time" in some fields: 4294967294 (NO_VAL
+// - 1 as uint32, year 2106). Anything from then on is not a real timestamp
+// (live finding: cancelled-before-start jobs showed "started 2106-02-07").
+const tsNever = 4294967294
+
 func ts(sec int64) string {
-	if sec <= 0 {
+	if sec <= 0 || sec >= tsNever {
 		return ""
 	}
 	return time.Unix(sec, 0).Format(time.RFC3339)
