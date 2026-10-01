@@ -1,0 +1,6 @@
+[INFO] job 41 on ucrslurmcl-stdnodeset-1, 16 CPUs, 2026-09-26T22:22:19Z
+[STAGE] Installing software
+✔ Created /home/alice_ucr_edu/deep-research-lab/envs/matplotlib-numpy-python-3-11-qiskit-aer-0-14-0-qiskit-1-0-0/pixi.toml
+✔ Added python=3.11
+/home/alice_ucr_edu/deep-research-lab/envs/matplotlib-numpy-python-3-11-qiskit-aer-0-14-0-qiskit-1-0-0/.pixi/envs/default/bin/python: No module named pip
+[STAGE] Failed (exit 1)

@@ -1,0 +1,636 @@
+{
+ "schema": "ursa-catalog/1",
+ "cluster": "Ursa Major (ucrslurmcl), UCR Research Computing, Google Cloud us-central1-a",
+ "generated": "2026-09-29T23:06:39+00:00",
+ "generator": "ursa-catalog (ucr-slurm-production repo)",
+ "summary": {
+  "modules": 181,
+  "spack_packages": 1694,
+  "fields": [
+   "HPC",
+   "bioinformatics",
+   "chemistry",
+   "data analysis / scientific Python",
+   "electronic structure / DFT",
+   "electronic structure / ab initio MD",
+   "machine learning",
+   "molecular dynamics",
+   "molecular dynamics / materials",
+   "numerical PDEs",
+   "statistics"
+  ],
+  "gpu": {
+   "driver": "580.178.04",
+   "gpu": "NVIDIA L4",
+   "cuda_max": "13.0",
+   "checked": "2026-09-27T15:51:10Z",
+   "source": "ursa-selftest gpu-torch"
+  }
+ },
+ "partitions": [
+  {
+   "name": "computehigh",
+   "default": false,
+   "max_nodes": 16,
+   "cpus_per_node": 22,
+   "mem_gb_per_node": 85,
+   "gpus_per_node": 0,
+   "gpu_type": null,
+   "time_limit": "infinite",
+   "state": "up",
+   "usd_per_node_hour": 1.87,
+   "spot": false,
+   "use_for": "Intel Sapphire Rapids c3-highcpu-44, Tier_1 networking. Fastest per core; best for tightly coupled MPI (GROMACS, LAMMPS, CFD)."
+  },
+  {
+   "name": "gpul4",
+   "default": false,
+   "max_nodes": 8,
+   "cpus_per_node": 8,
+   "mem_gb_per_node": 62,
+   "gpus_per_node": 1,
+   "gpu_type": "NVIDIA L4 24 GB",
+   "time_limit": "infinite",
+   "state": "up",
+   "usd_per_node_hour": 1.15,
+   "spot": false,
+   "use_for": "One NVIDIA L4 (24 GB) per node. ML training/inference, GPU MD (GROMACS/LAMMPS/OpenMM -cuda builds), LLMs up to ~8B (fp16) or ~14B (4-bit)."
+  },
+  {
+   "name": "highmem",
+   "default": false,
+   "max_nodes": 8,
+   "cpus_per_node": 32,
+   "mem_gb_per_node": 497,
+   "gpus_per_node": 0,
+   "gpu_type": null,
+   "time_limit": "infinite",
+   "state": "up",
+   "usd_per_node_hour": 4.19,
+   "spot": false,
+   "use_for": "n2-highmem-64 with ~496 GB RAM. Genome assembly, large in-memory analytics, big matrices."
+  },
+  {
+   "name": "nvmescratch",
+   "default": false,
+   "max_nodes": 8,
+   "cpus_per_node": 8,
+   "mem_gb_per_node": 62,
+   "gpus_per_node": 0,
+   "gpu_type": null,
+   "time_limit": "infinite",
+   "state": "up",
+   "usd_per_node_hour": 0.84,
+   "spot": false,
+   "use_for": "c2-standard-16 with 100 GB pd-ssd boot disk (no local NVMe despite the name). I/O-heavy staging."
+  },
+  {
+   "name": "spot",
+   "default": false,
+   "max_nodes": 32,
+   "cpus_per_node": 16,
+   "mem_gb_per_node": 124,
+   "gpus_per_node": 0,
+   "gpu_type": null,
+   "time_limit": "infinite",
+   "state": "up",
+   "usd_per_node_hour": 0.74,
+   "spot": true,
+   "use_for": "Same nodes as standard at about half price, but Google may reclaim a node with ~30 s notice. Use for job arrays, parameter sweeps and restartable work; add --requeue."
+  },
+  {
+   "name": "standard",
+   "default": true,
+   "max_nodes": 32,
+   "cpus_per_node": 16,
+   "mem_gb_per_node": 124,
+   "gpus_per_node": 0,
+   "gpu_type": null,
+   "time_limit": "infinite",
+   "state": "up",
+   "usd_per_node_hour": 1.45,
+   "spot": false,
+   "use_for": "Default. AMD EPYC Milan c2d-standard-32. General CPU work and MPI."
+  }
+ ],
+ "rules": [
+  "Python: load exactly one Python environment module: python-sci (CPU science stack) or python-ml (PyTorch/GPU). There are no per-package Python modules (no py-numpy etc.) and no bare python module; for anything else use a Pixi/conda or uv environment inside the job.",
+  "Slurm CPUs are physical cores (ThreadsPerCore=1); never request more CPUs per node than the partition lists.",
+  "Nodes are created on demand: the first job on a cold partition waits ~90 s-5 min for boot.",
+  "Every job task gets a private $TMPDIR (/tmp/job-<id>-<user>, node-local) and shared $SCRATCH (/scratch/$USER, 2.5 TB, not backed up).",
+  "/home and /apps are shared NFS (Filestore) on every node.",
+  "Nodes have outbound internet through Cloud NAT (pip, conda, docker pulls, dataset downloads all work).",
+  "OS: Rocky Linux 8.10, glibc 2.28, system GCC 8.5; use module gcc/* for modern compilers.",
+  "Code built for AVX-512 crashes on the AMD standard/spot nodes; the site stack targets x86-64-v3 (AVX2).",
+  "Partitions are exclusive: a job gets whole nodes."
+ ],
+ "install_tools": [
+  {
+   "name": "uv",
+   "how": "on PATH everywhere (/apps/bin/uv)",
+   "use": "uv venv $TMPDIR/v && . $TMPDIR/v/bin/activate && uv pip install <pkgs>; fastest way to get PyPI packages",
+   "available": true
+  },
+  {
+   "name": "pixi",
+   "how": "on PATH everywhere (/apps/pixi/bin/pixi)",
+   "use": "conda-forge/bioconda environments without root: pixi init && pixi add <pkgs>",
+   "available": true
+  },
+  {
+   "name": "conda/mamba",
+   "how": "module load miniforge3",
+   "use": "mamba create -p $SCRATCH/envs/x -c conda-forge -c bioconda <pkgs>",
+   "available": true
+  },
+  {
+   "name": "apptainer",
+   "how": "module load apptainer",
+   "use": "apptainer pull x.sif docker://<image>; apptainer exec [--nv] x.sif <cmd>; unprivileged, /dev/fuse available",
+   "available": true
+  },
+  {
+   "name": "spack",
+   "how": "source /apps/spack/share/spack/setup-env.sh (admins)",
+   "use": "compiled HPC codes; the shared stack is maintained by Research Computing",
+   "available": true
+  },
+  {
+   "name": "pip (inside any env)",
+   "how": "python -m pip install",
+   "use": "wheels need LD_LIBRARY_PATH=$CONDA_PREFIX/lib inside Pixi/conda envs (Rocky 8 libstdc++ is old)",
+   "available": true
+  }
+ ],
+ "modules": {
+  "core": [
+   "aria2/1.37.0",
+   "arpack-ng/3.9.1",
+   "bamtools/2.5.2",
+   "bcftools/1.23.1",
+   "bedops/2.4.42",
+   "bedtools2/2.31.1",
+   "blast-plus/2.17.0",
+   "bowtie2/2.5.5",
+   "busco/6.1.0",
+   "bwa/0.7.19",
+   "calculix/2.20",
+   "cdhit/4.8.1",
+   "cfitsio/4.6.3",
+   "clustal-omega/1.2.4",
+   "cmake/3.31.12",
+   "darshan-util/3.5.0",
+   "diamond/2.1.10",
+   "eigen/5.0.1",
+   "fastp/1.0.1",
+   "fastqc/0.12.1",
+   "ffmpeg/8.1",
+   "freebayes/1.3.6",
+   "gatk/4.5.0.0",
+   "gcc/12.2.1",
+   "gcc/13.5.0",
+   "gcc/14.4.0",
+   "gcc/15.3.0",
+   "gcc/16.2.0",
+   "gdal/3.13.3",
+   "gdb/17.1",
+   "geos/3.15.0",
+   "git-lfs/3.7.1",
+   "git/2.55.0",
+   "go/1.27.1",
+   "gsl/2.8",
+   "hisat2/2.2.1",
+   "hpctoolkit/2026.0.1",
+   "htop/3.4.1",
+   "htslib/1.24",
+   "imagemagick/7.1.1-39",
+   "intel-oneapi-compilers/2026.1.0",
+   "intel-oneapi-mkl/2026.1.0",
+   "intel-oneapi-mpi/2021.18.0",
+   "intel-oneapi-tbb/2023.1.0",
+   "iq-tree/2.4.0",
+   "jq/1.8.2",
+   "julia/1.12.7",
+   "kallisto/0.50.1",
+   "libaec/1.1.7",
+   "libxc/7.1.2",
+   "likwid/5.5.2",
+   "lz4/1.10.0",
+   "mafft/7.525",
+   "megahit/1.2.9",
+   "meson/1.12.0",
+   "metis/5.1.0",
+   "miniforge3/26.3.2-3",
+   "minimap2/2.30",
+   "mmseqs2/18-8cc5c",
+   "mpich/4.3.2",
+   "muscle/3.8.1551",
+   "nextflow/26.04.6",
+   "ninja/1.13.2",
+   "node-js/26.3.0",
+   "octave/11.1.0",
+   "openbabel/3.2.0",
+   "openblas/0.3.34",
+   "openjdk/21.0.10_7",
+   "openjdk/25.0.2_10",
+   "openmpi/5.0.10",
+   "papi/7.2.0",
+   "parallel/20240822",
+   "perl/5.42.2",
+   "picard/3.3.0",
+   "plink/1.07",
+   "plink2/2.0.0-a.6.9",
+   "proj/9.7.0",
+   "prokka/1.14.6",
+   "pythia8/8.317",
+   "python-ml/2025.legacy",
+   "python-ml/2026.09",
+   "python-sci/2026.09",
+   "r-biocmanager/1.30.27",
+   "r-tidyverse/2.0.0",
+   "r/4.5.3",
+   "rclone/1.74.3",
+   "rust/1.97.1",
+   "salmon/1.11.4",
+   "samtools/1.23.1",
+   "seqkit/2.10.0",
+   "seqtk/1.4",
+   "spades/3.15.5",
+   "sra-tools/3.3.0",
+   "star/2.7.11b",
+   "subread/2.1.1",
+   "suite-sparse/7.14.1",
+   "tmux/3.6a",
+   "trimmomatic/0.39",
+   "trinity/2.15.1.FULL",
+   "vcftools/0.1.17",
+   "xtb/6.5.1",
+   "zstd/1.5.7"
+  ],
+  "mpi_dependent": {
+   "openmpi": {
+    "requires": "module load openmpi",
+    "modules": [
+     "adios2/2.12.1",
+     "arpack-ng/3.9.1",
+     "cp2k/2026.2",
+     "darshan-runtime/3.5.0",
+     "dealii/9.7.1",
+     "elmerfem/26.2.1",
+     "elpa/2026.02.002",
+     "esmf/8.9.1",
+     "fftw/3.3.11",
+     "geant4/11.4.2",
+     "gromacs/2026.1",
+     "gromacs/2026.1-cuda",
+     "hdf5/1.14.6",
+     "hypre/3.2.0",
+     "lammps/20250722.4",
+     "lammps/20250722.4-cuda",
+     "mumps/5.9.1",
+     "netcdf-c/4.10.0",
+     "netcdf-cxx4/4.3.1",
+     "netcdf-fortran/4.6.4",
+     "netlib-scalapack/2.2.3",
+     "nwchem/7.3.1",
+     "openmm/8.5.2-cuda",
+     "osu-micro-benchmarks/7.5.2",
+     "parallel-netcdf/1.14.1",
+     "paraview/6.1.1",
+     "parmetis/4.0.3",
+     "petsc/3.25.5",
+     "plumed/2.10.1",
+     "quantum-espresso/7.6",
+     "root/6.40.04",
+     "slepc/3.25.2",
+     "su2/8.2.0",
+     "sundials/7.9.0",
+     "superlu-dist/9.2.1",
+     "trilinos/17.2.1",
+     "wrf/4.7.1"
+    ]
+   },
+   "mpich": {
+    "requires": "module load mpich",
+    "modules": [
+     "adios2/2.12.1",
+     "darshan-runtime/3.5.0",
+     "fftw/3.3.11",
+     "hdf5/1.14.6",
+     "hypre/3.2.0",
+     "mumps/5.9.1",
+     "netcdf-c/4.10.0",
+     "netcdf-cxx4/4.3.1",
+     "netcdf-fortran/4.6.4",
+     "netlib-scalapack/2.2.3",
+     "osu-micro-benchmarks/7.5.2",
+     "parallel-netcdf/1.14.1",
+     "parmetis/4.0.3",
+     "petsc/3.25.5",
+     "slepc/3.25.2",
+     "sundials/7.9.0",
+     "superlu-dist/9.2.1"
+    ]
+   },
+   "intel-oneapi-mpi": {
+    "requires": "module load intel-oneapi-mpi",
+    "modules": [
+     "adios2/2.12.1",
+     "boost/1.90.0",
+     "cdo/2.6.4",
+     "darshan-runtime/3.5.0",
+     "fftw/3.3.11",
+     "gmsh/4.15.1",
+     "hdf5/1.14.6",
+     "hmmer/3.4",
+     "hypre/3.2.0",
+     "mumps/5.9.1",
+     "nco/5.4.0",
+     "ncview/2.1.11",
+     "netcdf-c/4.10.0",
+     "netcdf-cxx4/4.3.1",
+     "netcdf-fortran/4.6.4",
+     "netlib-scalapack/2.2.3",
+     "osu-micro-benchmarks/7.5.2",
+     "parallel-netcdf/1.14.1",
+     "parmetis/4.0.3",
+     "petsc/3.25.5",
+     "raxml-ng/2.0.2",
+     "slepc/3.25.2",
+     "sundials/7.9.0",
+     "superlu-dist/9.2.1",
+     "valgrind/3.27.1"
+    ]
+   }
+  }
+ },
+ "recipes": [
+  {
+   "name": "GROMACS (CPU, MPI)",
+   "field": "molecular dynamics",
+   "load": [
+    "openmpi",
+    "gromacs/2026.1"
+   ],
+   "run": "srun gmx_mpi mdrun -deffnm md -ntomp $SLURM_CPUS_PER_TASK",
+   "partition": "computehigh",
+   "notes": "Use thread/rank counts with small prime factors (16, 20), not 22."
+  },
+  {
+   "name": "GROMACS (GPU)",
+   "field": "molecular dynamics",
+   "load": [
+    "openmpi",
+    "gromacs/2026.1-cuda"
+   ],
+   "run": "gmx_mpi mdrun -deffnm md -nb gpu -pme gpu",
+   "partition": "gpul4",
+   "gpus": 1
+  },
+  {
+   "name": "LAMMPS (CPU, MPI)",
+   "field": "molecular dynamics / materials",
+   "load": [
+    "openmpi",
+    "lammps/20250722.4"
+   ],
+   "run": "srun lmp -in in.script",
+   "partition": "computehigh"
+  },
+  {
+   "name": "LAMMPS (GPU)",
+   "field": "molecular dynamics / materials",
+   "load": [
+    "openmpi",
+    "lammps/20250722.4-cuda"
+   ],
+   "run": "lmp -sf gpu -pk gpu 1 -in in.script",
+   "partition": "gpul4",
+   "gpus": 1
+  },
+  {
+   "name": "OpenMM (GPU)",
+   "field": "molecular dynamics",
+   "load": [
+    "openmm/8.5.2-cuda"
+   ],
+   "run": "python sim.py  # platform='CUDA'",
+   "partition": "gpul4",
+   "gpus": 1
+  },
+  {
+   "name": "Quantum ESPRESSO",
+   "field": "electronic structure / DFT",
+   "load": [
+    "openmpi",
+    "quantum-espresso/7.6"
+   ],
+   "run": "srun pw.x -in scf.in > scf.out",
+   "partition": "computehigh"
+  },
+  {
+   "name": "CP2K",
+   "field": "electronic structure / ab initio MD",
+   "load": [
+    "openmpi",
+    "cp2k/2026.2"
+   ],
+   "run": "srun cp2k.psmp -i input.inp -o out.log",
+   "partition": "computehigh"
+  },
+  {
+   "name": "xtb (semi-empirical QM)",
+   "field": "chemistry",
+   "load": [
+    "xtb/6.5.1"
+   ],
+   "run": "xtb mol.xyz --opt --gfn 2",
+   "partition": "standard"
+  },
+  {
+   "name": "PETSc / Trilinos (build your own solver)",
+   "field": "numerical PDEs",
+   "load": [
+    "openmpi",
+    "petsc/3.25.5"
+   ],
+   "run": "mpicc solver.c $(pkg-config --cflags --libs PETSc) && srun ./a.out",
+   "partition": "computehigh"
+  },
+  {
+   "name": "Scientific Python (site env, CPU)",
+   "field": "data analysis / scientific Python",
+   "load": [
+    "python-sci"
+   ],
+   "run": "python analysis.py",
+   "partition": "standard",
+   "notes": "Python 3.12 with numpy scipy pandas matplotlib seaborn scikit-learn statsmodels sympy numba xarray netCDF4 h5py zarr dask polars pyarrow astropy astroquery skyfield sunpy cartopy geopandas rasterio networkx biopython pysam scikit-image opencv jupyterlab; cutadapt, multiqc, snakemake. Extra packages: uv venv --system-site-packages $TMPDIR/v. Every package is import-tested together. Do not combine with other Python modules."
+  },
+  {
+   "name": "BUSCO (genome completeness)",
+   "field": "bioinformatics",
+   "load": [
+    "busco/6.1.0"
+   ],
+   "run": "busco -i asm.fa -m genome -l bacteria_odb12 -c $SLURM_CPUS_ON_NODE --download_path $SCRATCH/busco_downloads",
+   "partition": "standard"
+  },
+  {
+   "name": "Prokka (prokaryote annotation)",
+   "field": "bioinformatics",
+   "load": [
+    "prokka/1.14.6"
+   ],
+   "run": "prokka --cpus $SLURM_CPUS_ON_NODE --outdir ann --prefix x asm.fa",
+   "partition": "standard"
+  },
+  {
+   "name": "PyTorch (site env, CUDA 12.4)",
+   "field": "machine learning",
+   "load": [
+    "python-ml"
+   ],
+   "run": "python train.py",
+   "partition": "gpul4",
+   "gpus": 1,
+   "notes": "Python 3.12, torch 2.5.1+cu124, numpy, scipy, pandas, scikit-learn, transformers, JupyterLab."
+  },
+  {
+   "name": "Current PyTorch (CUDA 13)",
+   "field": "machine learning",
+   "load": [],
+   "run": "uv venv $TMPDIR/v && . $TMPDIR/v/bin/activate && uv pip install torch --index-url https://download.pytorch.org/whl/cu130",
+   "partition": "gpul4",
+   "gpus": 1,
+   "notes": "Driver 580 runs CUDA <= 13.0 wheels."
+  },
+  {
+   "name": "BLAST+",
+   "field": "bioinformatics",
+   "load": [
+    "blast-plus"
+   ],
+   "run": "blastn -query q.fa -db db -outfmt 6 -num_threads $SLURM_CPUS_ON_NODE",
+   "partition": "standard"
+  },
+  {
+   "name": "Read mapping + variant calling",
+   "field": "bioinformatics",
+   "load": [
+    "bwa",
+    "samtools/1.23.1",
+    "bcftools/1.23.1"
+   ],
+   "run": "bwa mem -t $SLURM_CPUS_ON_NODE ref.fa r1.fq r2.fq | samtools sort -o aln.bam; bcftools mpileup -f ref.fa aln.bam | bcftools call -mv",
+   "partition": "standard"
+  },
+  {
+   "name": "GATK",
+   "field": "bioinformatics",
+   "load": [
+    "gatk/4.5.0.0"
+   ],
+   "run": "gatk HaplotypeCaller ...",
+   "partition": "standard"
+  },
+  {
+   "name": "SPAdes assembly",
+   "field": "bioinformatics",
+   "load": [
+    "spades/3.15.5"
+   ],
+   "run": "spades.py -1 r1.fq -2 r2.fq -o asm -t $SLURM_CPUS_ON_NODE -m 480",
+   "partition": "highmem"
+  },
+  {
+   "name": "R",
+   "field": "statistics",
+   "load": [
+    "r/4.5.3"
+   ],
+   "run": "Rscript analysis.R",
+   "partition": "standard",
+   "notes": "Or /apps/containers/r-tidyverse-4.5.sif."
+  },
+  {
+   "name": "Multi-node MPI (your own code)",
+   "field": "HPC",
+   "load": [
+    "gcc/13.5.0",
+    "openmpi/5.0.10"
+   ],
+   "run": "mpicc prog.c -O3 -march=x86-64-v3 -o prog && srun ./prog",
+   "partition": "computehigh",
+   "notes": "Also mpich and intel-oneapi-mpi."
+  }
+ ],
+ "module_health": {
+  "tested": "2026-09-27T19:42:42Z",
+  "ok": 111,
+  "no_programs": 28,
+  "broken": {}
+ },
+ "usage_cards": {
+  "su2": "SU2 8.2 (`module load openmpi su2/8.2.0`): binaries SU2_CFD, SU2_DEF, SU2_SOL. Incompressible cases: SOLVER= INC_NAVIER_STOKES with INC_* keys (not the compressible solver). OUTPUT_FILES= (RESTART, CSV) writes restart_flow.csv (PointID,x,y,Pressure,Velocity_x,Velocity_y,...); history.csv holds residuals. Mesh .su2 files: NDIME, NELEM, then NPOIN, then NMARK. mpirun -np N SU2_CFD case.cfg; give it </dev/null inside loops. SPECIFIED_INLET_PROFILE in an unsteady run reads <stem>_00000.dat (write it and <stem>.dat); format NMARK=/MARKER_TAG=/NROW=/NCOL=6 then x y T |U| nx ny. No VISC_NUM_METHOD_FLOW in 8.2.",
+  "gromacs": "GROMACS 2026.1: gmx_mpi (openmpi build) and gmx; -cuda module for GPUs. Keep -ntomp x ranks free of large prime factors (22 cores: use 20 or 16), or domain decomposition aborts.",
+  "lammps": "LAMMPS 20250722: executable lmp (openmpi build); lammps/...-cuda for GPUs with -sf gpu -pk gpu 1. Packages: KSPACE MANYBODY MISC MOLECULE REPLICA RIGID only (no GRANULAR/DEM, no fix pour). For granular work use conda-forge lammps=2023.08.02 (has GRANULAR, runs on glibc 2.28; newer conda-forge builds need glibc 2.29+).",
+  "python-sci": "python-sci/2026.09: Python 3.12 with numpy, scipy, pandas, matplotlib, numba, xarray, astropy, skyfield, biopython, networkx, scikit-learn, statsmodels. Extra packages via pip in a venv layered on it. OR-Tools and other wheels bundling abseil/protobuf crash layered: use an isolated venv.",
+  "python-ml": "python-ml/2026.09: PyTorch 2.5.1+cu124 (GPU-verified on L4), transformers, scikit-learn, numpy, scipy, pandas, matplotlib, networkx (no numba). It is a venv: layer extra packages with a .pth to its site-packages, not only --system-site-packages.",
+  "gcc": "gcc/13.5.0 default (also 12.2.1, 14.4.0, 15.3.0, 16.2.0). -march=x86-64-v3 is safe on every partition.",
+  "openmpi": "openmpi/5.0.10: launch with srun or mpirun -np $SLURM_NTASKS; MPI-built modules appear after loading it.",
+  "cp2k": "CP2K 2026.2 (openmpi): cp2k.psmp; set OMP_NUM_THREADS and ranks so ranks*threads <= cores.",
+  "quantum-espresso": "Quantum ESPRESSO 7.6 (openmpi): pw.x, ph.x; pseudopotentials must be downloaded into the job (e.g. SSSP from materialscloud) and pointed to with pseudo_dir.",
+  "mafft": "MAFFT: mafft --auto --thread $SLURM_CPUS_ON_NODE in.fa > out.fa.",
+  "apptainer": "Apptainer 1.5 on compute nodes via `module load apptainer`; prebuilt images in /apps/containers (use in place, never `apptainer pull` a path); `apptainer exec --nv` for GPUs. The CUDA toolkit (nvcc) is in /apps/containers/cuda-12.4-devel.sif, not a module.",
+  "os": "Compute nodes run Rocky Linux 8 (glibc 2.28). Recent conda-forge/pip binaries built for glibc 2.29+ fail with \"GLIBC_2.xx not found\": pin an older build, or use a module or container."
+ },
+ "containers": [
+  {
+   "path": "/apps/containers/alphafold-colabfold.sif",
+   "size_gb": 3.1
+  },
+  {
+   "path": "/apps/containers/biocontainers-samtools.sif",
+   "size_gb": 0.0
+  },
+  {
+   "path": "/apps/containers/cuda-12.4-devel.sif",
+   "size_gb": 4.8
+  },
+  {
+   "path": "/apps/containers/jupyter-scipy.sif",
+   "size_gb": 1.2
+  },
+  {
+   "path": "/apps/containers/python-3.12.sif",
+   "size_gb": 0.0
+  },
+  {
+   "path": "/apps/containers/pytorch-2.5.1-cuda12.4.sif",
+   "size_gb": 3.3
+  },
+  {
+   "path": "/apps/containers/r-tidyverse-4.5.sif",
+   "size_gb": 1.0
+  },
+  {
+   "path": "/apps/containers/rockylinux-9.sif",
+   "size_gb": 0.1
+  },
+  {
+   "path": "/apps/containers/ubuntu-24.04.sif",
+   "size_gb": 0.0
+  },
+  {
+   "path": "/apps/containers/vllm-0.6.4-cuda12.4.sif",
+   "size_gb": 5.6
+  }
+ ],
+ "job_header": {
+  "path": "/apps/docs/templates/job-header.sh",
+  "use": "source it near the top of every job script (. /apps/docs/templates/job-header.sh): sets TMPDIR, SCRATCH, package caches, URSA_CONTAINERS; ursa_conda_libs fixes pip wheels inside Pixi/conda envs",
+  "available": true
+ },
+ "how_to_load": "module load <name>[/<version>]; MPI-built packages appear after `module load openmpi` (or mpich / intel-oneapi-mpi). Compilers: gcc/13.5.0 is the default toolchain of the Spack stack. `module spider <name>` shows how to reach any module."
+}

@@ -1,0 +1,27 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      - run: go build ./cmd/bifrost
+      - name: fixtures use only the fake user
+        run: |
+          # every *_ucr_edu name in testdata must be the fake user
+          ! grep -rhoE '[a-z0-9]+_ucr_edu' testdata | sort -u | grep -v '^alice_ucr_edu$'
+      - name: no secrets or private addresses in tracked files
+        run: |
+          ! git ls-files | grep -vE 'policy_test.go|ci.yml' | xargs grep -nIE 'AIza[0-9A-Za-z_-]{30,}|GOCSPX|ghp_[A-Za-z0-9]{36}|xox[bp]-[0-9]|192\.168\.[0-9]+\.[0-9]+|\b100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]+\.[0-9]+'
+

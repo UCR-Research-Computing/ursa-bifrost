@@ -1,0 +1,7873 @@
+{
+ "jobs": [
+  {
+   "account": "",
+   "comment": {
+    "administrator": "",
+    "job": "",
+    "system": ""
+   },
+   "allocation_nodes": 1,
+   "array": {
+    "job_id": 0,
+    "limits": {
+     "max": {
+      "running": {
+       "tasks": 0
+      }
+     }
+    },
+    "task_id": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "task": ""
+   },
+   "association": {
+    "account": "",
+    "cluster": "ucrslurmcl",
+    "partition": "",
+    "user": "",
+    "id": 0
+   },
+   "block": "",
+   "cluster": "ucrslurmcl",
+   "constraints": "",
+   "container": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "time": {
+    "elapsed": 1094,
+    "eligible": 1790459192,
+    "end": 1790460363,
+    "planned": {
+     "set": true,
+     "infinite": false,
+     "number": 77
+    },
+    "start": 1790459269,
+    "submission": 1790459192,
+    "suspended": 0,
+    "system": {
+     "seconds": 48,
+     "microseconds": 720839
+    },
+    "limit": {
+     "set": true,
+     "infinite": false,
+     "number": 45
+    },
+    "total": {
+     "seconds": 463,
+     "microseconds": 1160741
+    },
+    "user": {
+     "seconds": 415,
+     "microseconds": 439902
+    }
+   },
+   "exit_code": {
+    "status": [
+     "ERROR"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 1
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "flags": [
+    "STARTED_ON_BACKFILL",
+    "START_RECEIVED"
+   ],
+   "group": "alice_ucr_edu",
+   "het": {
+    "job_id": 0,
+    "job_offset": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_id": 37,
+   "name": "lab-1-llm-inference-prefill-vs",
+   "licenses": "",
+   "mcs": {
+    "label": ""
+   },
+   "nodes": "ucrslurmcl-gpunodeset-0",
+   "partition": "gpul4",
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "qos": "normal",
+   "qosreq": "",
+   "required": {
+    "CPUs": 1,
+    "memory_per_cpu": {
+     "set": true,
+     "infinite": false,
+     "number": 7902
+    },
+    "memory_per_node": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "kill_request_user": "",
+   "restart_cnt": 0,
+   "reservation": {
+    "id": 0,
+    "name": "",
+    "requested": ""
+   },
+   "script": "",
+   "segment_size": 0,
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/home/alice_ucr_edu/deep-research-lab/run_1/job.log",
+   "stderr_expanded": "",
+   "stdout": "/home/alice_ucr_edu/deep-research-lab/run_1/job.log",
+   "stderr": "",
+   "stdin": "/dev/null",
+   "state": {
+    "current": [
+     "FAILED"
+    ],
+    "reason": "None"
+   },
+   "steps": [
+    {
+     "time": {
+      "elapsed": 1094,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790460363
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790459269
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 48,
+       "microseconds": 720839
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 463,
+       "microseconds": 1160741
+      },
+      "user": {
+       "seconds": 415,
+       "microseconds": 439902
+      }
+     },
+     "exit_code": {
+      "status": [
+       "ERROR"
+      ],
+      "return_code": {
+       "set": true,
+       "infinite": false,
+       "number": 1
+      },
+      "signal": {
+       "id": {
+        "set": false,
+        "infinite": false,
+        "number": 0
+       },
+       "name": ""
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-gpunodeset-0",
+      "list": [
+       "ucrslurmcl-gpunodeset-0"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "FAILED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4657056266235936768
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "37.batch",
+      "name": "batch",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 464160,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 19215376384,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 13058274608,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 18938343424,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 5342,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 464160,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 19215376384,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 13058274608,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 18938343424,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 5342,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 464160
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 19215376384
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 13058274608
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 18938343424
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 5342
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 464160
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 19215376384
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 13058274608
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 18938343424
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 5342
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 23244317900,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 23244317900,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 23244317900
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 23244317900
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 8
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 63216
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       }
+      ]
+     }
+    }
+   ],
+   "submit_line": "sbatch --parsable run.sbatch",
+   "tres": {
+    "allocated": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 8
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 63216
+     },
+     {
+      "type": "energy",
+      "name": "",
+      "id": 3,
+      "count": -2
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 8
+     }
+    ],
+    "requested": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 1
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 7902
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 1
+     }
+    ]
+   },
+   "used_gres": "",
+   "user": "alice_ucr_edu",
+   "wckey": {
+    "wckey": "",
+    "flags": []
+   },
+   "working_directory": "/home/alice_ucr_edu/deep-research-lab/run_1"
+  },
+  {
+   "account": "",
+   "comment": {
+    "administrator": "",
+    "job": "",
+    "system": ""
+   },
+   "allocation_nodes": 1,
+   "array": {
+    "job_id": 0,
+    "limits": {
+     "max": {
+      "running": {
+       "tasks": 0
+      }
+     }
+    },
+    "task_id": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "task": ""
+   },
+   "association": {
+    "account": "",
+    "cluster": "ucrslurmcl",
+    "partition": "",
+    "user": "",
+    "id": 0
+   },
+   "block": "",
+   "cluster": "ucrslurmcl",
+   "constraints": "",
+   "container": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "time": {
+    "elapsed": 17,
+    "eligible": 1790461284,
+    "end": 1790461356,
+    "planned": {
+     "set": true,
+     "infinite": false,
+     "number": 55
+    },
+    "start": 1790461339,
+    "submission": 1790461284,
+    "suspended": 0,
+    "system": {
+     "seconds": 1,
+     "microseconds": 223281
+    },
+    "limit": {
+     "set": true,
+     "infinite": false,
+     "number": 15
+    },
+    "total": {
+     "seconds": 1,
+     "microseconds": 980228
+    },
+    "user": {
+     "seconds": 0,
+     "microseconds": 756947
+    }
+   },
+   "exit_code": {
+    "status": [
+     "ERROR"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 1
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "flags": [
+    "STARTED_ON_SCHEDULE",
+    "START_RECEIVED"
+   ],
+   "group": "alice_ucr_edu",
+   "het": {
+    "job_id": 0,
+    "job_offset": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_id": 41,
+   "name": "lab-4-chsh-bell-inequality-vio",
+   "licenses": "",
+   "mcs": {
+    "label": ""
+   },
+   "nodes": "ucrslurmcl-stdnodeset-1",
+   "partition": "standard",
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "qos": "normal",
+   "qosreq": "",
+   "required": {
+    "CPUs": 1,
+    "memory_per_cpu": {
+     "set": true,
+     "infinite": false,
+     "number": 7927
+    },
+    "memory_per_node": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "kill_request_user": "",
+   "restart_cnt": 0,
+   "reservation": {
+    "id": 0,
+    "name": "",
+    "requested": ""
+   },
+   "script": "",
+   "segment_size": 0,
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/home/alice_ucr_edu/deep-research-lab/run_4/job.log",
+   "stderr_expanded": "",
+   "stdout": "/home/alice_ucr_edu/deep-research-lab/run_4/job.log",
+   "stderr": "",
+   "stdin": "/dev/null",
+   "state": {
+    "current": [
+     "FAILED"
+    ],
+    "reason": "None"
+   },
+   "steps": [
+    {
+     "time": {
+      "elapsed": 17,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790461356
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790461339
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 1,
+       "microseconds": 223281
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 1,
+       "microseconds": 980228
+      },
+      "user": {
+       "seconds": 0,
+       "microseconds": 756947
+      }
+     },
+     "exit_code": {
+      "status": [
+       "ERROR"
+      ],
+      "return_code": {
+       "set": true,
+       "infinite": false,
+       "number": 1
+      },
+      "signal": {
+       "id": {
+        "set": false,
+        "infinite": false,
+        "number": 0
+       },
+       "name": ""
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-stdnodeset-1",
+      "list": [
+       "ucrslurmcl-stdnodeset-1"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "FAILED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4658923236979900416
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "41.batch",
+      "name": "batch",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 1970,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 609583104,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 259764224,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 666,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 1970,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 609583104,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 259764224,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 666,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 1970
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 609583104
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 259764224
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 666
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 1970
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 609583104
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 259764224
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 666
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-1"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 16
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 126832
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       }
+      ]
+     }
+    }
+   ],
+   "submit_line": "sbatch --parsable run.sbatch",
+   "tres": {
+    "allocated": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 16
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 126832
+     },
+     {
+      "type": "energy",
+      "name": "",
+      "id": 3,
+      "count": -2
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 16
+     }
+    ],
+    "requested": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 1
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 7927
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 1
+     }
+    ]
+   },
+   "used_gres": "",
+   "user": "alice_ucr_edu",
+   "wckey": {
+    "wckey": "",
+    "flags": []
+   },
+   "working_directory": "/home/alice_ucr_edu/deep-research-lab/run_4"
+  },
+  {
+   "account": "",
+   "comment": {
+    "administrator": "",
+    "job": "",
+    "system": ""
+   },
+   "allocation_nodes": 1,
+   "array": {
+    "job_id": 0,
+    "limits": {
+     "max": {
+      "running": {
+       "tasks": 0
+      }
+     }
+    },
+    "task_id": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "task": ""
+   },
+   "association": {
+    "account": "",
+    "cluster": "ucrslurmcl",
+    "partition": "",
+    "user": "",
+    "id": 0
+   },
+   "block": "",
+   "cluster": "ucrslurmcl",
+   "constraints": "",
+   "container": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "time": {
+    "elapsed": 970,
+    "eligible": 1790461850,
+    "end": 1790462879,
+    "planned": {
+     "set": true,
+     "infinite": false,
+     "number": 59
+    },
+    "start": 1790461909,
+    "submission": 1790461850,
+    "suspended": 0,
+    "system": {
+     "seconds": 46,
+     "microseconds": 76108
+    },
+    "limit": {
+     "set": true,
+     "infinite": false,
+     "number": 40
+    },
+    "total": {
+     "seconds": 1563,
+     "microseconds": 533765
+    },
+    "user": {
+     "seconds": 1517,
+     "microseconds": 457657
+    }
+   },
+   "exit_code": {
+    "status": [
+     "ERROR"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 1
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "flags": [
+    "STARTED_ON_SCHEDULE",
+    "START_RECEIVED"
+   ],
+   "group": "alice_ucr_edu",
+   "het": {
+    "job_id": 0,
+    "job_offset": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_id": 45,
+   "name": "lab-6-vllm-prefill-decode-disa",
+   "licenses": "",
+   "mcs": {
+    "label": ""
+   },
+   "nodes": "ucrslurmcl-gpunodeset-0",
+   "partition": "gpul4",
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "qos": "normal",
+   "qosreq": "",
+   "required": {
+    "CPUs": 1,
+    "memory_per_cpu": {
+     "set": true,
+     "infinite": false,
+     "number": 7902
+    },
+    "memory_per_node": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "kill_request_user": "",
+   "restart_cnt": 0,
+   "reservation": {
+    "id": 0,
+    "name": "",
+    "requested": ""
+   },
+   "script": "",
+   "segment_size": 0,
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/home/alice_ucr_edu/deep-research-lab/run_6/job.log",
+   "stderr_expanded": "",
+   "stdout": "/home/alice_ucr_edu/deep-research-lab/run_6/job.log",
+   "stderr": "",
+   "stdin": "/dev/null",
+   "state": {
+    "current": [
+     "FAILED"
+    ],
+    "reason": "None"
+   },
+   "steps": [
+    {
+     "time": {
+      "elapsed": 970,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790462879
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790461909
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 46,
+       "microseconds": 76108
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 1563,
+       "microseconds": 533765
+      },
+      "user": {
+       "seconds": 1517,
+       "microseconds": 457657
+      }
+     },
+     "exit_code": {
+      "status": [
+       "ERROR"
+      ],
+      "return_code": {
+       "set": true,
+       "infinite": false,
+       "number": 1
+      },
+      "signal": {
+       "id": {
+        "set": false,
+        "infinite": false,
+        "number": 0
+       },
+       "name": ""
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-gpunodeset-0",
+      "list": [
+       "ucrslurmcl-gpunodeset-0"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "FAILED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4657056266235936768
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "45.batch",
+      "name": "batch",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 1563530,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 27860377600,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 33742673656,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 25206321152,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 5619,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 1563530,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 27860377600,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 33742673656,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 25206321152,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 5619,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 1563530
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 27860377600
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 33742673656
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 25206321152
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 5619
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 1563530
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 27860377600
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 33742673656
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 25206321152
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 5619
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 33971313563,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 33971313563,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 33971313563
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 33971313563
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 8
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 63216
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       }
+      ]
+     }
+    }
+   ],
+   "submit_line": "sbatch --parsable run.sbatch",
+   "tres": {
+    "allocated": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 8
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 63216
+     },
+     {
+      "type": "energy",
+      "name": "",
+      "id": 3,
+      "count": -2
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 8
+     }
+    ],
+    "requested": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 1
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 7902
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 1
+     }
+    ]
+   },
+   "used_gres": "",
+   "user": "alice_ucr_edu",
+   "wckey": {
+    "wckey": "",
+    "flags": []
+   },
+   "working_directory": "/home/alice_ucr_edu/deep-research-lab/run_6"
+  },
+  {
+   "account": "",
+   "comment": {
+    "administrator": "",
+    "job": "",
+    "system": ""
+   },
+   "allocation_nodes": 1,
+   "array": {
+    "job_id": 0,
+    "limits": {
+     "max": {
+      "running": {
+       "tasks": 0
+      }
+     }
+    },
+    "task_id": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "task": ""
+   },
+   "association": {
+    "account": "",
+    "cluster": "ucrslurmcl",
+    "partition": "",
+    "user": "",
+    "id": 0
+   },
+   "block": "",
+   "cluster": "ucrslurmcl",
+   "constraints": "",
+   "container": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "time": {
+    "elapsed": 4970,
+    "eligible": 1790479845,
+    "end": 1790484880,
+    "planned": {
+     "set": true,
+     "infinite": false,
+     "number": 65
+    },
+    "start": 1790479910,
+    "submission": 1790479845,
+    "suspended": 0,
+    "system": {
+     "seconds": 4334,
+     "microseconds": 111429
+    },
+    "limit": {
+     "set": true,
+     "infinite": false,
+     "number": 1440
+    },
+    "total": {
+     "seconds": 50762,
+     "microseconds": 461525
+    },
+    "user": {
+     "seconds": 46428,
+     "microseconds": 350096
+    }
+   },
+   "exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "flags": [
+    "STARTED_ON_SCHEDULE",
+    "START_RECEIVED"
+   ],
+   "group": "alice_ucr_edu",
+   "het": {
+    "job_id": 0,
+    "job_offset": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_id": 93,
+   "name": "ucr-stack",
+   "licenses": "",
+   "mcs": {
+    "label": ""
+   },
+   "nodes": "ucrslurmcl-c3nodeset-2",
+   "partition": "computehigh",
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "qos": "normal",
+   "qosreq": "",
+   "required": {
+    "CPUs": 1,
+    "memory_per_cpu": {
+     "set": true,
+     "infinite": false,
+     "number": 3957
+    },
+    "memory_per_node": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "kill_request_user": "alice_ucr_edu",
+   "restart_cnt": 0,
+   "reservation": {
+    "id": 0,
+    "name": "",
+    "requested": ""
+   },
+   "script": "",
+   "segment_size": 0,
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/apps/spack-envs/logs/ucr-stack_93.log",
+   "stderr_expanded": "",
+   "stdout": "/apps/spack-envs/logs/%x_%j.log",
+   "stderr": "",
+   "stdin": "/dev/null",
+   "state": {
+    "current": [
+     "CANCELLED"
+    ],
+    "reason": "None"
+   },
+   "steps": [
+    {
+     "time": {
+      "elapsed": 4971,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790484881
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790479910
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 4334,
+       "microseconds": 37906
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 50762,
+       "microseconds": 324363
+      },
+      "user": {
+       "seconds": 46428,
+       "microseconds": 286457
+      }
+     },
+     "exit_code": {
+      "status": [
+       "SIGNALED"
+      ],
+      "return_code": {
+       "set": false,
+       "infinite": false,
+       "number": 0
+      },
+      "signal": {
+       "id": {
+        "set": true,
+        "infinite": false,
+        "number": 15
+       },
+       "name": "TERM"
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-c3nodeset-2",
+      "list": [
+       "ucrslurmcl-c3nodeset-2"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "CANCELLED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4635048441494372352
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "93.batch",
+      "name": "batch",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 50763100,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 43770949632,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 441362819436,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 39745654784,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 7004,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 50763100,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 43770949632,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 441362819436,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 39745654784,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 7004,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 50763100
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 43770949632
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 441362819436
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 39745654784
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 7004
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 50763100
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 43770949632
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 441362819436
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 39745654784
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 7004
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 130614760194,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 130614760194,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 130614760194
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 130614760194
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 22
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 87054
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       }
+      ]
+     }
+    },
+    {
+     "time": {
+      "elapsed": 1370,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790481280
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790479910
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 0,
+       "microseconds": 15305
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 0,
+       "microseconds": 21035
+      },
+      "user": {
+       "seconds": 0,
+       "microseconds": 5730
+      }
+     },
+     "exit_code": {
+      "status": [
+       "SUCCESS"
+      ],
+      "return_code": {
+       "set": true,
+       "infinite": false,
+       "number": 0
+      },
+      "signal": {
+       "id": {
+        "set": false,
+        "infinite": false,
+        "number": 0
+       },
+       "name": ""
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-c3nodeset-2",
+      "list": [
+       "ucrslurmcl-c3nodeset-2"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "COMPLETED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4658153578840457216
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "93.0",
+      "name": "hydra_bstrap_proxy",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 10,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 3448832,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 1810432,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 11,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 10,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 3448832,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 1810432,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 11,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 10
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 3448832
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 1810432
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 11
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 10
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 3448832
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 1810432
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 11
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 22
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 87054
+       },
+       {
+        "type": "energy",
+        "name": "",
+        "id": 3,
+        "count": -2
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       },
+       {
+        "type": "billing",
+        "name": "",
+        "id": 5,
+        "count": 22
+       }
+      ]
+     }
+    },
+    {
+     "time": {
+      "elapsed": 1372,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790481282
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790479910
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 0,
+       "microseconds": 24263
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 0,
+       "microseconds": 53898
+      },
+      "user": {
+       "seconds": 0,
+       "microseconds": 29635
+      }
+     },
+     "exit_code": {
+      "status": [
+       "SUCCESS"
+      ],
+      "return_code": {
+       "set": true,
+       "infinite": false,
+       "number": 0
+      },
+      "signal": {
+       "id": {
+        "set": false,
+        "infinite": false,
+        "number": 0
+       },
+       "name": ""
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-c3nodeset-2",
+      "list": [
+       "ucrslurmcl-c3nodeset-2"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "COMPLETED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4658153578840457216
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "93.1",
+      "name": "hydra_bstrap_proxy",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 40,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 88727552,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 7147520,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 48,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 40,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 88727552,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 7147520,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 48,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 40
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 88727552
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 7147520
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 48
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 40
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 88727552
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 7147520
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 48
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 22
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 87054
+       },
+       {
+        "type": "energy",
+        "name": "",
+        "id": 3,
+        "count": -2
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       },
+       {
+        "type": "billing",
+        "name": "",
+        "id": 5,
+        "count": 22
+       }
+      ]
+     }
+    }
+   ],
+   "submit_line": "sbatch --parsable --export=ALL,ENV=ucr -J ucr-stack /home/alice_ucr_edu/ursa-major-hpc/build/build.sbatch",
+   "tres": {
+    "allocated": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 22
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 87054
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 22
+     }
+    ],
+    "requested": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 1
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 3957
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 1
+     }
+    ]
+   },
+   "used_gres": "",
+   "user": "alice_ucr_edu",
+   "wckey": {
+    "wckey": "",
+    "flags": []
+   },
+   "working_directory": "/home/alice_ucr_edu/ursa-major-hpc"
+  },
+  {
+   "account": "",
+   "comment": {
+    "administrator": "",
+    "job": "",
+    "system": ""
+   },
+   "allocation_nodes": 1,
+   "array": {
+    "job_id": 0,
+    "limits": {
+     "max": {
+      "running": {
+       "tasks": 0
+      }
+     }
+    },
+    "task_id": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "task": ""
+   },
+   "association": {
+    "account": "",
+    "cluster": "ucrslurmcl",
+    "partition": "",
+    "user": "",
+    "id": 0
+   },
+   "block": "",
+   "cluster": "ucrslurmcl",
+   "constraints": "",
+   "container": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "time": {
+    "elapsed": 35,
+    "eligible": 1790539298,
+    "end": 1790539385,
+    "planned": {
+     "set": true,
+     "infinite": false,
+     "number": 52
+    },
+    "start": 1790539350,
+    "submission": 1790539298,
+    "suspended": 0,
+    "system": {
+     "seconds": 6,
+     "microseconds": 154520
+    },
+    "limit": {
+     "set": true,
+     "infinite": false,
+     "number": 30
+    },
+    "total": {
+     "seconds": 9,
+     "microseconds": 989445
+    },
+    "user": {
+     "seconds": 3,
+     "microseconds": 834925
+    }
+   },
+   "exit_code": {
+    "status": [
+     "ERROR"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 1
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "flags": [
+    "STARTED_ON_BACKFILL",
+    "START_RECEIVED"
+   ],
+   "group": "alice_ucr_edu",
+   "het": {
+    "job_id": 0,
+    "job_offset": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_id": 195,
+   "name": "lab-16-treetime-phylodynamics-a",
+   "licenses": "",
+   "mcs": {
+    "label": ""
+   },
+   "nodes": "ucrslurmcl-stdnodeset-0",
+   "partition": "standard",
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "qos": "normal",
+   "qosreq": "",
+   "required": {
+    "CPUs": 1,
+    "memory_per_cpu": {
+     "set": true,
+     "infinite": false,
+     "number": 7927
+    },
+    "memory_per_node": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "kill_request_user": "",
+   "restart_cnt": 0,
+   "reservation": {
+    "id": 0,
+    "name": "",
+    "requested": ""
+   },
+   "script": "",
+   "segment_size": 0,
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/home/alice_ucr_edu/deep-research-lab/run_16/job.log",
+   "stderr_expanded": "",
+   "stdout": "/home/alice_ucr_edu/deep-research-lab/run_16/job.log",
+   "stderr": "",
+   "stdin": "/dev/null",
+   "state": {
+    "current": [
+     "FAILED"
+    ],
+    "reason": "None"
+   },
+   "steps": [
+    {
+     "time": {
+      "elapsed": 35,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790539385
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790539350
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 6,
+       "microseconds": 154520
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 9,
+       "microseconds": 989445
+      },
+      "user": {
+       "seconds": 3,
+       "microseconds": 834925
+      }
+     },
+     "exit_code": {
+      "status": [
+       "ERROR"
+      ],
+      "return_code": {
+       "set": true,
+       "infinite": false,
+       "number": 1
+      },
+      "signal": {
+       "id": {
+        "set": false,
+        "infinite": false,
+        "number": 0
+       },
+       "name": ""
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-stdnodeset-0",
+      "list": [
+       "ucrslurmcl-stdnodeset-0"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "FAILED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4658923236979900416
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "195.batch",
+      "name": "batch",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 9980,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 1475936256,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 30997920,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 1278885888,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 1140,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 9980,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 1475936256,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 30997920,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 1278885888,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 1140,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 9980
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 1475936256
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 30997920
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 1278885888
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 1140
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 9980
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 1475936256
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 30997920
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 1278885888
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 1140
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 459104543,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 459104543,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 459104543
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 459104543
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 16
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 126832
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       }
+      ]
+     }
+    }
+   ],
+   "submit_line": "sbatch --parsable run.sbatch",
+   "tres": {
+    "allocated": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 16
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 126832
+     },
+     {
+      "type": "energy",
+      "name": "",
+      "id": 3,
+      "count": -2
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 16
+     }
+    ],
+    "requested": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 1
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 7927
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 1
+     }
+    ]
+   },
+   "used_gres": "",
+   "user": "alice_ucr_edu",
+   "wckey": {
+    "wckey": "",
+    "flags": []
+   },
+   "working_directory": "/home/alice_ucr_edu/deep-research-lab/run_16"
+  },
+  {
+   "account": "",
+   "comment": {
+    "administrator": "",
+    "job": "",
+    "system": ""
+   },
+   "allocation_nodes": 1,
+   "array": {
+    "job_id": 0,
+    "limits": {
+     "max": {
+      "running": {
+       "tasks": 0
+      }
+     }
+    },
+    "task_id": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "task": ""
+   },
+   "association": {
+    "account": "",
+    "cluster": "ucrslurmcl",
+    "partition": "",
+    "user": "",
+    "id": 0
+   },
+   "block": "",
+   "cluster": "ucrslurmcl",
+   "constraints": "",
+   "container": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "time": {
+    "elapsed": 5,
+    "eligible": 1790626008,
+    "end": 1790626063,
+    "planned": {
+     "set": true,
+     "infinite": false,
+     "number": 50
+    },
+    "start": 1790626058,
+    "submission": 1790626008,
+    "suspended": 0,
+    "system": {
+     "seconds": 0,
+     "microseconds": 812275
+    },
+    "limit": {
+     "set": true,
+     "infinite": false,
+     "number": 15
+    },
+    "total": {
+     "seconds": 3,
+     "microseconds": 1626973
+    },
+    "user": {
+     "seconds": 3,
+     "microseconds": 814698
+    }
+   },
+   "exit_code": {
+    "status": [
+     "ERROR"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 1
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "flags": [
+    "STARTED_ON_SCHEDULE",
+    "START_RECEIVED"
+   ],
+   "group": "alice_ucr_edu",
+   "het": {
+    "job_id": 0,
+    "job_offset": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_id": 203,
+   "name": "lab-30-tflm-greedymemoryplanner",
+   "licenses": "",
+   "mcs": {
+    "label": ""
+   },
+   "nodes": "ucrslurmcl-stdnodeset-0",
+   "partition": "standard",
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "qos": "normal",
+   "qosreq": "",
+   "required": {
+    "CPUs": 1,
+    "memory_per_cpu": {
+     "set": true,
+     "infinite": false,
+     "number": 7927
+    },
+    "memory_per_node": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "kill_request_user": "",
+   "restart_cnt": 0,
+   "reservation": {
+    "id": 0,
+    "name": "",
+    "requested": ""
+   },
+   "script": "",
+   "segment_size": 0,
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/home/alice_ucr_edu/deep-research-lab/run_30/job.log",
+   "stderr_expanded": "",
+   "stdout": "/home/alice_ucr_edu/deep-research-lab/run_30/job.log",
+   "stderr": "",
+   "stdin": "/dev/null",
+   "state": {
+    "current": [
+     "FAILED"
+    ],
+    "reason": "None"
+   },
+   "steps": [
+    {
+     "time": {
+      "elapsed": 5,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790626063
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790626058
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 0,
+       "microseconds": 812275
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 3,
+       "microseconds": 1626973
+      },
+      "user": {
+       "seconds": 3,
+       "microseconds": 814698
+      }
+     },
+     "exit_code": {
+      "status": [
+       "ERROR"
+      ],
+      "return_code": {
+       "set": true,
+       "infinite": false,
+       "number": 1
+      },
+      "signal": {
+       "id": {
+        "set": false,
+        "infinite": false,
+        "number": 0
+       },
+       "name": ""
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-stdnodeset-0",
+      "list": [
+       "ucrslurmcl-stdnodeset-0"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "FAILED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4658923236979900416
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "203.batch",
+      "name": "batch",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 4620,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 611856384,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 487788544,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 627,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 4620,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 611856384,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 487788544,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 627,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 4620
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 611856384
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 487788544
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 627
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 4620
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 611856384
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 487788544
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 627
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1,
+         "task": 0,
+         "node": "ucrslurmcl-stdnodeset-0"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 16
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 126832
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       }
+      ]
+     }
+    }
+   ],
+   "submit_line": "sbatch --parsable run.sbatch",
+   "tres": {
+    "allocated": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 16
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 126832
+     },
+     {
+      "type": "energy",
+      "name": "",
+      "id": 3,
+      "count": -2
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 16
+     }
+    ],
+    "requested": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 1
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 7927
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 1
+     }
+    ]
+   },
+   "used_gres": "",
+   "user": "alice_ucr_edu",
+   "wckey": {
+    "wckey": "",
+    "flags": []
+   },
+   "working_directory": "/home/alice_ucr_edu/deep-research-lab/run_30"
+  },
+  {
+   "account": "",
+   "comment": {
+    "administrator": "",
+    "job": "",
+    "system": ""
+   },
+   "allocation_nodes": 1,
+   "array": {
+    "job_id": 0,
+    "limits": {
+     "max": {
+      "running": {
+       "tasks": 0
+      }
+     }
+    },
+    "task_id": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "task": ""
+   },
+   "association": {
+    "account": "",
+    "cluster": "ucrslurmcl",
+    "partition": "",
+    "user": "",
+    "id": 0
+   },
+   "block": "",
+   "cluster": "ucrslurmcl",
+   "constraints": "",
+   "container": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "time": {
+    "elapsed": 4,
+    "eligible": 1790690207,
+    "end": 1790690271,
+    "planned": {
+     "set": true,
+     "infinite": false,
+     "number": 60
+    },
+    "start": 1790690267,
+    "submission": 1790690207,
+    "suspended": 0,
+    "system": {
+     "seconds": 0,
+     "microseconds": 247631
+    },
+    "limit": {
+     "set": true,
+     "infinite": false,
+     "number": 15
+    },
+    "total": {
+     "seconds": 4,
+     "microseconds": 1216249
+    },
+    "user": {
+     "seconds": 4,
+     "microseconds": 968618
+    }
+   },
+   "exit_code": {
+    "status": [
+     "ERROR"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 139
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "flags": [
+    "STARTED_ON_BACKFILL",
+    "START_RECEIVED"
+   ],
+   "group": "alice_ucr_edu",
+   "het": {
+    "job_id": 0,
+    "job_offset": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_id": 212,
+   "name": "lab-38-tflm-greedymemoryplanner",
+   "licenses": "",
+   "mcs": {
+    "label": ""
+   },
+   "nodes": "ucrslurmcl-c3nodeset-0",
+   "partition": "computehigh",
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "qos": "normal",
+   "qosreq": "",
+   "required": {
+    "CPUs": 1,
+    "memory_per_cpu": {
+     "set": true,
+     "infinite": false,
+     "number": 3957
+    },
+    "memory_per_node": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "kill_request_user": "",
+   "restart_cnt": 0,
+   "reservation": {
+    "id": 0,
+    "name": "",
+    "requested": ""
+   },
+   "script": "",
+   "segment_size": 0,
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/home/alice_ucr_edu/deep-research-lab/run_38/job.log",
+   "stderr_expanded": "",
+   "stdout": "/home/alice_ucr_edu/deep-research-lab/run_38/job.log",
+   "stderr": "",
+   "stdin": "/dev/null",
+   "state": {
+    "current": [
+     "FAILED"
+    ],
+    "reason": "None"
+   },
+   "steps": [
+    {
+     "time": {
+      "elapsed": 4,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790690271
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790690267
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 0,
+       "microseconds": 247631
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 4,
+       "microseconds": 1216249
+      },
+      "user": {
+       "seconds": 4,
+       "microseconds": 968618
+      }
+     },
+     "exit_code": {
+      "status": [
+       "ERROR"
+      ],
+      "return_code": {
+       "set": true,
+       "infinite": false,
+       "number": 139
+      },
+      "signal": {
+       "id": {
+        "set": false,
+        "infinite": false,
+        "number": 0
+       },
+       "name": ""
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-c3nodeset-0",
+      "list": [
+       "ucrslurmcl-c3nodeset-0"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "FAILED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4658153578840457216
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "212.batch",
+      "name": "batch",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 5210,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 280383488,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 174108672,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 855,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 5210,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 280383488,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 174108672,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 855,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 5210
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 280383488
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 174108672
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 855
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 5210
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 280383488
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 0
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 174108672
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 855
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-0"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 1
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 22
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 87054
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       }
+      ]
+     }
+    }
+   ],
+   "submit_line": "sbatch --parsable run.sbatch",
+   "tres": {
+    "allocated": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 22
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 87054
+     },
+     {
+      "type": "energy",
+      "name": "",
+      "id": 3,
+      "count": -2
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 22
+     }
+    ],
+    "requested": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 1
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 3957
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 1
+     }
+    ]
+   },
+   "used_gres": "",
+   "user": "alice_ucr_edu",
+   "wckey": {
+    "wckey": "",
+    "flags": []
+   },
+   "working_directory": "/home/alice_ucr_edu/deep-research-lab/run_38"
+  },
+  {
+   "account": "",
+   "comment": {
+    "administrator": "GCP Error: ZONE_RESOURCE_POOL_EXHAUSTED_WITH_DETAILS: The zone 'projects/ucr-ursa-major-hpc-cluster/zones/us-central1-a' does not have enough resources available to fulfill the request.  'NULL:0/NULL:0/NULL:0 (state:STOCKOUT, sub-state:STOCKOUT, resource type:compute)'.",
+    "job": "",
+    "system": ""
+   },
+   "allocation_nodes": 1,
+   "array": {
+    "job_id": 0,
+    "limits": {
+     "max": {
+      "running": {
+       "tasks": 0
+      }
+     }
+    },
+    "task_id": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "task": ""
+   },
+   "association": {
+    "account": "",
+    "cluster": "ucrslurmcl",
+    "partition": "",
+    "user": "",
+    "id": 0
+   },
+   "block": "",
+   "cluster": "ucrslurmcl",
+   "constraints": "",
+   "container": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "time": {
+    "elapsed": 112,
+    "eligible": 1790716434,
+    "end": 1790716601,
+    "planned": {
+     "set": true,
+     "infinite": false,
+     "number": 55
+    },
+    "start": 1790716489,
+    "submission": 1790716313,
+    "suspended": 0,
+    "system": {
+     "seconds": 5,
+     "microseconds": 831968
+    },
+    "limit": {
+     "set": true,
+     "infinite": false,
+     "number": 15
+    },
+    "total": {
+     "seconds": 37,
+     "microseconds": 942968
+    },
+    "user": {
+     "seconds": 32,
+     "microseconds": 111000
+    }
+   },
+   "exit_code": {
+    "status": [
+     "ERROR"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 255
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "flags": [
+    "STARTED_ON_BACKFILL",
+    "START_RECEIVED"
+   ],
+   "group": "alice_ucr_edu",
+   "het": {
+    "job_id": 0,
+    "job_offset": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_id": 229,
+   "name": "lab-61-gpu-lbm-throughput-and-m",
+   "licenses": "",
+   "mcs": {
+    "label": ""
+   },
+   "nodes": "ucrslurmcl-gpunodeset-3",
+   "partition": "gpul4",
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "qos": "normal",
+   "qosreq": "",
+   "required": {
+    "CPUs": 1,
+    "memory_per_cpu": {
+     "set": true,
+     "infinite": false,
+     "number": 7902
+    },
+    "memory_per_node": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "kill_request_user": "",
+   "restart_cnt": 11,
+   "reservation": {
+    "id": 0,
+    "name": "",
+    "requested": ""
+   },
+   "script": "",
+   "segment_size": 0,
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/home/alice_ucr_edu/deep-research-lab/run_61/job.log",
+   "stderr_expanded": "",
+   "stdout": "/home/alice_ucr_edu/deep-research-lab/run_61/job.log",
+   "stderr": "",
+   "stdin": "/dev/null",
+   "state": {
+    "current": [
+     "FAILED"
+    ],
+    "reason": "BeginTime"
+   },
+   "steps": [
+    {
+     "time": {
+      "elapsed": 112,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790716601
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790716489
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 5,
+       "microseconds": 831968
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 37,
+       "microseconds": 942968
+      },
+      "user": {
+       "seconds": 32,
+       "microseconds": 111000
+      }
+     },
+     "exit_code": {
+      "status": [
+       "ERROR"
+      ],
+      "return_code": {
+       "set": true,
+       "infinite": false,
+       "number": 255
+      },
+      "signal": {
+       "id": {
+        "set": false,
+        "infinite": false,
+        "number": 0
+       },
+       "name": ""
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-gpunodeset-3",
+      "list": [
+       "ucrslurmcl-gpunodeset-3"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "FAILED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4657056266235936768
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "229.batch",
+      "name": "batch",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 37940,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 1239478272,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 406692204,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 912179200,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 1422,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 37940,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 1239478272,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 406692204,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 912179200,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 1422,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 37940
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 1239478272
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 406692204
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 912179200
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 1422
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 37940
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 1239478272
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 406692204
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 912179200
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 1422
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 666673068,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 666673068,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-3"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 666673068
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 666673068
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 8
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 63216
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       }
+      ]
+     }
+    }
+   ],
+   "submit_line": "sbatch --parsable run.sbatch",
+   "tres": {
+    "allocated": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 8
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 63216
+     },
+     {
+      "type": "energy",
+      "name": "",
+      "id": 3,
+      "count": -2
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 8
+     }
+    ],
+    "requested": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 1
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 7902
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 1
+     }
+    ]
+   },
+   "used_gres": "",
+   "user": "alice_ucr_edu",
+   "wckey": {
+    "wckey": "",
+    "flags": []
+   },
+   "working_directory": "/home/alice_ucr_edu/deep-research-lab/run_61"
+  },
+  {
+   "account": "",
+   "comment": {
+    "administrator": "GCP Error: ZONE_RESOURCE_POOL_EXHAUSTED_WITH_DETAILS: The zone 'projects/ucr-ursa-major-hpc-cluster/zones/us-central1-a' does not have enough resources available to fulfill the request.  'NULL:0/NULL:0/NULL:0 (state:STOCKOUT, sub-state:STOCKOUT, resource type:compute)'.",
+    "job": "",
+    "system": ""
+   },
+   "allocation_nodes": 1,
+   "array": {
+    "job_id": 0,
+    "limits": {
+     "max": {
+      "running": {
+       "tasks": 0
+      }
+     }
+    },
+    "task_id": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "task": ""
+   },
+   "association": {
+    "account": "",
+    "cluster": "ucrslurmcl",
+    "partition": "",
+    "user": "",
+    "id": 0
+   },
+   "block": "",
+   "cluster": "ucrslurmcl",
+   "constraints": "",
+   "container": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "time": {
+    "elapsed": 60,
+    "eligible": 1790721989,
+    "end": 1790722159,
+    "planned": {
+     "set": true,
+     "infinite": false,
+     "number": 110
+    },
+    "start": 1790722099,
+    "submission": 1790721868,
+    "suspended": 0,
+    "system": {
+     "seconds": 4,
+     "microseconds": 36002
+    },
+    "limit": {
+     "set": true,
+     "infinite": false,
+     "number": 15
+    },
+    "total": {
+     "seconds": 38,
+     "microseconds": 170436
+    },
+    "user": {
+     "seconds": 34,
+     "microseconds": 134434
+    }
+   },
+   "exit_code": {
+    "status": [
+     "ERROR"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 1
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "flags": [
+    "STARTED_ON_SCHEDULE",
+    "START_RECEIVED"
+   ],
+   "group": "alice_ucr_edu",
+   "het": {
+    "job_id": 0,
+    "job_offset": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_id": 236,
+   "name": "lab-76-gpu-lbm-throughput-and-m",
+   "licenses": "",
+   "mcs": {
+    "label": ""
+   },
+   "nodes": "ucrslurmcl-gpunodeset-0",
+   "partition": "gpul4",
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "qos": "normal",
+   "qosreq": "",
+   "required": {
+    "CPUs": 1,
+    "memory_per_cpu": {
+     "set": true,
+     "infinite": false,
+     "number": 7902
+    },
+    "memory_per_node": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "kill_request_user": "",
+   "restart_cnt": 3,
+   "reservation": {
+    "id": 0,
+    "name": "",
+    "requested": ""
+   },
+   "script": "#!/bin/bash\n#SBATCH -p gpul4\n#SBATCH -t 01:00:00\nexport API_TOKEN=abc123secretvalue\npython run.py\n",
+   "segment_size": 0,
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/home/alice_ucr_edu/deep-research-lab/run_76/job.log",
+   "stderr_expanded": "",
+   "stdout": "/home/alice_ucr_edu/deep-research-lab/run_76/job.log",
+   "stderr": "",
+   "stdin": "/dev/null",
+   "state": {
+    "current": [
+     "FAILED"
+    ],
+    "reason": "BeginTime"
+   },
+   "steps": [
+    {
+     "time": {
+      "elapsed": 60,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790722159
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790722099
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 4,
+       "microseconds": 36002
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 38,
+       "microseconds": 170436
+      },
+      "user": {
+       "seconds": 34,
+       "microseconds": 134434
+      }
+     },
+     "exit_code": {
+      "status": [
+       "ERROR"
+      ],
+      "return_code": {
+       "set": true,
+       "infinite": false,
+       "number": 1
+      },
+      "signal": {
+       "id": {
+        "set": false,
+        "infinite": false,
+        "number": 0
+       },
+       "name": ""
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-gpunodeset-0",
+      "list": [
+       "ucrslurmcl-gpunodeset-0"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "FAILED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4657056266235936768
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "236.batch",
+      "name": "batch",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 38160,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 4799016960,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 175539768,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 437252096,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 106,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 38160,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 4799016960,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 175539768,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 437252096,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 106,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 38160
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 4799016960
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 175539768
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 437252096
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 106
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 38160
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 4799016960
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 175539768
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 437252096
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 106
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 195649973,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 195649973,
+         "task": 0,
+         "node": "ucrslurmcl-gpunodeset-0"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 195649973
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 195649973
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 8
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 63216
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       }
+      ]
+     }
+    }
+   ],
+   "submit_line": "sbatch --parsable run.sbatch",
+   "tres": {
+    "allocated": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 8
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 63216
+     },
+     {
+      "type": "energy",
+      "name": "",
+      "id": 3,
+      "count": -2
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 8
+     }
+    ],
+    "requested": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 1
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 7902
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 1
+     }
+    ]
+   },
+   "used_gres": "",
+   "user": "alice_ucr_edu",
+   "wckey": {
+    "wckey": "",
+    "flags": []
+   },
+   "working_directory": "/home/alice_ucr_edu/deep-research-lab/run_76"
+  },
+  {
+   "account": "",
+   "comment": {
+    "administrator": "",
+    "job": "",
+    "system": ""
+   },
+   "allocation_nodes": 1,
+   "array": {
+    "job_id": 0,
+    "limits": {
+     "max": {
+      "running": {
+       "tasks": 0
+      }
+     }
+    },
+    "task_id": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "task": ""
+   },
+   "association": {
+    "account": "",
+    "cluster": "ucrslurmcl",
+    "partition": "",
+    "user": "",
+    "id": 0
+   },
+   "block": "",
+   "cluster": "ucrslurmcl",
+   "constraints": "",
+   "container": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "time": {
+    "elapsed": 5400,
+    "eligible": 1790793612,
+    "end": 1790799089,
+    "planned": {
+     "set": true,
+     "infinite": false,
+     "number": 77
+    },
+    "start": 1790793689,
+    "submission": 1790793612,
+    "suspended": 0,
+    "system": {
+     "seconds": 0,
+     "microseconds": 224353
+    },
+    "limit": {
+     "set": true,
+     "infinite": false,
+     "number": 90
+    },
+    "total": {
+     "seconds": 12,
+     "microseconds": 1048816
+    },
+    "user": {
+     "seconds": 12,
+     "microseconds": 824463
+    }
+   },
+   "exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "flags": [
+    "STARTED_ON_SCHEDULE",
+    "START_RECEIVED"
+   ],
+   "group": "alice_ucr_edu",
+   "het": {
+    "job_id": 0,
+    "job_offset": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_id": 253,
+   "name": "lab-demo-40-text-analysis-of-chronic",
+   "licenses": "",
+   "mcs": {
+    "label": ""
+   },
+   "nodes": "ucrslurmcl-c3nodeset-2",
+   "partition": "computehigh",
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "qos": "normal",
+   "qosreq": "",
+   "required": {
+    "CPUs": 1,
+    "memory_per_cpu": {
+     "set": true,
+     "infinite": false,
+     "number": 3957
+    },
+    "memory_per_node": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "kill_request_user": "",
+   "restart_cnt": 0,
+   "reservation": {
+    "id": 0,
+    "name": "",
+    "requested": ""
+   },
+   "script": "",
+   "segment_size": 0,
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/home/alice_ucr_edu/deep-research-lab/ws-demo/run_40/job.log",
+   "stderr_expanded": "",
+   "stdout": "/home/alice_ucr_edu/deep-research-lab/ws-demo/run_40/job.log",
+   "stderr": "",
+   "stdin": "/dev/null",
+   "state": {
+    "current": [
+     "TIMEOUT"
+    ],
+    "reason": "None"
+   },
+   "steps": [
+    {
+     "time": {
+      "elapsed": 5401,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790799090
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790793689
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 0,
+       "microseconds": 224353
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 12,
+       "microseconds": 1048816
+      },
+      "user": {
+       "seconds": 12,
+       "microseconds": 824463
+      }
+     },
+     "exit_code": {
+      "status": [
+       "SIGNALED"
+      ],
+      "return_code": {
+       "set": false,
+       "infinite": false,
+       "number": 0
+      },
+      "signal": {
+       "id": {
+        "set": true,
+        "infinite": false,
+        "number": 15
+       },
+       "name": "TERM"
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-c3nodeset-2",
+      "list": [
+       "ucrslurmcl-c3nodeset-2"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "CANCELLED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4658153578840457216
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "253.batch",
+      "name": "batch",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 13340,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 578592768,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 385024429,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 562982912,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 682,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 13340,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 578592768,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 385024429,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 562982912,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 682,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 13340
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 578592768
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 385024429
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 562982912
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 682
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 13340
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 578592768
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 385024429
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 562982912
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 682
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 305762407,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 305762407,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-2"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 305762407
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 305762407
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 22
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 87054
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       }
+      ]
+     }
+    }
+   ],
+   "submit_line": "sbatch --parsable run.sbatch",
+   "tres": {
+    "allocated": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 22
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 87054
+     },
+     {
+      "type": "energy",
+      "name": "",
+      "id": 3,
+      "count": -2
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 22
+     }
+    ],
+    "requested": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 1
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 3957
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 1
+     }
+    ]
+   },
+   "used_gres": "",
+   "user": "alice_ucr_edu",
+   "wckey": {
+    "wckey": "",
+    "flags": []
+   },
+   "working_directory": "/home/alice_ucr_edu/deep-research-lab/ws-demo/run_40"
+  },
+  {
+   "account": "",
+   "comment": {
+    "administrator": "",
+    "job": "",
+    "system": ""
+   },
+   "allocation_nodes": 1,
+   "array": {
+    "job_id": 0,
+    "limits": {
+     "max": {
+      "running": {
+       "tasks": 0
+      }
+     }
+    },
+    "task_id": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "task": ""
+   },
+   "association": {
+    "account": "",
+    "cluster": "ucrslurmcl",
+    "partition": "",
+    "user": "",
+    "id": 0
+   },
+   "block": "",
+   "cluster": "ucrslurmcl",
+   "constraints": "",
+   "container": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "time": {
+    "elapsed": 70289,
+    "eligible": 1790804702,
+    "end": 0,
+    "planned": {
+     "set": true,
+     "infinite": false,
+     "number": 57
+    },
+    "start": 1790804759,
+    "submission": 1790804702,
+    "suspended": 0,
+    "system": {
+     "seconds": 0,
+     "microseconds": 0
+    },
+    "limit": {
+     "set": true,
+     "infinite": false,
+     "number": 1440
+    },
+    "total": {
+     "seconds": 0,
+     "microseconds": 0
+    },
+    "user": {
+     "seconds": 0,
+     "microseconds": 0
+    }
+   },
+   "exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "flags": [
+    "STARTED_ON_SCHEDULE",
+    "START_RECEIVED"
+   ],
+   "group": "alice_ucr_edu",
+   "het": {
+    "job_id": 0,
+    "job_offset": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_id": 260,
+   "name": "lab-warm",
+   "licenses": "",
+   "mcs": {
+    "label": ""
+   },
+   "nodes": "ucrslurmcl-c3nodeset-0",
+   "partition": "computehigh",
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "qos": "normal",
+   "qosreq": "",
+   "required": {
+    "CPUs": 1,
+    "memory_per_cpu": {
+     "set": true,
+     "infinite": false,
+     "number": 3957
+    },
+    "memory_per_node": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "kill_request_user": "",
+   "restart_cnt": 0,
+   "reservation": {
+    "id": 0,
+    "name": "",
+    "requested": ""
+   },
+   "script": "",
+   "segment_size": 0,
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/home/alice_ucr_edu/deep-research-lab/warm/worker-260.log",
+   "stderr_expanded": "",
+   "stdout": "/home/alice_ucr_edu/deep-research-lab/warm/worker-%j.log",
+   "stderr": "",
+   "stdin": "/dev/null",
+   "state": {
+    "current": [
+     "RUNNING"
+    ],
+    "reason": "None"
+   },
+   "steps": [
+    {
+     "time": {
+      "elapsed": 70289,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 0
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790804759
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 0,
+       "microseconds": 0
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 0,
+       "microseconds": 0
+      },
+      "user": {
+       "seconds": 0,
+       "microseconds": 0
+      }
+     },
+     "exit_code": {
+      "status": [
+       "SUCCESS"
+      ],
+      "return_code": {
+       "set": true,
+       "infinite": false,
+       "number": 0
+      },
+      "signal": {
+       "id": {
+        "set": false,
+        "infinite": false,
+        "number": 0
+       },
+       "name": ""
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-c3nodeset-0",
+      "list": [
+       "ucrslurmcl-c3nodeset-0"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "RUNNING"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 0
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "260.batch",
+      "name": "batch",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [],
+       "min": [],
+       "average": [],
+       "total": []
+      },
+      "consumed": {
+       "max": [],
+       "min": [],
+       "average": [],
+       "total": []
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 22
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 87054
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       }
+      ]
+     }
+    }
+   ],
+   "submit_line": "sbatch --parsable --job-name=lab-warm -p computehigh -N 1 --exclusive -t 24:00:00 --signal=B:USR1@60 -o /home/alice_ucr_edu/deep-research-lab/warm/worker-%j.log --export=ALL,WARM=/home/alice_ucr_edu/deep-research-lab/warm,IDLE_MIN=0,MAX_PAR=2,WARM_LIMIT_SEC=86400 /home/alice_ucr_edu/deep-research-lab/warm/worker.sh",
+   "tres": {
+    "allocated": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 22
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 87054
+     },
+     {
+      "type": "energy",
+      "name": "",
+      "id": 3,
+      "count": -2
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 22
+     }
+    ],
+    "requested": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 1
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 3957
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 1
+     }
+    ]
+   },
+   "used_gres": "",
+   "user": "alice_ucr_edu",
+   "wckey": {
+    "wckey": "",
+    "flags": []
+   },
+   "working_directory": "/home/alice_ucr_edu"
+  },
+  {
+   "account": "",
+   "comment": {
+    "administrator": "",
+    "job": "",
+    "system": ""
+   },
+   "allocation_nodes": 1,
+   "array": {
+    "job_id": 0,
+    "limits": {
+     "max": {
+      "running": {
+       "tasks": 0
+      }
+     }
+    },
+    "task_id": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "task": ""
+   },
+   "association": {
+    "account": "",
+    "cluster": "ucrslurmcl",
+    "partition": "",
+    "user": "",
+    "id": 0
+   },
+   "block": "",
+   "cluster": "ucrslurmcl",
+   "constraints": "",
+   "container": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "time": {
+    "elapsed": 1160,
+    "eligible": 1790811409,
+    "end": 1790812789,
+    "planned": {
+     "set": true,
+     "infinite": false,
+     "number": 220
+    },
+    "start": 1790811629,
+    "submission": 1790811409,
+    "suspended": 0,
+    "system": {
+     "seconds": 2,
+     "microseconds": 187811
+    },
+    "limit": {
+     "set": true,
+     "infinite": false,
+     "number": 1440
+    },
+    "total": {
+     "seconds": 3,
+     "microseconds": 692302
+    },
+    "user": {
+     "seconds": 1,
+     "microseconds": 504491
+    }
+   },
+   "exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "flags": [
+    "STARTED_ON_BACKFILL",
+    "START_RECEIVED"
+   ],
+   "group": "alice_ucr_edu",
+   "het": {
+    "job_id": 0,
+    "job_offset": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_id": 261,
+   "name": "lab-warm",
+   "licenses": "",
+   "mcs": {
+    "label": ""
+   },
+   "nodes": "ucrslurmcl-c3nodeset-1",
+   "partition": "computehigh",
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "qos": "normal",
+   "qosreq": "",
+   "required": {
+    "CPUs": 1,
+    "memory_per_cpu": {
+     "set": true,
+     "infinite": false,
+     "number": 3957
+    },
+    "memory_per_node": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "kill_request_user": "",
+   "restart_cnt": 0,
+   "reservation": {
+    "id": 0,
+    "name": "",
+    "requested": ""
+   },
+   "script": "",
+   "segment_size": 0,
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/home/alice_ucr_edu/deep-research-lab/warm/worker-261.log",
+   "stderr_expanded": "",
+   "stdout": "/home/alice_ucr_edu/deep-research-lab/warm/worker-%j.log",
+   "stderr": "",
+   "stdin": "/dev/null",
+   "state": {
+    "current": [
+     "COMPLETED"
+    ],
+    "reason": "None"
+   },
+   "steps": [
+    {
+     "time": {
+      "elapsed": 1160,
+      "end": {
+       "set": true,
+       "infinite": false,
+       "number": 1790812789
+      },
+      "start": {
+       "set": true,
+       "infinite": false,
+       "number": 1790811629
+      },
+      "suspended": 0,
+      "system": {
+       "seconds": 2,
+       "microseconds": 187811
+      },
+      "limit": {
+       "set": false,
+       "infinite": true,
+       "number": 0
+      },
+      "total": {
+       "seconds": 3,
+       "microseconds": 692302
+      },
+      "user": {
+       "seconds": 1,
+       "microseconds": 504491
+      }
+     },
+     "exit_code": {
+      "status": [
+       "SUCCESS"
+      ],
+      "return_code": {
+       "set": true,
+       "infinite": false,
+       "number": 0
+      },
+      "signal": {
+       "id": {
+        "set": false,
+        "infinite": false,
+        "number": 0
+       },
+       "name": ""
+      }
+     },
+     "nodes": {
+      "count": 1,
+      "range": "ucrslurmcl-c3nodeset-1",
+      "list": [
+       "ucrslurmcl-c3nodeset-1"
+      ]
+     },
+     "tasks": {
+      "count": 1
+     },
+     "pid": "",
+     "CPU": {
+      "requested_frequency": {
+       "min": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       },
+       "max": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      },
+      "governor": "0"
+     },
+     "kill_request_user": "",
+     "state": [
+      "COMPLETED"
+     ],
+     "statistics": {
+      "CPU": {
+       "actual_frequency": 4658153578840457216
+      },
+      "energy": {
+       "consumed": {
+        "set": true,
+        "infinite": false,
+        "number": 0
+       }
+      }
+     },
+     "step": {
+      "id": "261.batch",
+      "name": "batch",
+      "stderr": "",
+      "stdin": "",
+      "stdout": "",
+      "stderr_expanded": "",
+      "stdin_expanded": "",
+      "stdout_expanded": ""
+     },
+     "task": {
+      "distribution": "Unknown"
+     },
+     "tres": {
+      "requested": {
+       "max": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 3680,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 4382720,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 22025992,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 827392,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 2,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        }
+       ],
+       "min": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 3680,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 4382720,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 22025992,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 827392,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 2,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        }
+       ],
+       "average": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 3680
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 4382720
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 22025992
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 827392
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 2
+        }
+       ],
+       "total": [
+        {
+         "type": "cpu",
+         "name": "",
+         "id": 1,
+         "count": 3680
+        },
+        {
+         "type": "mem",
+         "name": "",
+         "id": 2,
+         "count": 4382720
+        },
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 22025992
+        },
+        {
+         "type": "vmem",
+         "name": "",
+         "id": 7,
+         "count": 827392
+        },
+        {
+         "type": "pages",
+         "name": "",
+         "id": 8,
+         "count": 2
+        }
+       ]
+      },
+      "consumed": {
+       "max": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 90716,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        }
+       ],
+       "min": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 90716,
+         "task": 0,
+         "node": "ucrslurmcl-c3nodeset-1"
+        }
+       ],
+       "average": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 90716
+        }
+       ],
+       "total": [
+        {
+         "type": "energy",
+         "name": "",
+         "id": 3,
+         "count": 0
+        },
+        {
+         "type": "fs",
+         "name": "disk",
+         "id": 6,
+         "count": 90716
+        }
+       ]
+      },
+      "allocated": [
+       {
+        "type": "cpu",
+        "name": "",
+        "id": 1,
+        "count": 22
+       },
+       {
+        "type": "mem",
+        "name": "",
+        "id": 2,
+        "count": 87054
+       },
+       {
+        "type": "node",
+        "name": "",
+        "id": 4,
+        "count": 1
+       }
+      ]
+     }
+    }
+   ],
+   "submit_line": "sbatch --parsable --job-name=lab-warm -p computehigh -N 1 --exclusive -t 24:00:00 --signal=B:USR1@60 -o /home/alice_ucr_edu/deep-research-lab/warm/worker-%j.log --export=ALL,WARM=/home/alice_ucr_edu/deep-research-lab/warm,IDLE_MIN=0,MAX_PAR=2,WARM_LIMIT_SEC=86400 /home/alice_ucr_edu/deep-research-lab/warm/worker.sh",
+   "tres": {
+    "allocated": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 22
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 87054
+     },
+     {
+      "type": "energy",
+      "name": "",
+      "id": 3,
+      "count": -2
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 22
+     }
+    ],
+    "requested": [
+     {
+      "type": "cpu",
+      "name": "",
+      "id": 1,
+      "count": 1
+     },
+     {
+      "type": "mem",
+      "name": "",
+      "id": 2,
+      "count": 3957
+     },
+     {
+      "type": "node",
+      "name": "",
+      "id": 4,
+      "count": 1
+     },
+     {
+      "type": "billing",
+      "name": "",
+      "id": 5,
+      "count": 1
+     }
+    ]
+   },
+   "used_gres": "",
+   "user": "alice_ucr_edu",
+   "wckey": {
+    "wckey": "",
+    "flags": []
+   },
+   "working_directory": "/home/alice_ucr_edu"
+  }
+ ],
+ "meta": {
+  "plugin": {
+   "type": "",
+   "name": "",
+   "data_parser": "data_parser/v0.0.44",
+   "accounting_storage": "accounting_storage/slurmdbd"
+  },
+  "client": {
+   "source": "",
+   "user": "alice_ucr_edu",
+   "group": "alice_ucr_edu"
+  },
+  "command": [
+   "sacct",
+   "--json",
+   "-S",
+   "now-14days",
+   "-u"
+  ],
+  "slurm": {
+   "version": {
+    "major": "25",
+    "micro": "4",
+    "minor": "11"
+   },
+   "release": "25.11.4",
+   "cluster": "ucrslurmcl"
+  }
+ },
+ "errors": [],
+ "warnings": []
+}

@@ -1,0 +1,38 @@
+[INFO] job 203 on ucrslurmcl-stdnodeset-0, 16 CPUs, 2026-09-28T20:07:38Z
+[ursa] job 203 on ucrslurmcl-stdnodeset-0: 1 node(s), 16 cores/node, TMPDIR=/tmp/job-203-alice_ucr_edu
+[STAGE] Installing software
+[INFO] reusing cached environment /home/alice_ucr_edu/deep-research-lab/envs/flatbuffers-ortools-tflite-57501fd50d0e
+[STAGE] Running
+[STAGE] Downloading MLPerf Tiny models
+curl: (22) The requested URL returned error: 404 
+[STAGE] Setting up Python environment
+Using CPython 3.12.14 interpreter at: /home/alice_ucr_edu/deep-research-lab/envs/flatbuffers-ortools-tflite-57501fd50d0e/.pixi/envs/default/bin/python
+Creating virtual environment at: /tmp/job-203-alice_ucr_edu/v
+Activate with: source /tmp/job-203-alice_ucr_edu/v/bin/activate
+Using Python 3.12.14 environment at: /tmp/job-203-alice_ucr_edu/v
+Resolved 11 packages in 214ms
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 11 packages in 1.77s
+ + absl-py==2.5.0
+ + flatbuffers==25.12.19
+ + immutabledict==4.3.1
+ + numpy==2.5.3
+ + ortools==9.15.6755
+ + pandas==3.0.6
+ + protobuf==6.33.6
+ + python-dateutil==2.9.0.post0
+ + six==1.17.0
+ + tflite==2.18.0
+ + typing-extensions==4.16.0
+[STAGE] Checking inputs
+Model kws: valid TFLite flatbuffer, 13 ops, 35 tensors.
+Model vww: valid TFLite flatbuffer, 31 ops, 89 tensors.
+Model ad: valid TFLite flatbuffer, 10 ops, 31 tensors.
+inputs OK: 3 MLPerf Tiny models verified and ready for memory planning evaluation.
+[STAGE] Running memory planning & static layout synthesis
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+ModuleNotFoundError: No module named 'matplotlib'
+[STAGE] Failed (exit 1)

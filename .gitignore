@@ -1,0 +1,9 @@
+/bifrost
+/dist/
+*.test
+*.out
+.env
+.env.*
+local/
+.vscode/
+.idea/

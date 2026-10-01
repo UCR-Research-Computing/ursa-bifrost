@@ -1,0 +1,117 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func testConfig(t *testing.T, tiers string) string {
+	t.Helper()
+	dir := t.TempDir()
+	td, _ := filepath.Abs("../../testdata")
+	p := filepath.Join(dir, "config.yaml")
+	body := "backend: fixture\nfixtures_dir: " + td + "\ncluster_user: alice_ucr_edu\ntiers: [" + tiers + "]\naudit_path: " + filepath.Join(dir, "audit.jsonl") + "\n"
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func runCLI(t *testing.T, args ...string) (string, string, int) {
+	t.Helper()
+	var out, errb bytes.Buffer
+	code := run(args, &out, &errb)
+	return out.String(), errb.String(), code
+}
+
+func TestCLIJSONIsPureJSON(t *testing.T) {
+	cfg := testConfig(t, "R1")
+	for _, args := range [][]string{
+		{"status"}, {"partitions"}, {"jobs"}, {"job", "show", "236"}, {"job", "explain", "236"},
+		{"job", "log", "236"}, {"modules", "gcc"}, {"recipes", "gromacs"}, {"usage"},
+	} {
+		out, errOut, code := runCLI(t, append(args, "--json", "--config", cfg)...)
+		if code != 0 {
+			t.Errorf("%v: exit %d: %s %s", args, code, out, errOut)
+			continue
+		}
+		var v map[string]any
+		if err := json.Unmarshal([]byte(out), &v); err != nil {
+			t.Errorf("%v: not JSON: %v\n%s", args, err, out)
+			continue
+		}
+		if _, ok := v["data"]; !ok {
+			t.Errorf("%v: no data envelope", args)
+		}
+	}
+}
+
+func TestCLIErrorsAsJSON(t *testing.T) {
+	cfg := testConfig(t, "R1")
+	out, _, code := runCLI(t, "jobs", "--all", "--json", "--config", cfg)
+	if code != 1 || !strings.Contains(out, `"error"`) || !strings.Contains(out, "needs tier R2") {
+		t.Fatalf("code %d out %s", code, out)
+	}
+	out, _, code = runCLI(t, "job", "show", "1;id", "--json", "--config", cfg)
+	if code != 1 || !strings.Contains(out, "expected digits") {
+		t.Fatalf("code %d out %s", code, out)
+	}
+}
+
+func TestCLICheckExitCode(t *testing.T) {
+	cfg := testConfig(t, "R1")
+	dir := t.TempDir()
+	bad := filepath.Join(dir, "bad.sh")
+	_ = os.WriteFile(bad, []byte("#SBATCH -p nope\n"), 0o600)
+	_, _, code := runCLI(t, "check", bad, "--config", cfg)
+	if code != 2 {
+		t.Errorf("bad script exit %d, want 2", code)
+	}
+	good := filepath.Join(dir, "good.sh")
+	_ = os.WriteFile(good, []byte("#!/bin/bash\n#SBATCH -p standard\n#SBATCH -t 30\necho hi\n"), 0o600)
+	out, _, code := runCLI(t, "check", good, "--config", cfg)
+	if code != 0 || !strings.HasPrefix(out, "OK") {
+		t.Errorf("good script exit %d: %s", code, out)
+	}
+}
+
+func TestCLIStaffWithR2(t *testing.T) {
+	cfg := testConfig(t, "R1, R2")
+	out, errOut, code := runCLI(t, "jobs", "--all", "--config", cfg)
+	if code != 0 || !strings.Contains(out, "USER") {
+		t.Fatalf("code %d: %s %s", code, out, errOut)
+	}
+}
+
+func TestCLIHelpAndVersion(t *testing.T) {
+	out, _, code := runCLI(t, "--help")
+	if code != 0 || !strings.Contains(out, "bifrost mcp") {
+		t.Fatal(out)
+	}
+	out, _, _ = runCLI(t, "version", "--json")
+	if !strings.Contains(out, `"version"`) {
+		t.Fatal(out)
+	}
+	_, errOut, code := runCLI(t, "frobnicate", "--config", testConfig(t, "R1"))
+	if code != 1 || !strings.Contains(errOut, "unknown command") {
+		t.Fatal(errOut)
+	}
+}
+
+func TestConfigInitRefusesOverwrite(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c", "config.yaml")
+	if _, _, code := runCLI(t, "config", "init", "--config", p); code != 0 {
+		t.Fatal("init failed")
+	}
+	st, _ := os.Stat(p)
+	if st.Mode().Perm() != 0o600 {
+		t.Errorf("mode %v", st.Mode().Perm())
+	}
+	if _, _, code := runCLI(t, "config", "init", "--config", p); code != 1 {
+		t.Fatal("second init overwrote the file")
+	}
+}

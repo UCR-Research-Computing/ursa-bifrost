@@ -1,0 +1,80 @@
+                                   environment, creating the environment if it does not exist
+      --path <PATH>                The local path to use when adding a path dependency
+      --editable                   Whether the pypi requirement should be editable
+      --index <INDEX>              The PyPI index URL to use for this dependency. Only applicable
+                                   when adding pypi dependencies
+
+Global Options:
+  -m, --manifest-path <MANIFEST_PATH>  The path to `pixi.toml`, `pyproject.toml`, or the workspace
+                                       directory
+  -w, --workspace <WORKSPACE>          Name of the workspace
+  -s, --script <SCRIPT>                The path to a script with an embedded manifest: a Python
+                                       script containing PEP 723 metadata, or a file of any language
+                                       containing a `/// conda-script` block
+  -h, --help                           Display help information
+  -v, --verbose...                     Increase logging verbosity (-v for warnings, -vv for info,
+                                       -vvv for debug, -vvvv for trace)
+  -q, --quiet...                       Decrease logging verbosity (quiet mode)
+      --color <COLOR>                  Whether the log needs to be colored [env: PIXI_COLOR=]
+                                       [default: auto] [possible values: always, never, auto]
+      --no-progress                    Hide all progress bars, always turned on if stderr is not a
+                                       terminal [env: PIXI_NO_PROGRESS=]
+
+Git Options:
+  -g, --git <GIT>                    The git url to use when adding a git dependency
+      --branch <BRANCH>              The git branch
+      --tag <TAG>                    The git tag
+      --rev <REV>                    The git revision
+      --subdirectory <SUBDIRECTORY>  The subdirectory of the git repository to use
+
+Update Options:
+      --no-install  Don't modify the environment, only modify the lock file [env: PIXI_NO_INSTALL=]
+      --frozen      Install the environment as defined in the lock file, doesn't update lock file if
+                    it isn't up-to-date with the manifest file [env: PIXI_FROZEN=]
+      --locked      Check if lock file is up-to-date before installing the environment, aborts when
+                    lock file isn't up-to-date with the manifest file [env: PIXI_LOCKED=]
+
+Config Options:
+      --auth-file <AUTH_FILE>
+          Path to the file containing the authentication token
+      --concurrent-downloads <CONCURRENT_DOWNLOADS>
+          Max concurrent network requests, default is `50`
+      --concurrent-solves <CONCURRENT_SOLVES>
+          Max concurrent solves, default is the number of CPUs
+      --pinning-strategy <PINNING_STRATEGY>
+          Set pinning strategy [possible values: semver, minor, major, latest-up, exact-version,
+          no-pin]
+      --pypi-keyring-provider <PYPI_KEYRING_PROVIDER>
+          Specifies whether to use the keyring to look up credentials for PyPI [possible values:
+          disabled, subprocess]
+      --run-post-link-scripts
+          Run post-link scripts (insecure)
+      --no-symbolic-links
+          Disallow symbolic links during package installation [env: PIXI_NO_SYMBOLIC_LINKS=]
+      --no-hard-links
+          Disallow hard links during package installation [env: PIXI_NO_HARD_LINKS=]
+      --no-ref-links
+          Disallow ref links (copy-on-write) during package installation [env: PIXI_NO_REF_LINKS=]
+      --tls-no-verify
+          Do not verify the TLS certificate of the server
+      --offline[=<OFFLINE>]
+          Run without network access, using only cached data. Commands fail if data is missing from
+          the cache. Pass `--offline=false` to override an `offline` setting from the configuration
+          [env: PIXI_OFFLINE=] [possible values: true, false]
+      --tls-root-certs <TLS_ROOT_CERTS>
+          Which TLS root certificates to use: 'webpki' (bundled Mozilla roots) or 'system' (system
+          store) [env: PIXI_TLS_ROOT_CERTS=]
+      --use-environment-activation-cache
+          Use environment activation cache (experimental)
+      --no-config
+          Don't read system or user-level configuration files. Project-local
+          `<project>/.pixi/config.toml` is still loaded [env: PIXI_NO_CONFIG=]
+      --config-file <PATH>
+          Load configuration from this file instead of searching system and user-level paths.
+          Project-local `<project>/.pixi/config.toml` is still merged on top [env:
+          PIXI_CONFIG_FILE=]
+ERROR: You must give at least one requirement to install (see "pip help install")
+[LADDER] pixi-conda-forge: install failed
+[LADDER] no Python/conda rung worked (tried: layered-venv isolated-venv pixi-conda-forge); continuing with the container image(s)
+FATAL:   While making image from oci registry: error fetching image to cache: failed to get checksum for /apps/containers/cuda-12.4-devel.sif: unable to parse image name /apps/containers/cuda-12.4-devel.sif: /apps/containers/cuda-12.4-devel.sif not in transport:reference pair
+[STAGE] Failed (exit 255)

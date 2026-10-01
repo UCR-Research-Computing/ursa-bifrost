@@ -1,0 +1,9 @@
+----------------------------------------------------------------------------
+   /apps/modulefiles/gromacs:
+----------------------------------------------------------------------------
+whatis("GROMACS Molecular Dynamics Engine (v2026.3) ")
+prepend_path("PATH","/apps/gromacs/.pixi/envs/default/bin")
+prepend_path("LD_LIBRARY_PATH","/apps/gromacs/.pixi/envs/default/lib")
+help([[GROMACS 2026.3 Molecular Dynamics Engine
+]])
+

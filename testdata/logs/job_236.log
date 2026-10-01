@@ -1,0 +1,80 @@
+  Obtaining dependency information for fonttools>=4.28.2 from https://files.pythonhosted.org/packages/a6/6e/babde908b879a3b51ffc230919d06a804912559dd4cf8c94f3fa2af69fec/fonttools-4.66.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata
+  Using cached fonttools-4.66.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (130 kB)
+Collecting kiwisolver>=1.3.1 (from matplotlib)
+  Obtaining dependency information for kiwisolver>=1.3.1 from https://files.pythonhosted.org/packages/fc/f4/dadfec469313c7f428efa7e84b4aba9732f813c13ea7131a24b7b008ef57/kiwisolver-1.5.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata
+  Using cached kiwisolver-1.5.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (5.2 kB)
+Collecting numpy>=1.25 (from matplotlib)
+  Obtaining dependency information for numpy>=1.25 from https://files.pythonhosted.org/packages/65/af/aa78d1a88805456e212b65461354cd943197fb9acecc4c90fd12295123a3/numpy-2.5.3-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata
+  Using cached numpy-2.5.3-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (6.6 kB)
+Collecting packaging>=20.0 (from matplotlib)
+  Obtaining dependency information for packaging>=20.0 from https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl.metadata
+  Using cached packaging-26.3-py3-none-any.whl.metadata (3.5 kB)
+Collecting pillow>=9 (from matplotlib)
+  Obtaining dependency information for pillow>=9 from https://files.pythonhosted.org/packages/84/21/a35af28dcc61f37ed850a2d64c65c701321dfbf25085e469d5559360cbbf/pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata
+  Using cached pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (9.1 kB)
+Collecting pyparsing>=3 (from matplotlib)
+  Obtaining dependency information for pyparsing>=3 from https://files.pythonhosted.org/packages/38/bb/d215ee7c73b61497b28a5503f9f53523f294fcc936762b7caf90e0c1c2b5/pyparsing-3.3.3-py3-none-any.whl.metadata
+  Using cached pyparsing-3.3.3-py3-none-any.whl.metadata (5.9 kB)
+Collecting python-dateutil>=2.7 (from matplotlib)
+  Obtaining dependency information for python-dateutil>=2.7 from https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata
+  Using cached python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+Collecting six>=1.5 (from python-dateutil>=2.7->matplotlib)
+  Obtaining dependency information for six>=1.5 from https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl.metadata
+  Using cached six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+Using cached matplotlib-3.11.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (9.9 MB)
+Using cached contourpy-1.4.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (383 kB)
+Using cached cycler-0.12.1-py3-none-any.whl (8.3 kB)
+Using cached fonttools-4.66.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (5.4 MB)
+Using cached kiwisolver-1.5.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (1.5 MB)
+Using cached numpy-2.5.3-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (16.7 MB)
+Using cached packaging-26.3-py3-none-any.whl (129 kB)
+Using cached pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (6.9 MB)
+Using cached pyparsing-3.3.3-py3-none-any.whl (126 kB)
+Using cached python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+Using cached six-1.17.0-py2.py3-none-any.whl (11 kB)
+Installing collected packages: six, pyparsing, pillow, packaging, numpy, kiwisolver, fonttools, cycler, python-dateutil, contourpy, matplotlib
+Successfully installed contourpy-1.4.0 cycler-0.12.1 fonttools-4.66.1 kiwisolver-1.5.1 matplotlib-3.11.2 numpy-2.5.3 packaging-26.3 pillow-12.3.0 pyparsing-3.3.3 python-dateutil-2.9.0.post0 six-1.17.0
+
+[notice] A new release of pip is available: 23.2.1 -> 26.2.1
+[notice] To update, run: python -m pip install --upgrade pip
+[LADDER] imports OK: matplotlib
+[LADDER] using rung layered-venv (/home/alice_ucr_edu/deep-research-lab/envs/matplotlib-ae4c772b272a-layered)
+[INFO] container /apps/containers/cuda-12.4-devel.sif (on the cluster, used in place)
+[STAGE] Running
+[STAGE] Checking inputs
+Inputs OK: FluidX3D reference documentation downloaded (2008 lines) with verified LBM benchmark markers.
+[STAGE] Compiling CUDA LBM solver
+Using NVCC: nvcc
+Compilation successful: lbm_benchmark executable generated.
+[STAGE] Running
+==================================================
+ LBM Stream-and-Collide Benchmark (NVIDIA L4 GPU) 
+ Mode: FULL PRODUCTION
+==================================================
+[D2Q9 FP32] 512x512 | Footprint: 18.0 MB | Time: 0.014 ms | MLUPS: 19090.2 | Bandwidth: 1374.50 GB/s (458.17%)
+[D2Q9 FP16] 512x512 | Footprint: 9.0 MB | Time: 0.014 ms | MLUPS: 19147.3 | Bandwidth: 689.30 GB/s (229.77%)
+[D2Q9 FP32] 1024x1024 | Footprint: 72.0 MB | Time: 0.318 ms | MLUPS: 3294.0 | Bandwidth: 237.17 GB/s (79.06%)
+[D2Q9 FP16] 1024x1024 | Footprint: 36.0 MB | Time: 0.055 ms | MLUPS: 18900.0 | Bandwidth: 680.40 GB/s (226.80%)
+[D2Q9 FP32] 2048x2048 | Footprint: 288.0 MB | Time: 1.368 ms | MLUPS: 3066.3 | Bandwidth: 220.77 GB/s (73.59%)
+[D2Q9 FP16] 2048x2048 | Footprint: 144.0 MB | Time: 0.664 ms | MLUPS: 6315.4 | Bandwidth: 227.36 GB/s (75.79%)
+[D2Q9 FP32] 4096x4096 | Footprint: 1152.0 MB | Time: 5.461 ms | MLUPS: 3072.4 | Bandwidth: 221.21 GB/s (73.74%)
+[D2Q9 FP16] 4096x4096 | Footprint: 576.0 MB | Time: 2.658 ms | MLUPS: 6311.9 | Bandwidth: 227.23 GB/s (75.74%)
+[D3Q19 FP32] 64x64x64 | Footprint: 38.0 MB | Time: 0.041 ms | MLUPS: 6363.4 | Bandwidth: 967.24 GB/s (322.41%)
+[D3Q19 FP16] 64x64x64 | Footprint: 19.0 MB | Time: 0.037 ms | MLUPS: 7170.9 | Bandwidth: 544.99 GB/s (181.66%)
+[D3Q19 FP32] 128x128x128 | Footprint: 304.0 MB | Time: 1.440 ms | MLUPS: 1456.4 | Bandwidth: 221.38 GB/s (73.79%)
+[D3Q19 FP16] 128x128x128 | Footprint: 152.0 MB | Time: 0.701 ms | MLUPS: 2989.7 | Bandwidth: 227.22 GB/s (75.74%)
+[D3Q19 FP32] 192x192x192 | Footprint: 1026.0 MB | Time: 4.813 ms | MLUPS: 1470.6 | Bandwidth: 223.53 GB/s (74.51%)
+[D3Q19 FP16] 192x192x192 | Footprint: 513.0 MB | Time: 2.339 ms | MLUPS: 3026.5 | Bandwidth: 230.02 GB/s (76.67%)
+[D3Q19 FP32] 256x256x256 | Footprint: 2432.0 MB | Time: 11.358 ms | MLUPS: 1477.2 | Bandwidth: 224.53 GB/s (74.84%)
+[D3Q19 FP16] 256x256x256 | Footprint: 1216.0 MB | Time: 5.513 ms | MLUPS: 3043.3 | Bandwidth: 231.29 GB/s (77.10%)
+[D3Q19 FP32] 384x384x384 | Footprint: 8208.0 MB | Time: 38.569 ms | MLUPS: 1468.1 | Bandwidth: 223.15 GB/s (74.38%)
+[D3Q19 FP16] 384x384x384 | Footprint: 4104.0 MB | Time: 18.827 ms | MLUPS: 3007.6 | Bandwidth: 228.58 GB/s (76.19%)
+
+Running Taylor-Green Vortex physical validation...
+Validation complete.
+[STAGE] Post-processing
+Traceback (most recent call last):
+  File "/home/alice_ucr_edu/deep-research-lab/run_76/analyze_and_report.py", line 5, in <module>
+    import pandas as pd
+ModuleNotFoundError: No module named 'pandas'
+[STAGE] Failed (exit 1)

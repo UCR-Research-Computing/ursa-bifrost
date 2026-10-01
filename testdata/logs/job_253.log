@@ -1,0 +1,12 @@
+[INFO] job 253 on ucrslurmcl-c3nodeset-2, 22 CPUs, 2026-09-30T18:41:29Z
+[ursa] job 253 on ucrslurmcl-c3nodeset-2: 1 node(s), 22 cores/node, TMPDIR=/tmp/job-253-alice_ucr_edu
+[STAGE] Installing software
+[LADDER] using rung module (python-sci/2026.09)
+[STAGE] Staging data
+[INFO] reusing staged loc-chronicling-america
+[INFO] loc-chronicling-america -> /home/alice_ucr_edu/deep-research-lab/data/loc-chronicling-america-3186ece9e5cbff00 (2.3M)
+[STAGE] Running
+[STAGE] Checking inputs
+inputs OK: staged dataset present (2 files), LOC API responsive.
+[STAGE] Running
+[2026-09-30T20:11:29.102] error: *** JOB 253 ON ucrslurmcl-c3nodeset-2 CANCELLED AT 2026-09-30T20:11:29 DUE TO TIME LIMIT ***

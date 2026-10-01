@@ -1,0 +1,581 @@
+{
+ "jobs": [
+  {
+   "account": "",
+   "accrue_time": {
+    "set": true,
+    "infinite": false,
+    "number": 1790804702
+   },
+   "admin_comment": "",
+   "allocating_node": "ucrslurmcl-slurm-login-001",
+   "array_job_id": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "array_task_id": {
+    "set": false,
+    "infinite": false,
+    "number": 0
+   },
+   "array_max_tasks": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "array_task_string": "",
+   "association_id": 0,
+   "batch_features": "",
+   "batch_flag": true,
+   "batch_host": "ucrslurmcl-c3nodeset-0",
+   "flags": [
+    "JOB_WAS_RUNNING",
+    "USING_DEFAULT_ACCOUNT",
+    "USING_DEFAULT_QOS",
+    "USING_DEFAULT_WCKEY"
+   ],
+   "burst_buffer": "",
+   "burst_buffer_state": "",
+   "cluster": "ucrslurmcl",
+   "cluster_features": "",
+   "command": "/home/alice_ucr_edu/deep-research-lab/warm/worker.sh",
+   "comment": "",
+   "container": "",
+   "container_id": "",
+   "contiguous": false,
+   "core_spec": 0,
+   "thread_spec": 32766,
+   "cores_per_socket": {
+    "set": false,
+    "infinite": false,
+    "number": 0
+   },
+   "billable_tres": {
+    "set": true,
+    "infinite": false,
+    "number": 22.0
+   },
+   "cpus_per_task": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "cpu_frequency_minimum": {
+    "set": false,
+    "infinite": false,
+    "number": 0
+   },
+   "cpu_frequency_maximum": {
+    "set": false,
+    "infinite": false,
+    "number": 0
+   },
+   "cpu_frequency_governor": {
+    "set": false,
+    "infinite": false,
+    "number": 0
+   },
+   "cpus_per_tres": "",
+   "cron": "",
+   "deadline": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "delay_boot": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "dependency": "",
+   "derived_exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "eligible_time": {
+    "set": true,
+    "infinite": false,
+    "number": 1790804702
+   },
+   "end_time": {
+    "set": true,
+    "infinite": false,
+    "number": 1790891159
+   },
+   "excluded_nodes": "",
+   "exit_code": {
+    "status": [
+     "SUCCESS"
+    ],
+    "return_code": {
+     "set": true,
+     "infinite": false,
+     "number": 0
+    },
+    "signal": {
+     "id": {
+      "set": false,
+      "infinite": false,
+      "number": 0
+     },
+     "name": ""
+    }
+   },
+   "extra": "",
+   "failed_node": "",
+   "features": "",
+   "federation_origin": "",
+   "federation_siblings_active": "",
+   "federation_siblings_viable": "",
+   "gres_detail": [],
+   "group_id": 50001,
+   "group_name": "alice_ucr_edu",
+   "het_job_id": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "het_job_id_set": "",
+   "het_job_offset": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "job_id": 260,
+   "job_resources": {
+    "select_type": [
+     "CORE"
+    ],
+    "nodes": {
+     "count": 1,
+     "select_type": [
+      "RESERVED"
+     ],
+     "list": "ucrslurmcl-c3nodeset-0",
+     "whole": true,
+     "allocation": [
+      {
+       "index": 0,
+       "name": "ucrslurmcl-c3nodeset-0",
+       "cpus": {
+        "count": 22,
+        "used": 0
+       },
+       "memory": {
+        "used": 0,
+        "allocated": 87054
+       },
+       "sockets": [
+        {
+         "index": 0,
+         "cores": [
+          {
+           "index": 0,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 1,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 2,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 3,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 4,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 5,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 6,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 7,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 8,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 9,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 10,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 11,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 12,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 13,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 14,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 15,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 16,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 17,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 18,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 19,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 20,
+           "status": [
+            "ALLOCATED"
+           ]
+          },
+          {
+           "index": 21,
+           "status": [
+            "ALLOCATED"
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "cpus": 1,
+    "threads_per_core": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    }
+   },
+   "job_size_str": [],
+   "job_state": [
+    "RUNNING"
+   ],
+   "last_sched_evaluation": {
+    "set": true,
+    "infinite": false,
+    "number": 1790804702
+   },
+   "licenses": "",
+   "licenses_allocated": "",
+   "mail_type": [],
+   "mail_user": "alice_ucr_edu",
+   "max_cpus": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "max_nodes": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "mcs_label": "",
+   "memory_per_tres": "",
+   "name": "lab-warm",
+   "network": "",
+   "nodes": "ucrslurmcl-c3nodeset-0",
+   "nice": 0,
+   "tasks_per_core": {
+    "set": false,
+    "infinite": true,
+    "number": 0
+   },
+   "tasks_per_tres": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "tasks_per_node": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "tasks_per_socket": {
+    "set": false,
+    "infinite": true,
+    "number": 0
+   },
+   "tasks_per_board": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "cpus": {
+    "set": true,
+    "infinite": false,
+    "number": 22
+   },
+   "node_count": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "tasks": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "partition": "computehigh",
+   "prefer": "",
+   "memory_per_cpu": {
+    "set": true,
+    "infinite": false,
+    "number": 3957
+   },
+   "memory_per_node": {
+    "set": false,
+    "infinite": false,
+    "number": 0
+   },
+   "minimum_cpus_per_node": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "minimum_tmp_disk_per_node": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "power": {
+    "flags": []
+   },
+   "preempt_time": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "preemptable_time": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "pre_sus_time": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "hold": false,
+   "priority": {
+    "set": true,
+    "infinite": false,
+    "number": 1
+   },
+   "priority_by_partition": [],
+   "profile": [
+    "NOT_SET"
+   ],
+   "qos": "normal",
+   "reboot": false,
+   "required_nodes": "",
+   "required_switches": 0,
+   "requeue": true,
+   "resize_time": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "restart_cnt": 0,
+   "resv_name": "",
+   "scheduled_nodes": "",
+   "segment_size": 0,
+   "selinux_context": "",
+   "shared": [
+    "none"
+   ],
+   "step_id": {
+    "sluid": "sBFDM3T4FHFD00",
+    "job_id": {
+     "set": true,
+     "infinite": false,
+     "number": 260
+    },
+    "step_het_component": {
+     "set": false,
+     "infinite": false,
+     "number": 0
+    },
+    "step_id": "entire"
+   },
+   "sockets_per_board": 0,
+   "sockets_per_node": {
+    "set": false,
+    "infinite": false,
+    "number": 0
+   },
+   "start_time": {
+    "set": true,
+    "infinite": false,
+    "number": 1790804759
+   },
+   "state_description": "",
+   "state_reason": "None",
+   "standard_input": "/dev/null",
+   "standard_output": "/home/alice_ucr_edu/deep-research-lab/warm/worker-%j.log",
+   "standard_error": "",
+   "stdin_expanded": "/dev/null",
+   "stdout_expanded": "/home/alice_ucr_edu/deep-research-lab/warm/worker-260.log",
+   "stderr_expanded": "",
+   "submit_time": {
+    "set": true,
+    "infinite": false,
+    "number": 1790804702
+   },
+   "submit_line": "sbatch --parsable --job-name=lab-warm -p computehigh -N 1 --exclusive -t 24:00:00 --signal=B:USR1@60 -o /home/alice_ucr_edu/deep-research-lab/warm/worker-%j.log --export=ALL,WARM=/home/alice_ucr_edu/deep-research-lab/warm,IDLE_MIN=0,MAX_PAR=2,WARM_LIMIT_SEC=86400 /home/alice_ucr_edu/deep-research-lab/warm/worker.sh",
+   "suspend_time": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "system_comment": "",
+   "time_limit": {
+    "set": true,
+    "infinite": false,
+    "number": 1440
+   },
+   "time_minimum": {
+    "set": true,
+    "infinite": false,
+    "number": 0
+   },
+   "threads_per_core": {
+    "set": false,
+    "infinite": false,
+    "number": 0
+   },
+   "tres_bind": "",
+   "tres_freq": "",
+   "tres_per_job": "",
+   "tres_per_node": "",
+   "tres_per_socket": "",
+   "tres_per_task": "",
+   "tres_req_str": "cpu=1,mem=3957M,node=1,billing=1",
+   "tres_alloc_str": "cpu=22,mem=87054M,node=1,billing=22",
+   "user_id": 50001,
+   "user_name": "alice_ucr_edu",
+   "maximum_switch_wait_time": 0,
+   "wckey": "",
+   "current_working_directory": "/home/alice_ucr_edu"
+  }
+ ],
+ "last_backfill": {
+  "set": true,
+  "infinite": false,
+  "number": 1790811409
+ },
+ "last_update": {
+  "set": true,
+  "infinite": false,
+  "number": 1790875047
+ },
+ "meta": {
+  "plugin": {
+   "type": "",
+   "name": "",
+   "data_parser": "data_parser/v0.0.44",
+   "accounting_storage": "accounting_storage/slurmdbd"
+  },
+  "client": {
+   "source": "",
+   "user": "alice_ucr_edu",
+   "group": "alice_ucr_edu"
+  },
+  "command": [
+   "squeue"
+  ],
+  "slurm": {
+   "version": {
+    "major": "25",
+    "micro": "4",
+    "minor": "11"
+   },
+   "release": "25.11.4",
+   "cluster": "ucrslurmcl"
+  }
+ },
+ "errors": [],
+ "warnings": []
+}
