@@ -477,4 +477,5 @@ backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, 
 |---|---|---|
 | 2026-10-01 | Draft 1 | Spec and design (as `hpc-agent`) |
 | 2026-10-01 | Draft 2 / v0.1.0 | Renamed `ursa-bifrost`; P1 built and verified live; section 17 added |
+| 2026-10-01 | v0.2.1 | python-error rule (NameError/TypeError/... in the script's own code; found on live job 237); no false srun warning when --ntasks-per-node is set |
 | 2026-10-01 | Draft 3 / v0.2.0 | P2: waste_report(_all), health, ticket_draft, triage_ticket prompt; public repo in the UCR-Research-Computing org; Hermes connected |

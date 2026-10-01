@@ -235,6 +235,9 @@ func TestScriptCheck(t *testing.T) {
 	if sc.EstCostUSD == nil || *sc.EstCostUSD != 14.96 { // 1.87 x 2 nodes x 4 h
 		t.Errorf("cost: %v", sc.EstCostUSD)
 	}
+	if strings.Contains(issues(sc), "one task per node") {
+		t.Errorf("--ntasks-per-node already set; false srun warning: %s", issues(sc))
+	}
 
 	bad := "#SBATCH -p gpu\nmodule load gromacs/2026.1\npython x.py\n"
 	sc, _ = s.ScriptCheck(context.Background(), bad)

@@ -168,6 +168,7 @@ func TestEachLogRuleFires(t *testing.T) {
 		"disk-full":         "OSError: [Errno 28] No space left on device",
 		"permission":        "bash: ./run.sh: Permission denied",
 		"command-not-found": "line 4: gmx_mpi: command not found",
+		"python-error":      "Traceback (most recent call last):\n  File \"r.py\", line 222\nNameError: name 'd3_fp32_mlups' is not defined. Did you mean: 'fp32_mlups'?",
 	}
 	for _, r := range logRules {
 		s, ok := samples[r.id]
@@ -184,5 +185,26 @@ func TestErrorsSortBeforeWarnings(t *testing.T) {
 	fs := Explain(Facts{State: "TIMEOUT", CPUsAlloc: 22, ElapsedSec: 5400, CPUSeconds: 10})
 	if len(fs) < 2 || fs[0].Severity != Error {
 		t.Fatalf("order: %+v", fs)
+	}
+}
+
+// Job 237 (live, 2026-10-01): the run finished, then the report script hit a
+// NameError. Before v0.2.1 it fell through to "no known pattern".
+func TestScriptOwnPythonError(t *testing.T) {
+	log := "Generated verdict.json: all_pass=True\nTraceback (most recent call last):\n  File \"/x/analyze_and_report.py\", line 222, in <module>\nNameError: name 'd3_fp32_mlups' is not defined. Did you mean: 'fp32_mlups'?\n[STAGE] Failed (exit 1)\n"
+	fs := Explain(Facts{State: "FAILED", ExitCode: "1", Log: log, LogReadable: true})
+	f := want(t, fs, "python-error")
+	if !strings.Contains(strings.Join(f.Evidence, " "), "d3_fp32_mlups") {
+		t.Errorf("evidence: %v", f.Evidence)
+	}
+	for _, x := range fs {
+		if x.Rule == "script-error" {
+			t.Error("fell back to script-error")
+		}
+	}
+	// a specific rule still wins over the generic one
+	fs = Explain(Facts{State: "FAILED", ExitCode: "1", Log: "ModuleNotFoundError: No module named 'x'\n", LogReadable: true})
+	if fs[0].Rule != "python-import" {
+		t.Errorf("order: %v", rulesOf(fs))
 	}
 }
