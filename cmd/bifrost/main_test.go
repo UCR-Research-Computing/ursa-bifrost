@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -160,5 +161,69 @@ func TestCLISubmitNeedsConfirmation(t *testing.T) {
 	out, _, code = runCLI(t, "submit", sc, "--yes", "--json", "--config", testConfig(t, "R1"))
 	if code != 1 || !strings.Contains(out, "needs tier A1") {
 		t.Fatalf("R1 submit: %d %s", code, out)
+	}
+}
+
+func TestElapsedText(t *testing.T) {
+	for _, c := range []struct {
+		state string
+		sec   int64
+		want  string
+	}{{"COMPLETED", 0, "0m00s"}, {"PENDING", 0, "-"}, {"CANCELLED by 1", 0, "-"}, {"FAILED", 61, "1m01s"}, {"RUNNING", 0, "0m00s"}} {
+		if got := elapsedText(c.state, c.sec); got != c.want {
+			t.Errorf("%s %d: %q, want %q", c.state, c.sec, got, c.want)
+		}
+	}
+}
+
+// TestConfirmRaceAcrossProcesses runs the built CLI five times in parallel on one
+// token. Exactly one may submit (live finding 2026-10-01: before the file lock,
+// all five reached sbatch).
+func TestConfirmRaceAcrossProcesses(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the binary")
+	}
+	bin := filepath.Join(t.TempDir(), "bifrost")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v %s", err, out)
+	}
+	cfg := testConfig(t, "R1, A1")
+	sc := filepath.Join(t.TempDir(), "j.sh")
+	_ = os.WriteFile(sc, []byte("#!/bin/bash\n#SBATCH -p standard\n#SBATCH -t 20\necho hi\n"), 0o600)
+	out, err := exec.Command(bin, "submit", sc, "--json", "--config", cfg).Output()
+	if err != nil {
+		t.Fatalf("prepare: %v %s", err, out)
+	}
+	var v struct {
+		Data struct {
+			Token string `json:"confirm_token"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(out, &v); err != nil || v.Data.Token == "" {
+		t.Fatalf("no token: %s", out)
+	}
+	type res struct {
+		out  string
+		code int
+	}
+	ch := make(chan res, 5)
+	for i := 0; i < 5; i++ {
+		go func() {
+			c := exec.Command(bin, "confirm", v.Data.Token, "--json", "--config", cfg)
+			o, _ := c.CombinedOutput()
+			ch <- res{string(o), c.ProcessState.ExitCode()}
+		}()
+	}
+	ok := 0
+	for i := 0; i < 5; i++ {
+		r := <-ch
+		if r.code == 0 && strings.Contains(r.out, `"job_id"`) {
+			ok++
+		} else if !strings.Contains(r.out, "confirm") {
+			t.Errorf("unexpected refusal text: %s", r.out)
+		}
+	}
+	if ok != 1 {
+		t.Fatalf("%d confirms succeeded for one token, want exactly 1", ok)
 	}
 }

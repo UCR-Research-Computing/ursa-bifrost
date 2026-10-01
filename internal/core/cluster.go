@@ -81,7 +81,7 @@ func (s *Service) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 			p := get(pn)
 			p.NodesTotal++
 			switch {
-			case n.HasState("DOWN") || n.HasState("DRAIN") || n.HasState("FAIL") || n.HasState("NOT_RESPONDING"):
+			case n.Broken() || n.HasState("DRAIN"):
 				p.Down++
 				msg := n.Name + ": " + strings.Join(n.State, "+")
 				if n.Reason != "" {

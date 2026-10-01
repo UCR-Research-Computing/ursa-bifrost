@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go"
+FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
@@ -47,6 +47,10 @@ mutate "A1 kind check"        internal/core/a1.go 'if p.Kind != kind {' 'if fals
 mutate "results traversal"    internal/core/results.go 'if path.IsAbs(name) || name == ".." || strings.HasPrefix(name, "../") {' 'if false {'
 mutate "results no overwrite" internal/core/results.go 'target = freeName(target)' 'target = target'
 mutate "results home guard"   internal/core/results.go 'if dir == home || dir == home+"/" {' 'if false {'
+mutate "A1 cross-process lock" internal/core/a1.go 'if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {' 'if false {'
+mutate "redact whole assignment" internal/policy/redact.go 'for _, r := range redactRules {' 'for _, r := range append(append([]redactRule{}, redactRules[1:]...), redactRules[0]) {'
+mutate "booting is not broken" internal/slurm/types.go 'return n.HasState("NOT_RESPONDING") && !n.Booting()' 'return n.HasState("NOT_RESPONDING")'
+mutate "release only never-ran" internal/core/a1.go 'neverRan := d.State == "PENDING" && d.Started == ""' 'neverRan := true'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

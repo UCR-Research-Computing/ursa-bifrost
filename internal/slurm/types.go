@@ -340,6 +340,20 @@ func (n Node) HasState(s string) bool { return contains(n.State, s) }
 // alone only means "power off once free".
 func (n Node) PoweredUp() bool { return !n.HasState("POWERED_DOWN") }
 
+// Booting is a cloud node still starting. slurm-gcp nodes report
+// NOT_RESPONDING (and sometimes POWER_DOWN as the next step) while POWERING_UP;
+// that is normal for the first minutes and is not a failure.
+func (n Node) Booting() bool { return n.HasState("POWERING_UP") }
+
+// Broken is a node that failed: DOWN, FAIL or DRAIN, or NOT_RESPONDING when it
+// is not merely still booting.
+func (n Node) Broken() bool {
+	if n.HasState("DOWN") || n.HasState("FAIL") {
+		return true
+	}
+	return n.HasState("NOT_RESPONDING") && !n.Booting()
+}
+
 // NodesResponse is `scontrol show nodes --json`.
 type NodesResponse struct {
 	Nodes    []Node    `json:"nodes"`

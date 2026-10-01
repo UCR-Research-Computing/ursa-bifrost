@@ -311,7 +311,7 @@ func (s *Service) Health(ctx context.Context) (*Health, error) {
 			reason = "no reason recorded"
 		}
 		switch {
-		case n.HasState("DOWN") || n.HasState("FAIL") || n.HasState("NOT_RESPONDING"):
+		case n.Broken():
 			add(HealthIssue{Severity: "error", Kind: "node-down", Subject: n.Name, Since: since,
 				Detail: strings.Join(n.State, "+") + ": " + reason,
 				Advice: "On slurm-gcp a cloud node that failed to boot or was lost goes DOWN; check the resume log on the controller and `scontrol update nodename=... state=resume` once fixed (admin)."})

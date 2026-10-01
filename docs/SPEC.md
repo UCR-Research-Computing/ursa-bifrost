@@ -495,6 +495,21 @@ plan), started in about a minute, completed, and `job_results --download` copied
 the chosen partition has nodes that failed to boot and suggests one with an idle node up or no
 failures (computehigh usually has capacity).
 
+### v0.3.1 (2026-10-01): live test campaign fixes
+
+A live campaign (13 real jobs, 16 negative CLI cases, 22 MCP checks through the Python MCP
+SDK Hermes uses) found five bugs, all fixed with a test that fails on v0.3.0:
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | Two processes could confirm one token: 5 parallel `bifrost confirm` calls all reached the cluster (only a folder-exists check stopped four). The mutex was per process | exclusive `flock` on `<state>.lock` around every state read-modify-write; cross-process race test with the built binary |
+| 2 | Redaction leaked the secret half of `aws_secret_access_key = AKIA.../secret`: the key-id rule ran first and its marker ended the value | NAME=value rule runs first |
+| 3 | Nodes in their first boot (`NOT_RESPONDING+POWERING_UP`) counted as down: false `node-down` health errors and a false stockout warning while jobs started normally | `Node.Broken()`: NOT_RESPONDING counts only when not booting; DOWN/FAIL always |
+| 4 | Jobs cancelled before they started kept their worst case on the day cap | cancel of a never-started job releases its ledger entry (submit count unchanged) |
+| 5 | Jobs that ran under a second showed elapsed "-" | "-" only for jobs that never ran |
+
+Mutation check: 26 guards, all killed.
+
 Not yet built: `job_pending_reason` is
 folded into `job_show`/`job_explain`; A1 submit/cancel (P3); HTTP transport, SSO and REST
 backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, unused).
@@ -505,6 +520,7 @@ backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, 
 |---|---|---|
 | 2026-10-01 | Draft 1 | Spec and design (as `hpc-agent`) |
 | 2026-10-01 | Draft 2 / v0.1.0 | Renamed `ursa-bifrost`; P1 built and verified live; section 17 added |
+| 2026-10-01 | v0.3.1 | Live test campaign: cross-process token lock, redaction order, booting nodes not down, day-cap release on cancel-before-start, elapsed display |
 | 2026-10-01 | Draft 4 / v0.3.0 | P3: A1 submit/cancel/hold/release with single-use confirm tokens and caps; job_results (list/read/download to ~/ursa-results) |
 | 2026-10-01 | v0.2.2 | modules_search also returns matching prebuilt containers and recipes (AlphaFold is a container, not a module) |
 | 2026-10-01 | v0.2.1 | python-error rule (NameError/TypeError/... in the script's own code; found on live job 237); no false srun warning when --ntasks-per-node is set |

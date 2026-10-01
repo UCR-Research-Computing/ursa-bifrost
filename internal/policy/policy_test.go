@@ -100,3 +100,18 @@ func TestAuditRedactsArgs(t *testing.T) {
 		t.Errorf("audit mode %v", st.Mode().Perm())
 	}
 }
+
+func TestRedactWholeAssignedValue(t *testing.T) {
+	// live finding 2026-10-01: a key id inside an assigned value used to be redacted
+	// alone, leaving the secret part after it
+	in := "aws_secret_access_key = AKIAABCDEFGHIJKLMNOP/fakeSecretKey1234567890abcd\nAPI_KEY=sk-test-0123456789abcdefghijklmnop\nbare AKIAABCDEFGHIJKLMNOP in a log\nnormal line 42"
+	out := Redact(in)
+	for _, leak := range []string{"fakeSecretKey", "AKIAABCDEFGHIJKLMNOP", "sk-test"} {
+		if strings.Contains(out, leak) {
+			t.Errorf("leaked %q in %q", leak, out)
+		}
+	}
+	if !strings.Contains(out, "normal line 42") {
+		t.Error("over-redacted")
+	}
+}

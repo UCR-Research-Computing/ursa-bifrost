@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/backend"
@@ -117,6 +118,9 @@ type ledgerEntry struct {
 	WorstUSD float64   `json:"worst_usd"`
 	Dir      string    `json:"dir"`
 	Hash     string    `json:"hash"`
+	// Released is set when the job was cancelled before it started: it can no
+	// longer spend, so its worst case stops counting against the day cap.
+	Released bool `json:"released,omitempty"`
 }
 
 type a1State struct {
@@ -124,7 +128,41 @@ type a1State struct {
 	Ledger  []ledgerEntry      `json:"ledger"`
 }
 
+// stateLock serializes A1 state across goroutines (stateMu) AND across
+// processes (an exclusive flock on <state>.lock). The MCP server and any number
+// of CLI calls share one ledger; without the file lock two processes could both
+// read the same token before either removed it (live finding 2026-10-01: five
+// parallel confirms of one token reached the cluster; a folder check stopped
+// four, but the ledger and day cap must not rely on that).
 var stateMu sync.Mutex
+
+type stateLock struct{ f *os.File }
+
+func (s *Service) lockState() (*stateLock, error) {
+	stateMu.Lock()
+	p := s.statePath() + ".lock"
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		stateMu.Unlock()
+		return nil, err
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		stateMu.Unlock()
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		stateMu.Unlock()
+		return nil, fmt.Errorf("locking A1 state: %w", err)
+	}
+	return &stateLock{f: f}, nil
+}
+
+func (l *stateLock) unlock() {
+	_ = syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
+	_ = l.f.Close()
+	stateMu.Unlock()
+}
 
 func (s *Service) statePath() string { return config.Expand(s.Cfg.StatePath) }
 
@@ -182,8 +220,10 @@ func (s *Service) committedToday(st *a1State) (usd float64, n int) {
 	start := time.Date(y, m, d, 0, 0, 0, 0, now.Location())
 	for _, e := range st.Ledger {
 		if !e.Time.Before(start) {
-			usd += e.WorstUSD
-			n++
+			if !e.Released {
+				usd += e.WorstUSD
+			}
+			n++ // the submission count still counts it
 		}
 	}
 	return round(usd, 2), n
@@ -298,8 +338,11 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 		return nil, fmt.Errorf("%w: worst case $%.2f (%d node(s) x %d min x $%.2f/node-h) is over the $%.2f per-job cap", ErrCapExceeded, worst, nodes, mins, price, caps.MaxCostPerJobUSD)
 	}
 
-	stateMu.Lock()
-	defer stateMu.Unlock()
+	lk, err := s.lockState()
+	if err != nil {
+		return nil, err
+	}
+	defer lk.unlock()
 	st, err := s.loadState()
 	if err != nil {
 		return nil, err
@@ -386,7 +429,7 @@ func (s *Service) partitionTrouble(ctx context.Context, part string) string {
 	upIdle := map[string]bool{}
 	troubled := map[string]bool{}
 	for _, n := range nr.Nodes {
-		down := n.HasState("DOWN") || n.HasState("NOT_RESPONDING") || n.HasState("FAIL")
+		down := n.Broken()
 		for _, p := range n.Partitions {
 			if down {
 				troubled[p] = true
@@ -470,8 +513,11 @@ func (s *Service) take(st *a1State, tok, kind string) (pending, error) {
 
 // ConfirmSubmit runs exactly the stored submission for a token.
 func (s *Service) ConfirmSubmit(ctx context.Context, tok string) (*Confirmed, error) {
-	stateMu.Lock()
-	defer stateMu.Unlock()
+	lk, err := s.lockState()
+	if err != nil {
+		return nil, err
+	}
+	defer lk.unlock()
 	st, err := s.loadState()
 	if err != nil {
 		return nil, err
@@ -545,8 +591,11 @@ func (s *Service) PrepareAction(ctx context.Context, kind, jobID string) (*Actio
 		"hold":    "The job stays queued but will not start until released.",
 		"release": "The held job becomes eligible to start.",
 	}[kind]
-	stateMu.Lock()
-	defer stateMu.Unlock()
+	lk, err := s.lockState()
+	if err != nil {
+		return nil, err
+	}
+	defer lk.unlock()
 	st, err := s.loadState()
 	if err != nil {
 		return nil, err
@@ -567,22 +616,27 @@ func (s *Service) PrepareAction(ctx context.Context, kind, jobID string) (*Actio
 
 // ConfirmAction runs a stored cancel/hold/release.
 func (s *Service) ConfirmAction(ctx context.Context, kind, tok string) (*Confirmed, error) {
-	stateMu.Lock()
+	lk, err := s.lockState()
+	if err != nil {
+		return nil, err
+	}
 	st, err := s.loadState()
 	if err != nil {
-		stateMu.Unlock()
+		lk.unlock()
 		return nil, err
 	}
 	p, err := s.take(st, tok, kind)
 	_ = s.saveState(st)
-	stateMu.Unlock()
+	lk.unlock()
 	if err != nil {
 		return nil, err
 	}
 	// ownership is re-checked at confirm time
-	if _, err := s.JobShow(ctx, JobShowInput{JobID: p.JobID}); err != nil {
+	d, err := s.JobShow(ctx, JobShowInput{JobID: p.JobID})
+	if err != nil {
 		return nil, err
 	}
+	neverRan := d.State == "PENDING" && d.Started == ""
 	var c backend.Command
 	switch kind {
 	case "cancel":
@@ -600,13 +654,45 @@ func (s *Service) ConfirmAction(ctx context.Context, kind, tok string) (*Confirm
 	}
 	s.invalidateQueue()
 	past := map[string]string{"cancel": "Cancelled", "hold": "Held", "release": "Released"}[kind]
-	return &Confirmed{Action: kind, JobID: p.JobID, Message: fmt.Sprintf("%s job %s.", past, p.JobID)}, nil
+	msg := fmt.Sprintf("%s job %s.", past, p.JobID)
+	if kind == "cancel" && neverRan {
+		if usd := s.releaseLedger(p.JobID); usd > 0 {
+			msg += fmt.Sprintf(" It never started, so its $%.2f worst case no longer counts against today's cap.", usd)
+		}
+	}
+	return &Confirmed{Action: kind, JobID: p.JobID, Message: msg}, nil
+}
+
+// releaseLedger marks a never-started, cancelled job's ledger entry as released.
+func (s *Service) releaseLedger(jobID string) float64 {
+	lk, err := s.lockState()
+	if err != nil {
+		return 0
+	}
+	defer lk.unlock()
+	st, err := s.loadState()
+	if err != nil {
+		return 0
+	}
+	for i := range st.Ledger {
+		if st.Ledger[i].JobID == jobID && !st.Ledger[i].Released {
+			st.Ledger[i].Released = true
+			if s.saveState(st) != nil {
+				return 0
+			}
+			return st.Ledger[i].WorstUSD
+		}
+	}
+	return 0
 }
 
 // PendingKind says which action a token belongs to, without using it.
 func (s *Service) PendingKind(tok string) (string, error) {
-	stateMu.Lock()
-	defer stateMu.Unlock()
+	lk, err := s.lockState()
+	if err != nil {
+		return "", err
+	}
+	defer lk.unlock()
 	st, err := s.loadState()
 	if err != nil {
 		return "", err
@@ -620,8 +706,11 @@ func (s *Service) PendingKind(tok string) (string, error) {
 
 // SpendToday reports the A1 ledger for today (for status and tests).
 func (s *Service) SpendToday() (usd float64, submits int, err error) {
-	stateMu.Lock()
-	defer stateMu.Unlock()
+	lk, err := s.lockState()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer lk.unlock()
 	st, err := s.loadState()
 	if err != nil {
 		return 0, 0, err
