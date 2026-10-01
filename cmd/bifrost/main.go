@@ -60,6 +60,11 @@ Global flags (anywhere): --json  --config PATH
 Times: now-7days, now-12hours, YYYY-MM-DD. --all/--any need tier R2 in the config.
 `
 
+type moduleResult struct {
+	Matches    []core.ModuleHit `json:"matches"`
+	Containers []core.Container `json:"containers,omitempty"`
+}
+
 type globals struct {
 	json   bool
 	config string
@@ -160,12 +165,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "modules":
 		q := strings.Join(rest, " ")
 		r, err := core.Call(ctx, svc, "cli", "modules_search", "R1", map[string]any{"query": q}, false,
-			func(ctx context.Context) ([]core.ModuleHit, error) {
+			func(ctx context.Context) (moduleResult, error) {
 				cat, err := svc.Catalog(ctx)
 				if err != nil {
-					return nil, err
+					return moduleResult{}, err
 				}
-				return cat.SearchModules(q), nil
+				return moduleResult{Matches: cat.SearchModules(q), Containers: cat.SearchContainers(q)}, nil
 			})
 		return out(stdout, stderr, g, r, err, func(w io.Writer) { printModules(w, r.Data) })
 	case "module":

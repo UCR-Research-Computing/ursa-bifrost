@@ -225,9 +225,20 @@ func New(s *core.Service) *mcp.Server {
 				}
 				hits := cat.SearchModules(in.Query)
 				out := map[string]any{"matches": hits, "how_to_load": cat.HowToLoad}
+				if cts := cat.SearchContainers(in.Query); len(cts) > 0 {
+					out["containers"] = cts
+					out["container_use"] = "apptainer exec [--nv for GPU] <path> <command>; run local .sif files directly, do not pull them"
+				}
+				if rs := cat.SearchRecipes(in.Query); len(rs) > 0 {
+					out["recipes"] = rs
+				}
 				if len(hits) == 0 && in.Query != "" {
-					out["closest"] = cat.Closest(in.Query, 5)
-					out["hint"] = "Not a module. Python packages come from python-sci/python-ml or a uv/Pixi env; see recipes and install_tools in hpc://catalog."
+					if c := cat.Closest(in.Query, 5); len(c) > 0 {
+						out["closest"] = c
+					}
+					if out["containers"] == nil && out["recipes"] == nil {
+						out["hint"] = "Not a module or prebuilt container. Python packages come from python-sci/python-ml or a uv/Pixi env; anything on Docker Hub runs with apptainer (docker://image:tag). See install_tools in recipes."
+					}
 				}
 				return out, nil
 			})
