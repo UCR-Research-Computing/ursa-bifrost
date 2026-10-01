@@ -45,6 +45,16 @@ type Limits struct {
 	CallsPerMin int `yaml:"calls_per_min"`
 }
 
+// Caps bound what the A1 tier may start. A plan over any cap is refused.
+type Caps struct {
+	MaxNodes          int     `yaml:"max_nodes"`
+	MaxHours          float64 `yaml:"max_hours"`
+	MaxCostPerJobUSD  float64 `yaml:"max_cost_usd_per_job"`
+	MaxCostPerDayUSD  float64 `yaml:"max_cost_usd_per_day"`
+	MaxSubmitsPerDay  int     `yaml:"max_submits_per_day"`
+	ConfirmTTLMinutes int     `yaml:"confirm_ttl_minutes"`
+}
+
 // Config is the whole file.
 type Config struct {
 	Cluster     string             `yaml:"cluster"`
@@ -60,6 +70,10 @@ type Config struct {
 	TTL         TTL                `yaml:"cache_ttl"`
 	Limits      Limits             `yaml:"limits"`
 	AuditPath   string             `yaml:"audit_path"`
+	Caps        Caps               `yaml:"caps"`
+	StatePath   string             `yaml:"state_path"`  // A1 plans, tokens and spend ledger
+	ResultsDir  string             `yaml:"results_dir"` // local folder for downloaded results
+	JobsRoot    string             `yaml:"jobs_root"`   // remote folder under $HOME for submitted jobs
 	Path        string             `yaml:"-"`
 }
 
@@ -103,7 +117,12 @@ func Default() Config {
 			UntrustedCh: 16000,
 			CallsPerMin: 60,
 		},
-		AuditPath: "~/.local/share/ursa-bifrost/audit.jsonl",
+		AuditPath:  "~/.local/share/ursa-bifrost/audit.jsonl",
+		StatePath:  "~/.local/share/ursa-bifrost/a1.json",
+		ResultsDir: "~/ursa-results",
+		JobsRoot:   "bifrost-jobs",
+		Caps: Caps{MaxNodes: 4, MaxHours: 24, MaxCostPerJobUSD: 25, MaxCostPerDayUSD: 50,
+			MaxSubmitsPerDay: 20, ConfirmTTLMinutes: 10},
 	}
 }
 
@@ -156,6 +175,12 @@ func (c Config) Validate() error {
 		}
 	default:
 		return fmt.Errorf("config: unknown backend %q (ssh or fixture)", c.Backend)
+	}
+	if c.JobsRoot != "bifrost-jobs" {
+		return errors.New("config: jobs_root must be bifrost-jobs (other folders are not supported yet)")
+	}
+	if c.Caps.MaxNodes < 1 || c.Caps.MaxHours <= 0 || c.Caps.MaxCostPerJobUSD <= 0 || c.Caps.MaxCostPerDayUSD <= 0 || c.Caps.ConfirmTTLMinutes < 1 {
+		return errors.New("config: caps must all be positive")
 	}
 	for _, t := range c.Tiers {
 		switch t {
@@ -213,8 +238,15 @@ show_cost: true
 # usd_per_node_hour: {computehigh: 1.87}
 
 # Tiers for the local user: R1 own jobs + cluster facts, R2 staff (all users),
-# A1 submit/cancel (not implemented yet)
+# A1 submit/cancel/hold/release own jobs (two-step confirm, capped below)
 tiers: [R1]
+
+# A1 caps: a plan over any of these is refused (worst case = nodes x hours x price)
+caps: {max_nodes: 4, max_hours: 24, max_cost_usd_per_job: 25, max_cost_usd_per_day: 50,
+       max_submits_per_day: 20, confirm_ttl_minutes: 10}
+results_dir: ~/ursa-results          # bifrost job results <id> downloads here
+jobs_root: bifrost-jobs              # submitted jobs run in ~/bifrost-jobs/<stamp>-<name> on the cluster
+state_path: ~/.local/share/ursa-bifrost/a1.json
 
 cache_ttl: {queue: 20s, nodes: 30s, acct: 60s, catalog: 1h, modules: 1h}
 limits: {log_lines: 200, list_rows: 200, script_bytes: 65536, untrusted_chars: 16000, calls_per_min: 60}

@@ -9,7 +9,7 @@ with the evidence and the exact scheduler commands that produced it. The server 
 language model: it runs allow-listed scheduler queries and fixed diagnosis rules, and the
 calling assistant does the reasoning.
 
-Status: v0.2 (phases P1 and P2 of `docs/SPEC.md`): read-only, SSH backend, personal and staff tiers.
+Status: v0.3 (phases P1-P3 of `docs/SPEC.md`): SSH backend; read tiers R1/R2 and an opt-in act tier A1 (submit/cancel with two-step confirmation and caps).
 
 ## Install
 
@@ -40,7 +40,30 @@ bifrost usage --since now-30days  node-hours, core-hours, efficiency, estimated 
 bifrost waste --since now-30days  avoidable spend: idle cores, idle nodes, repeat failures
 bifrost health                    down/drained nodes, slow boots, long-pending jobs (R2)
 bifrost ticket 236 [--text f.txt] reply draft for a "my job failed" ticket (R2; never sent)
+bifrost results 265 [--download]  list / read / download a job's output folder
+bifrost submit job.sh             plan, show worst-case cost, ask, submit (A1)
+bifrost cancel|hold|release 265   two-step, own jobs only (A1)
 ```
+
+### Submitting and getting results (A1)
+
+Add `A1` to `tiers` in the config. Then:
+
+```
+$ bifrost submit hello.sh
+Plan (nothing submitted yet):
+  partition  standard, 1 node(s), time limit 0 h 05 min
+  scheduler  would start at ... on ucrslurmcl-stdnodeset-0 (standard)
+  worst case $0.12  (today so far $0.00 of $50.00 day cap)
+Submit this job? [y/N] y
+Submitted job 265 ...  folder on the cluster: ~/bifrost-jobs/<stamp>-bifrost-hello
+$ bifrost job show 265
+$ bifrost results 265 --download      # -> ~/ursa-results/265/
+```
+
+Each job runs in its own `~/bifrost-jobs/<stamp>-<name>` folder, so its results are
+exactly that folder. Caps (config `caps:`): 4 nodes, 24 h, $25 per job, $50 per day by
+default; a plan over a cap is refused before anything reaches the scheduler.
 
 Every command takes `--json`. `bifrost check` exits 2 when the script has errors.
 
@@ -64,6 +87,10 @@ Claude Code: `claude mcp add ursa -- bifrost mcp`
 Tools (R1): `cluster_status`, `partitions`, `jobs_list`, `job_show`, `job_explain`,
 `job_log_tail`, `modules_search`, `module_show`, `recipes`, `script_check`, `my_usage`,
 `waste_report`.
+`job_results` (R1). Act tools (A1, only registered when `tiers` includes A1):
+`job_submit` + `job_submit_confirm`, `job_cancel`/`job_hold`/`job_release` + `_confirm`.
+The prepare tool returns a plan and a single-use `confirm_token`; the assistant must show
+the plan and confirm only after you approve.
 Staff tools (R2, only registered when `tiers` includes R2): `jobs_list_all`,
 `job_show_any`, `job_explain_any`, `usage_report`, `waste_report_all`, `health`,
 `ticket_draft`.
@@ -76,7 +103,11 @@ Resources: `hpc://catalog`, `hpc://policies`. Prompts: `diagnose_job`,
   `internal/backend/command.go`, each validating its arguments; every argument is quoted.
   A test pins the allow-list (`squeue`, `sacct`, `sinfo`, `scontrol show`, `cat` of the
   catalog, `tail` of a job log, `module show`, `id -un`).
-- Read-only. Nothing submits, cancels or changes state. Tools carry `readOnlyHint`.
+- Read-only by default. State changes exist only in tier A1, always two-step: a prepare
+  call stores the exact action under a random single-use token (10-minute expiry, bound to
+  the plan hash); the confirm call accepts nothing but the token. Caps are checked at
+  prepare and the day cap again at confirm. Read tools carry `readOnlyHint: true`, act
+  tools `false`.
 - Log paths come from the job's accounting record, never from the caller, and must sit
   under `log_roots` for the job's owner (`/home/{user}/`, `/scratch/{user}/`).
 - Text written by users or programs (log lines, scripts, submit lines) is returned only in

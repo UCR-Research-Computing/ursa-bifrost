@@ -16,6 +16,8 @@ import (
 func connect(t *testing.T, tiers ...string) *mcp.ClientSession {
 	t.Helper()
 	cfg := config.Default()
+	cfg.StatePath = filepath.Join(t.TempDir(), "a1.json")
+	cfg.ResultsDir = filepath.Join(t.TempDir(), "results")
 	cfg.Backend = "fixture"
 	cfg.FixturesDir = "../../testdata"
 	cfg.ClusterUser = "alice_ucr_edu"
@@ -58,7 +60,7 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) map[string]*mcp.Tool {
 func TestToolsR1(t *testing.T) {
 	cs := connect(t)
 	tools := toolNames(t, cs)
-	for _, want := range []string{"cluster_status", "partitions", "jobs_list", "job_show", "job_explain", "job_log_tail", "modules_search", "module_show", "recipes", "script_check", "my_usage", "waste_report"} {
+	for _, want := range []string{"cluster_status", "partitions", "jobs_list", "job_show", "job_explain", "job_log_tail", "modules_search", "module_show", "recipes", "script_check", "my_usage", "waste_report", "job_results"} {
 		tl, ok := tools[want]
 		if !ok {
 			t.Errorf("missing tool %s", want)
@@ -72,7 +74,7 @@ func TestToolsR1(t *testing.T) {
 		if strings.HasSuffix(name, "_any") || strings.HasSuffix(name, "_all") || name == "usage_report" || name == "health" || name == "ticket_draft" {
 			t.Errorf("staff tool %s exposed at R1", name)
 		}
-		for _, banned := range []string{"submit", "cancel", "exec", "shell", "run_command", "hold", "release"} {
+		for _, banned := range []string{"submit", "cancel", "exec", "shell", "run_command", "hold", "release", "confirm"} {
 			if strings.Contains(name, banned) {
 				t.Errorf("tool %s must not exist yet", name)
 			}
@@ -259,5 +261,59 @@ func TestModulesSearchFindsContainers(t *testing.T) {
 	d = m["data"].(map[string]any)
 	if d["containers"] == nil || d["recipes"] == nil {
 		t.Errorf("pytorch should return the container and the recipes: %v", d)
+	}
+}
+
+func TestA1ToolsOnlyWithTier(t *testing.T) {
+	tools := toolNames(t, connect(t, "R1", "R2"))
+	for name := range tools {
+		if strings.Contains(name, "submit") || strings.HasSuffix(name, "_confirm") {
+			t.Errorf("A1 tool %s exposed without A1", name)
+		}
+	}
+	tools = toolNames(t, connect(t, "R1", "A1"))
+	for _, want := range []string{"job_submit", "job_submit_confirm", "job_cancel", "job_cancel_confirm", "job_hold", "job_hold_confirm", "job_release", "job_release_confirm"} {
+		tl, ok := tools[want]
+		if !ok {
+			t.Errorf("missing %s", want)
+			continue
+		}
+		// Hermes asks before running a tool that is not readOnlyHint=true on an untrusted server
+		if tl.Annotations == nil || tl.Annotations.ReadOnlyHint {
+			t.Errorf("%s must not claim to be read-only", want)
+		}
+	}
+	if d := tools["job_cancel_confirm"].Annotations.DestructiveHint; d == nil || !*d {
+		t.Error("job_cancel_confirm should be marked destructive")
+	}
+}
+
+func TestSubmitOverMCP(t *testing.T) {
+	cs := connect(t, "R1", "A1")
+	script := "#!/bin/bash\n#SBATCH -p computehigh\n#SBATCH -t 30\necho hi > out.txt\n"
+	m, res := call(t, cs, "job_submit", map[string]any{"script": script})
+	if res.IsError {
+		t.Fatal(res.Content)
+	}
+	d := m["data"].(map[string]any)
+	tok := d["confirm_token"].(string)
+	if d["worst_case_usd"].(float64) != 0.94 || !strings.Contains(d["next"].(string), "Nothing has been submitted") {
+		t.Errorf("plan: %v", d)
+	}
+	// the confirm tool takes only the token: extra fields are rejected by the schema
+	_, res = call(t, cs, "job_submit_confirm", map[string]any{"confirm_token": tok, "partition": "highmem"})
+	if !res.IsError {
+		t.Error("confirm accepted extra arguments")
+	}
+	m, res = call(t, cs, "job_submit_confirm", map[string]any{"confirm_token": tok})
+	if res.IsError {
+		t.Fatal(res.Content)
+	}
+	if m["data"].(map[string]any)["job_id"] != "9001" {
+		t.Errorf("confirm: %v", m["data"])
+	}
+	_, res = call(t, cs, "job_submit_confirm", map[string]any{"confirm_token": tok})
+	if !res.IsError {
+		t.Error("token reused over MCP")
 	}
 }

@@ -107,6 +107,12 @@ func (s *SSH) Run(ctx context.Context, c Command) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, argv[0], full...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if c.merge {
+		cmd.Stderr = &stdout
+	}
+	if c.stdin != nil {
+		cmd.Stdin = bytes.NewReader(c.stdin)
+	}
 	err = cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
 		return nil, fmt.Errorf("%s timed out after %s", c.argv[0], Timeout(c))
@@ -124,7 +130,11 @@ func (s *SSH) Run(ctx context.Context, c Command) ([]byte, error) {
 			if okExit(c, code) {
 				return stdout.Bytes(), nil
 			}
-			return stdout.Bytes(), fmt.Errorf("%s exited %d: %s", c.argv[0], code, lastLine(stderr.String()))
+			msg := stderr.String()
+			if c.merge {
+				msg = stdout.String()
+			}
+			return stdout.Bytes(), fmt.Errorf("%s exited %d: %s", c.argv[0], code, lastLine(msg))
 		}
 		return nil, err
 	}

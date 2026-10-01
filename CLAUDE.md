@@ -24,9 +24,11 @@ status table and change log current when behaviour changes.
 ## Rules
 
 - Gauntlet before every commit: `make check` (gofmt, vet, `go test -race`, build).
-- Never add a tool or command that runs arbitrary shell, writes files on the cluster, or
-  changes Slurm state. New remote commands are new constructors in `backend/command.go`
-  with validated arguments, and must be added to `TestAllowListIsClosed`.
+- Never add a tool or command that runs arbitrary shell. New remote commands are new
+  constructors in `backend/command.go` with validated arguments, and must be added to
+  `TestAllowListIsClosed`. State-changing commands are marked `write` and live only behind
+  tier A1's two-step prepare/confirm flow (`internal/core/a1.go`); every new guard gets a
+  line in `scripts/mutation_check.sh`.
 - Every new tool goes through `core.Call` (so it is tier-checked and audited) and returns
   user/program-written text only via `policy.Wrap` (untrusted block).
 - Every diagnosis rule needs a sample in `TestEachLogRuleFires`; prefer real failed-job

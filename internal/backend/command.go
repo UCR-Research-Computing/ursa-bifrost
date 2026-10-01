@@ -36,7 +36,24 @@ type Command struct {
 	kind Kind
 	// okExit lists non-zero exit codes that still carry useful output.
 	okExit []int
+	// stdin is sent to the remote command (the batch script for sbatch).
+	stdin []byte
+	// merge sends stderr into stdout (sbatch --test-only reports on stderr).
+	merge bool
+	// write marks commands that change cluster state (A1 tier).
+	write bool
+	// big raises the timeout for bulk transfers (results download).
+	big bool
 }
+
+// Stdin is the data sent to the command, if any.
+func (c Command) Stdin() []byte { return c.stdin }
+
+// Merge reports whether stderr is folded into stdout.
+func (c Command) Merge() bool { return c.merge }
+
+// Write reports whether the command changes cluster state.
+func (c Command) Write() bool { return c.write }
 
 // Argv returns a copy of the argument vector.
 func (c Command) Argv() []string { return append([]string(nil), c.argv...) }
@@ -237,8 +254,171 @@ func okExit(c Command, code int) bool {
 
 // Timeout picks a per-command timeout.
 func Timeout(c Command) time.Duration {
-	if c.kind == KindAcct {
+	switch {
+	case c.big:
+		return 15 * time.Minute
+	case c.kind == KindAcct, c.write:
 		return 120 * time.Second
 	}
 	return 60 * time.Second
+}
+
+// ---- A1: state-changing commands ---------------------------------------------
+
+var (
+	rePartition = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
+	reJobName   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+	reJobsDir   = regexp.MustCompile(`^bifrost-jobs/\d{8}-\d{6}-[a-z0-9-]{1,40}$`)
+	reComment   = regexp.MustCompile(`^bifrost:[0-9a-f]{12}$`)
+	reRelPath   = regexp.MustCompile(`^[A-Za-z0-9._+][A-Za-z0-9._+/ -]{0,250}$`) // no leading "-" (option injection)
+)
+
+// SubmitOpts are the resources bifrost enforces on the sbatch command line.
+// Command-line options override #SBATCH directives in the script, so these are
+// the limits that actually apply, whatever the script says.
+type SubmitOpts struct {
+	Partition string
+	Nodes     int
+	TimeMin   int
+	JobName   string
+	Comment   string // bifrost:<plan hash prefix>
+}
+
+func (o SubmitOpts) validate() error {
+	if !rePartition.MatchString(o.Partition) {
+		return fmt.Errorf("partition %q is not a valid name", o.Partition)
+	}
+	if o.Nodes < 1 || o.Nodes > 1000 {
+		return fmt.Errorf("nodes must be 1-1000")
+	}
+	if o.TimeMin < 1 || o.TimeMin > 60*24*30 {
+		return fmt.Errorf("time limit must be 1 minute to 30 days")
+	}
+	if o.JobName != "" && !reJobName.MatchString(o.JobName) {
+		return fmt.Errorf("job name %q has unexpected characters", o.JobName)
+	}
+	if !reComment.MatchString(o.Comment) {
+		return fmt.Errorf("comment %q is not a bifrost plan tag", o.Comment)
+	}
+	return nil
+}
+
+func (o SubmitOpts) flags() []string {
+	f := []string{"--partition=" + o.Partition, fmt.Sprintf("--nodes=%d", o.Nodes),
+		fmt.Sprintf("--time=%d", o.TimeMin), "--comment=" + o.Comment}
+	if o.JobName != "" {
+		f = append(f, "--job-name="+o.JobName)
+	}
+	return f
+}
+
+// SbatchTestOnly asks the scheduler whether and when the job would start,
+// without submitting it (`sbatch --test-only`, script on stdin).
+func SbatchTestOnly(o SubmitOpts, script []byte) (Command, error) {
+	if err := o.validate(); err != nil {
+		return Command{}, err
+	}
+	argv := append([]string{"sbatch", "--test-only"}, o.flags()...)
+	return Command{argv: argv, kind: KindNoCache, stdin: script, merge: true}, nil
+}
+
+// submitTemplate is fixed text: the job folder and sbatch flags arrive as
+// positional parameters, never spliced into the shell code.
+const submitTemplate = `set -e; d="$HOME/$1"; shift; if [ -e "$d" ]; then echo "bifrost: $d already exists" >&2; exit 3; fi; mkdir -p "$d"; cat > "$d/job.sbatch"; cd "$d"; exec sbatch --parsable --chdir="$d" "$@" job.sbatch`
+
+// SubmitBatch writes the script into a new ~/bifrost-jobs/<dir> folder and
+// submits it with the enforced options. Returns the job id on stdout.
+func SubmitBatch(dir string, o SubmitOpts, script []byte) (Command, error) {
+	if !reJobsDir.MatchString(dir) {
+		return Command{}, fmt.Errorf("job folder %q is not a bifrost-jobs path", dir)
+	}
+	if err := o.validate(); err != nil {
+		return Command{}, err
+	}
+	if len(script) == 0 {
+		return Command{}, fmt.Errorf("empty script")
+	}
+	argv := append([]string{"bash", "-c", submitTemplate, "bifrost", dir}, o.flags()...)
+	return Command{argv: argv, kind: KindNoCache, stdin: script, write: true}, nil
+}
+
+// Scancel cancels one job.
+func Scancel(id string) (Command, error) {
+	if err := ValidJobID(id); err != nil {
+		return Command{}, err
+	}
+	return Command{argv: []string{"scancel", id}, kind: KindNoCache, write: true}, nil
+}
+
+// Hold keeps a pending job from starting.
+func Hold(id string) (Command, error) {
+	if err := ValidJobID(id); err != nil {
+		return Command{}, err
+	}
+	return Command{argv: []string{"scontrol", "hold", id}, kind: KindNoCache, write: true}, nil
+}
+
+// Release lets a held job start.
+func Release(id string) (Command, error) {
+	if err := ValidJobID(id); err != nil {
+		return Command{}, err
+	}
+	return Command{argv: []string{"scontrol", "release", id}, kind: KindNoCache, write: true}, nil
+}
+
+// ---- results (read) -----------------------------------------------------------
+
+func validDir(p string) error {
+	if !path.IsAbs(p) || path.Clean(p) != p || p == "/" || strings.ContainsAny(p, "\x00\n") {
+		return fmt.Errorf("folder %q must be an absolute, clean path", p)
+	}
+	return nil
+}
+
+// ValidRelPath checks a path inside a job folder: relative, no "..", no hidden
+// leading dash, printable.
+func ValidRelPath(rel string) error {
+	if !reRelPath.MatchString(rel) || path.Clean(rel) != rel || strings.HasPrefix(rel, "../") || rel == ".." || strings.Contains(rel, "/../") {
+		return fmt.Errorf("file %q must be a relative path inside the job folder", rel)
+	}
+	return nil
+}
+
+// ListFiles lists regular files under a job folder: size, mtime, relative path.
+func ListFiles(dir string) (Command, error) {
+	if err := validDir(dir); err != nil {
+		return Command{}, err
+	}
+	return Command{argv: []string{"find", dir, "-maxdepth", "4", "-type", "f", "-printf", `%s\t%T@\t%P\n`}, kind: KindNoCache}, nil
+}
+
+// Head reads the first n bytes of a file.
+func Head(p string, n int) (Command, error) {
+	if err := validDir(p); err != nil {
+		return Command{}, err
+	}
+	if n < 1 || n > 1<<20 {
+		return Command{}, fmt.Errorf("bytes must be 1-1048576")
+	}
+	return Command{argv: []string{"head", "-c", strconv.Itoa(n), "--", p}, kind: KindNoCache}, nil
+}
+
+// TarDir streams a gzip tar of a job folder (or listed files inside it).
+func TarDir(dir string, files []string) (Command, error) {
+	if err := validDir(dir); err != nil {
+		return Command{}, err
+	}
+	argv := []string{"tar", "-C", dir, "-czf", "-", "--exclude-vcs"}
+	if len(files) == 0 {
+		argv = append(argv, ".")
+	} else {
+		argv = append(argv, "--")
+		for _, f := range files {
+			if err := ValidRelPath(f); err != nil {
+				return Command{}, err
+			}
+			argv = append(argv, f)
+		}
+	}
+	return Command{argv: argv, kind: KindNoCache, big: true}, nil
 }

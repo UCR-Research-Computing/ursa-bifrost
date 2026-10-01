@@ -60,7 +60,8 @@ func TestQuoteNeutralizesShell(t *testing.T) {
 func TestAllowListIsClosed(t *testing.T) {
 	// Every constructor's program must be one of these. If you add a command,
 	// add it here deliberately.
-	allowed := map[string]bool{"id": true, "squeue": true, "sacct": true, "sinfo": true, "scontrol": true, "cat": true, "tail": true, "bash": true}
+	allowed := map[string]bool{"id": true, "squeue": true, "sacct": true, "sinfo": true, "scontrol": true, "cat": true, "tail": true, "bash": true,
+		"sbatch": true, "scancel": true, "find": true, "head": true, "tar": true}
 	u, _ := SqueueUser("alice")
 	j, _ := SqueueJob("1")
 	st, _ := SqueueStart("1")
@@ -70,15 +71,39 @@ func TestAllowListIsClosed(t *testing.T) {
 	cat, _ := Catalog("/apps/docs/catalog.json")
 	tl, _ := Tail("/home/alice/x.log", 5)
 	ms, _ := ModuleShow("gcc")
-	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), Nodes(), cat, tl, ms} {
+	o := SubmitOpts{Partition: "standard", Nodes: 1, TimeMin: 30, JobName: "x", Comment: "bifrost:0123456789ab"}
+	to, _ := SbatchTestOnly(o, []byte("#!/bin/bash\n"))
+	sb, _ := SubmitBatch("bifrost-jobs/20261001-120000-x", o, []byte("#!/bin/bash\n"))
+	sc, _ := Scancel("1")
+	ho, _ := Hold("1")
+	re, _ := Release("1")
+	lf, _ := ListFiles("/home/alice/bifrost-jobs/x")
+	hd, _ := Head("/home/alice/bifrost-jobs/x/a.txt", 100)
+	td, _ := TarDir("/home/alice/bifrost-jobs/x", nil)
+	writes := map[string]bool{}
+	for _, c := range []Command{sb, sc, ho, re} {
+		writes[c.String()] = true
+		if !c.Write() {
+			t.Errorf("%v must be marked write", c.argv)
+		}
+	}
+	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), Nodes(), cat, tl, ms, to, lf, hd, td} {
+		if c.Write() {
+			t.Errorf("read command marked write: %v", c.argv)
+		}
+	}
+	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), Nodes(), cat, tl, ms, to, sb, sc, ho, re, lf, hd, td} {
 		if !allowed[c.argv[0]] {
 			t.Errorf("unexpected program %q", c.argv[0])
 		}
-		if c.argv[0] == "scontrol" && (len(c.argv) < 2 || c.argv[1] != "show") {
-			t.Errorf("scontrol must be read-only: %v", c.argv)
+		if c.argv[0] == "scontrol" && (len(c.argv) < 2 || (c.argv[1] != "show" && c.argv[1] != "hold" && c.argv[1] != "release")) {
+			t.Errorf("scontrol may only show, hold or release: %v", c.argv)
 		}
-		if c.argv[0] == "bash" && !strings.HasPrefix(c.argv[2], "module -t show ") {
-			t.Errorf("bash only runs module show: %v", c.argv)
+		if c.argv[0] == "bash" && !strings.HasPrefix(c.argv[2], "module -t show ") && c.argv[2] != submitTemplate {
+			t.Errorf("bash only runs module show or the fixed submit template: %v", c.argv)
+		}
+		if c.argv[0] == "sbatch" && c.argv[1] != "--test-only" {
+			t.Errorf("bare sbatch must be --test-only: %v", c.argv)
 		}
 	}
 }
@@ -91,5 +116,42 @@ func TestSplitShell(t *testing.T) {
 	}
 	if len(got) != 9 || got[5] != "ProxyCommand /py gcloud.py start-iap-tunnel x %p --listen-on-stdin" || got[8] != "u@compute.1" {
 		t.Fatalf("%q", got)
+	}
+}
+
+func TestSubmitConstructorsValidate(t *testing.T) {
+	good := SubmitOpts{Partition: "standard", Nodes: 1, TimeMin: 30, JobName: "x", Comment: "bifrost:0123456789ab"}
+	bad := []SubmitOpts{
+		{Partition: "std; id", Nodes: 1, TimeMin: 30, Comment: good.Comment},
+		{Partition: "standard", Nodes: 0, TimeMin: 30, Comment: good.Comment},
+		{Partition: "standard", Nodes: 1, TimeMin: 0, Comment: good.Comment},
+		{Partition: "standard", Nodes: 1, TimeMin: 30, JobName: "$(id)", Comment: good.Comment},
+		{Partition: "standard", Nodes: 1, TimeMin: 30, Comment: "free text"},
+	}
+	for _, o := range bad {
+		if _, err := SbatchTestOnly(o, []byte("x")); err == nil {
+			t.Errorf("accepted %+v", o)
+		}
+	}
+	for _, dir := range []string{"../etc", "bifrost-jobs/../../x", "/tmp/x", "bifrost-jobs/20261001-120000-a;id", "bifrost-jobs/x"} {
+		if _, err := SubmitBatch(dir, good, []byte("x")); err == nil {
+			t.Errorf("accepted job folder %q", dir)
+		}
+	}
+	// the folder and flags travel as positional parameters, not inside the shell code
+	c, err := SubmitBatch("bifrost-jobs/20261001-120000-hello", good, []byte("#!/bin/bash\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.argv[2] != submitTemplate || c.argv[4] != "bifrost-jobs/20261001-120000-hello" || c.argv[5] != "--partition=standard" {
+		t.Errorf("argv: %q", c.argv)
+	}
+	for _, p := range []string{"../x", "a/../../b", "", "-rf"} {
+		if ValidRelPath(p) == nil {
+			t.Errorf("rel path %q accepted", p)
+		}
+	}
+	if _, err := TarDir("/home/a/x", []string{"../../.ssh/id_rsa"}); err == nil {
+		t.Error("tar of a path outside the folder")
 	}
 }
