@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charles-forsyth/ursa-bifrost/internal/backend"
-	"github.com/charles-forsyth/ursa-bifrost/internal/config"
-	"github.com/charles-forsyth/ursa-bifrost/internal/policy"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/backend"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/config"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/policy"
 )
 
 // newTestService returns a Service over the recorded fixtures, acting as the

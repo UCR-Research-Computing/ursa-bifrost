@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charles-forsyth/ursa-bifrost/internal/config"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/config"
 )
 
 // SSH runs commands on the login node over one multiplexed ssh connection.

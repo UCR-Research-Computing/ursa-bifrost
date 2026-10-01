@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charles-forsyth/ursa-bifrost/internal/backend"
-	"github.com/charles-forsyth/ursa-bifrost/internal/slurm"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/backend"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/slurm"
 )
 
 // ---- cluster status -------------------------------------------------------------

@@ -1,4 +1,4 @@
-module github.com/charles-forsyth/ursa-bifrost
+module github.com/UCR-Research-Computing/ursa-bifrost
 
 go 1.25.0
 

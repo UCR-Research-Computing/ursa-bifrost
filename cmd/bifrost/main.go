@@ -28,10 +28,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/charles-forsyth/ursa-bifrost/internal/config"
-	"github.com/charles-forsyth/ursa-bifrost/internal/core"
-	"github.com/charles-forsyth/ursa-bifrost/internal/mcpserver"
-	"github.com/charles-forsyth/ursa-bifrost/internal/version"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/config"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/core"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/mcpserver"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/version"
 )
 
 const usage = `bifrost - read-only bridge between AI assistants and the Ursa Major Slurm cluster
@@ -49,6 +49,9 @@ Usage:
   bifrost recipes [query]                  known-good recipes and site rules
   bifrost check <script.sh|->              static check of a batch script
   bifrost usage [--since T] [--until T] [--by partition|state|user] [--all]
+  bifrost waste [--since T] [--cpu PCT] [--all] [--user U]   avoidable spend
+  bifrost health                           down/drained nodes, stockouts, stuck jobs (R2)
+  bifrost ticket <id> [--text FILE|-]      draft a ticket reply (R2; never sent)
   bifrost config init|show|path
   bifrost doctor                           check config, SSH and the catalog
   bifrost version
@@ -221,6 +224,59 @@ func run(args []string, stdout, stderr io.Writer) int {
 		r, err := core.Call(ctx, svc, "cli", tool, tier, map[string]any{"since": *since, "until": *until, "by": *by, "user": *user, "all": *all}, false,
 			func(ctx context.Context) (*core.Usage, error) { return svc.Usage(ctx, in) })
 		return out(stdout, stderr, g, r, err, func(w io.Writer) { printUsage(w, r.Data) })
+	case "waste":
+		fs := newFlags("waste")
+		since := fs.String("since", "now-7days", "start")
+		cpu := fs.Float64("cpu", 25, "CPU efficiency threshold percent")
+		minNH := fs.Float64("min-node-hours", 0.25, "ignore smaller jobs")
+		all := fs.Bool("all", false, "every user (R2)")
+		user := fs.String("user", "", "one user (R2)")
+		if err := fs.Parse(rest); err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		tool, tier := "waste_report", "R1"
+		if *all || *user != "" {
+			tool, tier = "waste_report_all", "R2"
+		}
+		in := core.WasteInput{Since: *since, All: *all && *user == "", User: *user, CPUThreshold: *cpu, MinNodeHours: *minNH}
+		r, err := core.Call(ctx, svc, "cli", tool, tier, map[string]any{"since": *since, "cpu": *cpu, "user": *user, "all": *all}, false,
+			func(ctx context.Context) (*core.WasteReport, error) { return svc.Waste(ctx, in) })
+		return out(stdout, stderr, g, r, err, func(w io.Writer) { printWaste(w, r.Data) })
+	case "health":
+		r, err := core.Call(ctx, svc, "cli", "health", "R2", nil, false, svc.Health)
+		code := out(stdout, stderr, g, r, err, func(w io.Writer) { printHealth(w, r.Data) })
+		if code == 0 && r.Data != nil && !r.Data.OK {
+			return 2
+		}
+		return code
+	case "ticket":
+		if len(rest) < 1 {
+			return fail(stdout, stderr, g, errors.New("usage: bifrost ticket <job id> [--text FILE|-]"))
+		}
+		id := rest[0]
+		fs := newFlags("ticket")
+		textFile := fs.String("text", "", "file with the researcher's message ('-' = stdin)")
+		if err := fs.Parse(rest[1:]); err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		var text string
+		if *textFile != "" {
+			var b []byte
+			if *textFile == "-" {
+				b, err = io.ReadAll(io.LimitReader(os.Stdin, 64*1024))
+			} else {
+				b, err = os.ReadFile(*textFile)
+			}
+			if err != nil {
+				return fail(stdout, stderr, g, err)
+			}
+			text = string(b)
+		}
+		r, err := core.Call(ctx, svc, "cli", "ticket_draft", "R2", map[string]any{"job_id": id, "ticket_text_chars": len(text)}, false,
+			func(ctx context.Context) (*core.TicketDraft, error) {
+				return svc.TicketDraft(ctx, core.TicketDraftInput{JobID: id, TicketText: text, AnyUser: true})
+			})
+		return out(stdout, stderr, g, r, err, func(w io.Writer) { printTicket(w, r.Data) })
 	case "doctor":
 		return doctor(ctx, svc, stdout, g)
 	}

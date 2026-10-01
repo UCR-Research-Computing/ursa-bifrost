@@ -328,6 +328,7 @@ type Node struct {
 	LastBusy     Num      `json:"last_busy"`
 	BootTime     Num      `json:"boot_time"`
 	ReasonSetBy  string   `json:"reason_set_by_user"`
+	ReasonAt     Num      `json:"reason_changed_at"`
 	InstanceType string   `json:"instance_type"`
 }
 
