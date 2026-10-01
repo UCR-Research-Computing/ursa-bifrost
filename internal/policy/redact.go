@@ -13,8 +13,13 @@ type redactRule struct {
 	repl string
 }
 
-// Order matters: specific shapes first, then generic NAME=value assignments.
+// Order matters: whole NAME=value assignments first, then specific token shapes
+// that can appear anywhere (bare keys in a log line).
 var redactRules = []redactRule{
+	// NAME=value assignments go first: if a specific shape inside the value
+	// matched first, its "[REDACTED x]" marker would end the value early and leave
+	// the rest of the secret (live finding, 2026-10-01: AKIA.../secretpart).
+	{regexp.MustCompile(`(?i)\b([A-Z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY|_KEY))(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)`), "${1}${3}[REDACTED]"},
 	{regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----`), "[REDACTED private key]"},
 	{regexp.MustCompile(`SLURM_JWT=\S+`), "SLURM_JWT=[REDACTED]"},
 	{regexp.MustCompile(`(?i)(authorization:\s*bearer\s+)\S+`), "${1}[REDACTED]"},
@@ -27,8 +32,6 @@ var redactRules = []redactRule{
 	{regexp.MustCompile(`\bya29\.[A-Za-z0-9_-]{20,}`), "[REDACTED oauth token]"},
 	{regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`), "[REDACTED jwt]"},
 	{regexp.MustCompile(`"private_key"\s*:\s*"[^"]*"`), `"private_key": "[REDACTED]"`},
-	// NAME=value where NAME ends in a secret-ish word (API_TOKEN=..., DB_PASSWORD=...)
-	{regexp.MustCompile(`(?i)\b([A-Z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY|_KEY))(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)`), "${1}${3}[REDACTED]"},
 	// URLs with embedded credentials
 	{regexp.MustCompile(`(https?://)[^/\s:@]+:[^/\s@]+@`), "${1}[REDACTED]@"},
 }

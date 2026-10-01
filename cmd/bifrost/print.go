@@ -22,8 +22,18 @@ func money(p *float64) string {
 	return fmt.Sprintf("$%.2f", *p)
 }
 
+// elapsedText shows "-" only for jobs that never ran; a job that finished in
+// under a second shows 0m00s.
+func elapsedText(state string, sec int64) string {
+	s := strings.Fields(state)
+	if sec <= 0 && (len(s) == 0 || s[0] == "PENDING" || s[0] == "CANCELLED") {
+		return "-"
+	}
+	return dur(sec)
+}
+
 func dur(sec int64) string {
-	if sec <= 0 {
+	if sec < 0 {
 		return "-"
 	}
 	d := time.Duration(sec) * time.Second
@@ -112,9 +122,9 @@ func printJobs(w io.Writer, js []core.JobSummary, showUser bool) {
 			name = name[:40] + "..."
 		}
 		if showUser {
-			fmt.Fprintf(t, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n", j.JobID, j.User, state, j.Partition, j.NodeCount, dur(j.ElapsedS), j.ExitCode, cost, name)
+			fmt.Fprintf(t, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n", j.JobID, j.User, state, j.Partition, j.NodeCount, elapsedText(j.State, j.ElapsedS), j.ExitCode, cost, name)
 		} else {
-			fmt.Fprintf(t, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n", j.JobID, state, j.Partition, j.NodeCount, dur(j.ElapsedS), j.ExitCode, cost, name)
+			fmt.Fprintf(t, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n", j.JobID, state, j.Partition, j.NodeCount, elapsedText(j.State, j.ElapsedS), j.ExitCode, cost, name)
 		}
 	}
 	t.Flush()
@@ -129,7 +139,7 @@ func printJob(w io.Writer, d *core.JobDetail) {
 	if d.PendingReason != nil {
 		fmt.Fprintf(w, "waiting: %s\n  -> %s\n", d.PendingReason.Meaning, d.PendingReason.Advice)
 	}
-	fmt.Fprintf(w, "submitted %s  started %s  ended %s  elapsed %s  limit %dm\n", d.Submitted, d.Started, d.Ended, dur(d.ElapsedS), d.TimeLimitMin)
+	fmt.Fprintf(w, "submitted %s  started %s  ended %s  elapsed %s  limit %dm\n", d.Submitted, d.Started, d.Ended, elapsedText(d.State, d.ElapsedS), d.TimeLimitMin)
 	fmt.Fprintf(w, "nodes %d (%s)  cpus %d  exit %s\n", d.NodeCount, d.Nodes, d.CPUs, d.ExitCode)
 	if e := d.Efficiency; e != nil {
 		fmt.Fprintf(w, "CPU efficiency %.1f%%  memory peak %d MB of %d MB (%.1f%%)\n", e.CPUPercent, e.MemPeakMB, e.MemAllocMB, e.MemPercent)
@@ -150,7 +160,7 @@ func printJob(w io.Writer, d *core.JobDetail) {
 }
 
 func printExplain(w io.Writer, e *core.Explanation) {
-	fmt.Fprintf(w, "Job %s  %s  partition %s  exit %s  elapsed %s\n", e.Job.JobID, e.Job.State, e.Job.Partition, e.Job.ExitCode, dur(e.Job.ElapsedS))
+	fmt.Fprintf(w, "Job %s  %s  partition %s  exit %s  elapsed %s\n", e.Job.JobID, e.Job.State, e.Job.Partition, e.Job.ExitCode, elapsedText(e.Job.State, e.Job.ElapsedS))
 	if len(e.Findings) == 0 {
 		fmt.Fprintln(w, "No findings: nothing looks wrong.")
 	}

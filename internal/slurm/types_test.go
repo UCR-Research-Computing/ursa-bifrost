@@ -118,3 +118,22 @@ func TestDecodeReportsSlurmErrors(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestBootingIsNotBroken(t *testing.T) {
+	cases := []struct {
+		state  []string
+		broken bool
+	}{
+		{[]string{"ALLOCATED", "CLOUD", "NOT_RESPONDING", "POWERING_UP", "POWER_DOWN"}, false}, // live, 2026-10-01: first boot
+		{[]string{"IDLE", "CLOUD", "NOT_RESPONDING", "POWERING_UP"}, false},
+		{[]string{"IDLE", "CLOUD", "NOT_RESPONDING"}, true},
+		{[]string{"DOWN", "CLOUD", "NOT_RESPONDING", "POWERING_UP"}, true}, // boot failed (stockout)
+		{[]string{"IDLE", "FAIL"}, true},
+		{[]string{"IDLE", "CLOUD", "POWERED_DOWN"}, false},
+	}
+	for _, c := range cases {
+		if got := (Node{State: c.state}).Broken(); got != c.broken {
+			t.Errorf("%v: Broken()=%v, want %v", c.state, got, c.broken)
+		}
+	}
+}

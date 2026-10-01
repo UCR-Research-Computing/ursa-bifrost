@@ -3,6 +3,7 @@ package core
 import (
 	"archive/tar"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -392,5 +393,89 @@ func TestSubmitWarnsOnStockout(t *testing.T) {
 		if strings.Contains(x, "capacity") || strings.Contains(x, "failed to start") {
 			t.Errorf("false stockout warning: %s", x)
 		}
+	}
+}
+
+func TestBootingNodesAreNotStockouts(t *testing.T) {
+	dir := mutatedFixtures(t, "nodes.json", func(doc map[string]any) {
+		for _, x := range doc["nodes"].([]any) {
+			n := x.(map[string]any)
+			if n["name"] == "ucrslurmcl-c3nodeset-1" {
+				n["state"] = []string{"ALLOCATED", "CLOUD", "NOT_RESPONDING", "POWERING_UP", "POWER_DOWN"}
+				n["reason"] = ""
+			}
+		}
+	})
+	s := serviceAt(t, dir, "R1", "R2", "A1")
+	s.Cfg.StatePath = filepath.Join(t.TempDir(), "a1.json")
+	p, err := s.PrepareSubmit(context.Background(), SubmitInput{Script: goodScript})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range p.Warnings {
+		if strings.Contains(w, "failed to start") || strings.Contains(w, "capacity") {
+			t.Errorf("booting node reported as a failure: %s", w)
+		}
+	}
+	h, err := s.Health(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, i := range h.Issues {
+		if i.Kind == "node-down" && i.Subject == "ucrslurmcl-c3nodeset-1" {
+			t.Errorf("health calls a booting node down: %+v", i)
+		}
+	}
+}
+
+func TestCancelBeforeStartReleasesDayCap(t *testing.T) {
+	// a copy of the running job 260, made PENDING and never started, as job 9001
+	dir := mutatedFixtures(t, "squeue.json", func(doc map[string]any) {
+		jobs := doc["jobs"].([]any)
+		b, _ := json.Marshal(jobs[0])
+		var p map[string]any
+		_ = json.Unmarshal(b, &p)
+		p["job_id"] = 9001
+		p["job_state"] = []string{"PENDING"}
+		p["state_reason"] = "BeginTime"
+		p["start_time"] = map[string]any{"set": true, "infinite": false, "number": 0}
+		doc["jobs"] = append(jobs, p)
+	})
+	s := serviceAt(t, dir, "R1", "A1")
+	s.Cfg.StatePath = filepath.Join(t.TempDir(), "a1.json")
+	ctx := context.Background()
+	p, _ := s.PrepareSubmit(ctx, SubmitInput{Script: goodScript, Nodes: 4, Time: "3:00:00"}) // $22.44
+	c, err := s.ConfirmSubmit(ctx, p.Token)
+	if err != nil || c.JobID != "9001" {
+		t.Fatalf("%v %+v", err, c)
+	}
+	if usd, _, _ := s.SpendToday(); usd != 22.44 {
+		t.Fatalf("committed $%v", usd)
+	}
+	a, err := s.PrepareAction(ctx, "cancel", "9001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.ConfirmAction(ctx, "cancel", a.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.Message, "no longer counts") {
+		t.Errorf("message: %s", r.Message)
+	}
+	usd, n, _ := s.SpendToday()
+	if usd != 0 || n != 1 {
+		t.Errorf("after release: $%v, %d submits (want $0, 1)", usd, n)
+	}
+	// a running job that is cancelled keeps counting (it already spent)
+	st, _ := s.loadState()
+	st.Ledger = append(st.Ledger, ledgerEntry{Time: s.Now(), JobID: "260", WorstUSD: 5})
+	_ = s.saveState(st)
+	a, _ = s.PrepareAction(ctx, "cancel", "260")
+	if _, err := s.ConfirmAction(ctx, "cancel", a.Token); err != nil {
+		t.Fatal(err)
+	}
+	if usd, _, _ := s.SpendToday(); usd != 5 {
+		t.Errorf("running job's worst case released: $%v", usd)
 	}
 }
