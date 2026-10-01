@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Document | Specification and design (draft for decision) |
-| Status | Draft 2, 2026-10-01. P1 (personal, read-only) built as v0.1.0; see section 17. Open questions in section 15. |
+| Status | Draft 3, 2026-10-01. P1 (v0.1.0) and P2 (v0.2.0) built; see section 17. Open questions in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `ursa-bifrost`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -365,8 +365,8 @@ Q1. First version scope: personal only (you, Hermes, Claude Code), or staff from
 
 Q2. Language: Go (recommended) or Python (shares code with deep-research)?
 
-Q3. Name and home: keep `ursa-bifrost`? Repo under `charles-forsyth` or the
-`UCR-Research-Computing` org? Open source from the start?
+Q3. Name and home: DECIDED 2026-10-01: `ursa-bifrost`, public repo
+https://github.com/UCR-Research-Computing/ursa-bifrost.
 
 Q4. Who administers Ursa Major's Slurm? slurmrestd is installed and JWT is configured, but
 is a daemon running, where, and may ursa-bifrost use it? Until then, SSH-CLI.
@@ -417,8 +417,8 @@ Telegram (opt-in), or stay strictly on demand?
 
 ## 17. Implementation status (v0.1.0, 2026-10-01)
 
-Decisions taken: Q2 Go (go-sdk v1.8.0, Go 1.25+). Q3 name `ursa-bifrost`, folder
-`~/Projects/ursa-bifrost`, no GitHub repo yet (home and visibility still open). Q1 personal
+Decisions taken: Q2 Go (go-sdk v1.8.0, Go 1.25+). Q3 name `ursa-bifrost`, public repo
+`UCR-Research-Computing/ursa-bifrost` (module path matches). Q1 personal
 first (R1 default; R2 tools exist and register only when the config grants R2). Q5 scheduler
 queries over SSH to the login node, as deep-research already does. Q8 prices come from the
 cluster catalog (`/apps/docs/catalog.json`, ursa-catalog/1), overridable per partition;
@@ -452,7 +452,22 @@ Findings while building (worth knowing):
   sacct. R2 adds nothing at the Slurm level; it is a policy layer in bifrost (Q11).
 - No slurmrestd daemon is listening on the login node (no 6820 listener; binary only) (Q4).
 
-Not yet built: `waste_report`, `health`, `ticket_draft` (P2); `job_pending_reason` is
+### P2 (v0.2.0, 2026-10-01)
+
+| Tool | Tier | What it does |
+|---|---|---|
+| `waste_report` | R1 (own jobs) | low-cpu (efficiency below threshold, default 25%), timeout-idle, warm-worker (keep-warm jobs, idle by design), failed-fast-repeat (3+ fast failures with the same name stem), oversized-memory (highmem job that fits standard), idle-node, allocated-idle-node. Wasted node-hours = node-hours x (1 - CPU efficiency), sorted, with cost and a suggestion each |
+| `waste_report_all` | R2 | the same for every user or one user |
+| `health` | R2 | down/failed nodes (error), drained nodes with reason and since, slow boots (>15 min powering up: stockout), jobs pending >1 h (except BeginTime/Dependency/held), launch-failed holds, NODE_FAIL/BOOT_FAIL in 24 h, failure rate >= 50% over >= 10 jobs, idle billing nodes >2 h; `ok` false on any error; CLI exits 2 |
+| `ticket_draft` | R2 | from job_explain + job_show: summary, what happened, evidence, fixes, a plain reply draft, internal note, confidence (high/medium/low). The researcher's ticket text is untrusted, redacted and never copied into the reply. Never sent anywhere |
+| prompt `triage_ticket` | R2 | ticket_draft -> verify -> show the draft for a person to send |
+
+First live run (30 days, own jobs): 261 jobs, 21.2 wasted node-hours (about $39); 17.3 of
+them from deep-research's `lab-warm` keep-warm jobs (22 jobs, 38.6 h, about $72 total),
+8 groups of repeated fast failures (Spack builds, ucr-stack, lab runs). `health`: OK,
+13 jobs ended in 24 h, 8% failed.
+
+Not yet built: `job_pending_reason` is
 folded into `job_show`/`job_explain`; A1 submit/cancel (P3); HTTP transport, SSO and REST
 backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, unused).
 
@@ -462,3 +477,4 @@ backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, 
 |---|---|---|
 | 2026-10-01 | Draft 1 | Spec and design (as `hpc-agent`) |
 | 2026-10-01 | Draft 2 / v0.1.0 | Renamed `ursa-bifrost`; P1 built and verified live; section 17 added |
+| 2026-10-01 | Draft 3 / v0.2.0 | P2: waste_report(_all), health, ticket_draft, triage_ticket prompt; public repo in the UCR-Research-Computing org; Hermes connected |

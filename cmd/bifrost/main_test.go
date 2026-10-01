@@ -32,7 +32,7 @@ func TestCLIJSONIsPureJSON(t *testing.T) {
 	cfg := testConfig(t, "R1")
 	for _, args := range [][]string{
 		{"status"}, {"partitions"}, {"jobs"}, {"job", "show", "236"}, {"job", "explain", "236"},
-		{"job", "log", "236"}, {"modules", "gcc"}, {"recipes", "gromacs"}, {"usage"},
+		{"job", "log", "236"}, {"modules", "gcc"}, {"recipes", "gromacs"}, {"usage"}, {"waste"},
 	} {
 		out, errOut, code := runCLI(t, append(args, "--json", "--config", cfg)...)
 		if code != 0 {
@@ -113,5 +113,24 @@ func TestConfigInitRefusesOverwrite(t *testing.T) {
 	}
 	if _, _, code := runCLI(t, "config", "init", "--config", p); code != 1 {
 		t.Fatal("second init overwrote the file")
+	}
+}
+
+func TestCLIP2StaffCommands(t *testing.T) {
+	r1 := testConfig(t, "R1")
+	for _, args := range [][]string{{"health"}, {"ticket", "236"}, {"waste", "--all"}} {
+		out, _, code := runCLI(t, append(args, "--json", "--config", r1)...)
+		if code != 1 || !strings.Contains(out, "needs tier R2") {
+			t.Errorf("%v at R1: code %d %s", args, code, out)
+		}
+	}
+	r2 := testConfig(t, "R1, R2")
+	out, _, code := runCLI(t, "ticket", "236", "--config", r2)
+	if code != 0 || !strings.Contains(out, "reply draft") || !strings.Contains(out, "pandas") {
+		t.Errorf("ticket: %d %s", code, out)
+	}
+	out, _, code = runCLI(t, "health", "--json", "--config", r2)
+	if code != 0 || !strings.Contains(out, `"ok": true`) {
+		t.Errorf("health: %d %s", code, out)
 	}
 }

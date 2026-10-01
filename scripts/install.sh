@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8}
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
 mkdir -p "$HOME/.local/bin"
-go build -trimpath -ldflags "-s -w -X github.com/charles-forsyth/ursa-bifrost/internal/version.Version=${VERSION}" \
+go build -trimpath -ldflags "-s -w -X github.com/UCR-Research-Computing/ursa-bifrost/internal/version.Version=${VERSION}" \
   -o "$HOME/.local/bin/bifrost" ./cmd/bifrost
 echo "installed $HOME/.local/bin/bifrost ${VERSION}"
 "$HOME/.local/bin/bifrost" version

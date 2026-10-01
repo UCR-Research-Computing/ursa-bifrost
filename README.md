@@ -9,12 +9,13 @@ with the evidence and the exact scheduler commands that produced it. The server 
 language model: it runs allow-listed scheduler queries and fixed diagnosis rules, and the
 calling assistant does the reasoning.
 
-Status: v0.1 (phase P1 of `docs/SPEC.md`): personal, read-only, SSH backend.
+Status: v0.2 (phases P1 and P2 of `docs/SPEC.md`): read-only, SSH backend, personal and staff tiers.
 
 ## Install
 
 ```bash
 scripts/install.sh          # builds ~/.local/bin/bifrost (Go 1.25+; toolchain auto-fetched)
+# or: go install github.com/UCR-Research-Computing/ursa-bifrost/cmd/bifrost@latest
 bifrost config init         # writes ~/.config/ursa-bifrost/config.yaml
 bifrost doctor              # checks gcloud/SSH, the cluster user, the catalog, slurm --json
 ```
@@ -36,6 +37,9 @@ bifrost modules lammps            module search (versions, MPI prerequisite, GPU
 bifrost recipes pytorch           known-good recipes from the cluster catalog
 bifrost check job.sbatch          static check of a batch script + worst-case cost
 bifrost usage --since now-30days  node-hours, core-hours, efficiency, estimated cost
+bifrost waste --since now-30days  avoidable spend: idle cores, idle nodes, repeat failures
+bifrost health                    down/drained nodes, slow boots, long-pending jobs (R2)
+bifrost ticket 236 [--text f.txt] reply draft for a "my job failed" ticket (R2; never sent)
 ```
 
 Every command takes `--json`. `bifrost check` exits 2 when the script has errors.
@@ -48,23 +52,23 @@ Add to a client as a stdio server:
 {"mcpServers": {"ursa": {"command": "bifrost", "args": ["mcp"]}}}
 ```
 
-Hermes (`~/.hermes/config.yaml`):
+Hermes:
 
-```yaml
-mcp_servers:
-  ursa:
-    command: bifrost
-    args: [mcp]
+```bash
+hermes mcp add ursa --command bifrost --args mcp
+hermes mcp test ursa
 ```
 
 Claude Code: `claude mcp add ursa -- bifrost mcp`
 
 Tools (R1): `cluster_status`, `partitions`, `jobs_list`, `job_show`, `job_explain`,
-`job_log_tail`, `modules_search`, `module_show`, `recipes`, `script_check`, `my_usage`.
+`job_log_tail`, `modules_search`, `module_show`, `recipes`, `script_check`, `my_usage`,
+`waste_report`.
 Staff tools (R2, only registered when `tiers` includes R2): `jobs_list_all`,
-`job_show_any`, `job_explain_any`, `usage_report`.
+`job_show_any`, `job_explain_any`, `usage_report`, `waste_report_all`, `health`,
+`ticket_draft`.
 Resources: `hpc://catalog`, `hpc://policies`. Prompts: `diagnose_job`,
-`write_batch_script`, `monthly_usage_summary`.
+`write_batch_script`, `monthly_usage_summary`, `triage_ticket`.
 
 ## Safety model
 

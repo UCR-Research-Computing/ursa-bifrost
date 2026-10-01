@@ -9,8 +9,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/charles-forsyth/ursa-bifrost/internal/backend"
-	"github.com/charles-forsyth/ursa-bifrost/internal/core"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/backend"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/core"
 )
 
 func tw(w io.Writer) *tabwriter.Writer { return tabwriter.NewWriter(w, 0, 0, 2, ' ', 0) }
@@ -232,6 +232,70 @@ func printUsage(w io.Writer, u *core.Usage) {
 	for _, n := range u.Notes {
 		fmt.Fprintln(w, "\nnote:", n)
 	}
+}
+
+func printWaste(w io.Writer, r *core.WasteReport) {
+	fmt.Fprintf(w, "Waste since %s (%s): %d item(s), %.2f wasted node-hours", r.Since, r.Scope, len(r.Items), r.TotalWasteH)
+	if r.TotalWasteUS > 0 {
+		fmt.Fprintf(w, ", about $%.2f", r.TotalWasteUS)
+	}
+	fmt.Fprintf(w, " (%d jobs scanned)\n", r.JobsScanned)
+	if len(r.Items) == 0 {
+		fmt.Fprintln(w, "\nNothing above the thresholds.")
+		return
+	}
+	for _, it := range r.Items {
+		who := it.JobID
+		if who == "" {
+			who = it.Node
+		}
+		if len(who) > 40 {
+			who = who[:40] + "..."
+		}
+		cost := ""
+		if it.CostUSD > 0 {
+			cost = fmt.Sprintf(" ~$%.2f", it.CostUSD)
+		}
+		user := ""
+		if it.User != "" && r.Scope == "all users" {
+			user = " " + it.User
+		}
+		fmt.Fprintf(w, "\n%-19s %s%s [%s] %.2f wasted node-h%s\n  %s\n  -> %s\n", it.Kind, who, user, it.Partition, it.WasteHours, cost, it.Detail, it.Suggestion)
+	}
+	fmt.Fprintln(w, "\nnote:", r.Notes[0])
+}
+
+func printHealth(w io.Writer, h *core.Health) {
+	status := "OK"
+	if !h.OK {
+		status = "PROBLEMS"
+	}
+	fmt.Fprintf(w, "Health: %s, %d issue(s)", status, len(h.Issues))
+	if h.FailureRate != nil {
+		fmt.Fprintf(w, "; last 24 h: %d jobs ended, %.0f%% failed", h.Jobs24h, *h.FailureRate)
+	}
+	fmt.Fprintln(w)
+	for _, i := range h.Issues {
+		since := ""
+		if i.Since != "" {
+			since = " since " + i.Since
+		}
+		fmt.Fprintf(w, "\n[%s] %s: %s%s\n  %s\n  -> %s\n", strings.ToUpper(i.Severity), i.Kind, i.Subject, since, i.Detail, i.Advice)
+	}
+}
+
+func printTicket(w io.Writer, t *core.TicketDraft) {
+	fmt.Fprintf(w, "Ticket draft for job %s (user %s), confidence %s\n%s\n\n", t.JobID, t.User, t.Confidence, t.Summary)
+	fmt.Fprintln(w, "What happened:")
+	for _, s := range t.WhatHappened {
+		fmt.Fprintln(w, "  "+s)
+	}
+	fmt.Fprintln(w, "Evidence:")
+	for _, s := range t.Evidence {
+		fmt.Fprintln(w, "  "+s)
+	}
+	fmt.Fprintf(w, "\n----- reply draft (edit before sending) -----\n%s---------------------------------------------\n", t.Reply)
+	fmt.Fprintln(w, t.InternalNote)
 }
 
 // doctor checks config, gcloud/ssh, the cluster user and the catalog.

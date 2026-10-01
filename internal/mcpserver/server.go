@@ -10,8 +10,8 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/charles-forsyth/ursa-bifrost/internal/core"
-	"github.com/charles-forsyth/ursa-bifrost/internal/version"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/core"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/version"
 )
 
 // Instructions are sent to every client at initialize.
@@ -103,6 +103,22 @@ type usageIn struct {
 type usageAllIn struct {
 	usageIn
 	User string `json:"user,omitempty" jsonschema:"only this user (omit for everyone)"`
+}
+
+type wasteIn struct {
+	Since        string  `json:"since,omitempty" jsonschema:"start: now-7days (default), now-30days or YYYY-MM-DD"`
+	CPUThreshold float64 `json:"cpu_threshold,omitempty" jsonschema:"flag jobs below this CPU efficiency percent (default 25)"`
+	MinNodeHours float64 `json:"min_node_hours,omitempty" jsonschema:"ignore jobs smaller than this many node-hours (default 0.25)"`
+}
+
+type wasteAllIn struct {
+	wasteIn
+	User string `json:"user,omitempty" jsonschema:"only this user (omit for everyone)"`
+}
+
+type ticketIn struct {
+	JobID      string `json:"job_id" jsonschema:"Slurm job id the ticket is about"`
+	TicketText string `json:"ticket_text,omitempty" jsonschema:"the researcher's message (optional; treated as untrusted data)"`
 }
 
 // ---- outputs for list-shaped tools (structured content must be an object) --------
@@ -260,6 +276,15 @@ func New(s *core.Service) *mcp.Server {
 			return nil, toEnvelope(r), err
 		})
 
+	mcp.AddTool(srv, addR1("waste_report", "My waste report",
+		"Avoidable spend in the caller's jobs: jobs that left most cores idle, timeouts that did nothing, repeated fast failures, highmem jobs that fit standard, and powered-up nodes with no job. Sorted by wasted node-hours, with suggestions."),
+		func(ctx context.Context, req *mcp.CallToolRequest, in wasteIn) (*mcp.CallToolResult, envelope, error) {
+			r, err := core.Call(ctx, s, clientName(req), "waste_report", "R1", argsOf(in), true, func(ctx context.Context) (*core.WasteReport, error) {
+				return s.Waste(ctx, core.WasteInput{Since: in.Since, CPUThreshold: in.CPUThreshold, MinNodeHours: in.MinNodeHours})
+			})
+			return nil, toEnvelope(r), err
+		})
+
 	// ---- R2 (staff) tools: registered only when the tier is configured ------------
 	if s.Cfg.HasTier("R2") {
 		staff := func(name, title, desc string) *mcp.Tool {
@@ -284,6 +309,28 @@ func New(s *core.Service) *mcp.Server {
 				r, err := core.Call(ctx, s, clientName(req), "job_show_any", "R2", argsOf(in), true, func(ctx context.Context) (*core.JobDetail, error) {
 					return s.JobShow(ctx, core.JobShowInput{JobID: in.JobID, AnyUser: true, IncludeScript: in.IncludeScript})
 				})
+				return nil, toEnvelope(r), err
+			})
+		mcp.AddTool(srv, staff("waste_report_all", "Waste report (all users)", "waste_report over every user's jobs (or one user's)."),
+			func(ctx context.Context, req *mcp.CallToolRequest, in wasteAllIn) (*mcp.CallToolResult, envelope, error) {
+				r, err := core.Call(ctx, s, clientName(req), "waste_report_all", "R2", argsOf(in), true, func(ctx context.Context) (*core.WasteReport, error) {
+					return s.Waste(ctx, core.WasteInput{Since: in.Since, All: in.User == "", User: in.User, CPUThreshold: in.CPUThreshold, MinNodeHours: in.MinNodeHours})
+				})
+				return nil, toEnvelope(r), err
+			})
+		mcp.AddTool(srv, staff("health", "Cluster health",
+			"Operational problems: down/drained nodes with reasons, slow boots (stockouts), jobs pending over an hour, launch failures, NODE_FAIL/BOOT_FAIL in the last day, high failure rate, idle billing nodes."),
+			func(ctx context.Context, req *mcp.CallToolRequest, _ noInput) (*mcp.CallToolResult, envelope, error) {
+				r, err := core.Call(ctx, s, clientName(req), "health", "R2", nil, true, s.Health)
+				return nil, toEnvelope(r), err
+			})
+		mcp.AddTool(srv, staff("ticket_draft", "Draft a ticket reply",
+			"For a 'my job failed / is stuck' ticket: what happened, evidence, suggested fix and a plain reply draft built from job_explain's findings, with a confidence level. Never sent anywhere; a person reviews and replies."),
+			func(ctx context.Context, req *mcp.CallToolRequest, in ticketIn) (*mcp.CallToolResult, envelope, error) {
+				r, err := core.Call(ctx, s, clientName(req), "ticket_draft", "R2", map[string]any{"job_id": in.JobID, "ticket_text_chars": len(in.TicketText)}, true,
+					func(ctx context.Context) (*core.TicketDraft, error) {
+						return s.TicketDraft(ctx, core.TicketDraftInput{JobID: in.JobID, TicketText: in.TicketText, AnyUser: true})
+					})
 				return nil, toEnvelope(r), err
 			})
 		mcp.AddTool(srv, staff("usage_report", "Usage report", "Usage of every user (or one), grouped by user, partition or state."),
@@ -337,10 +384,17 @@ func addPrompts(srv *mcp.Server) {
 			t := req.Params.Arguments["task"]
 			return prompt(fmt.Sprintf("Write a Slurm batch script for Ursa Major that does: %s\n\nSteps: check recipes and modules_search for the software, pick a partition with partitions (whole-node billing; cores are physical), set a --time limit, then run script_check on the draft and fix every error before showing it. Show the estimated worst-case cost.", t)), nil
 		})
+	srv.AddPrompt(&mcp.Prompt{Name: "triage_ticket", Title: "Triage a job ticket",
+		Description: "Staff: answer a researcher's 'my job failed / is stuck' ticket.",
+		Arguments:   []*mcp.PromptArgument{{Name: "job_id", Description: "Slurm job id from the ticket", Required: true}}},
+		func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			id := req.Params.Arguments["job_id"]
+			return prompt(fmt.Sprintf("Triage the ticket about Ursa Major job %s. Call ticket_draft (pass the ticket text if you have it). Check the evidence against job_show_any; if confidence is low, read job_log_tail and say what is still unknown. Show the reply draft for a person to edit and send. Do not post or send anything.", id)), nil
+		})
 	srv.AddPrompt(&mcp.Prompt{Name: "monthly_usage_summary", Title: "Monthly usage summary",
 		Description: "Summarize the last 30 days of usage and waste."},
 		func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-			return prompt("Summarize my Ursa Major usage for the last 30 days: call my_usage grouped by partition and by state. Report node-hours, estimated cost, failure rate and CPU efficiency, and name the one change that would save the most."), nil
+			return prompt("Summarize my Ursa Major usage for the last 30 days: call my_usage grouped by partition and by state, then waste_report with since now-30days. Report node-hours, estimated cost, failure rate and CPU efficiency, and name the one change that would save the most."), nil
 		})
 }
 
