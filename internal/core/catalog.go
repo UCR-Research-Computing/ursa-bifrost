@@ -194,6 +194,31 @@ func (c *Catalog) ModuleExists(spec string) (bool, string) {
 	return false, ""
 }
 
+// SearchContainers finds prebuilt Apptainer images whose file name contains q
+// (separators ignored, so "alphafold", "colabfold" and "py torch" all match).
+func (c *Catalog) SearchContainers(q string) []Container {
+	norm := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if r == '-' || r == '_' || r == '.' || r == ' ' {
+				return -1
+			}
+			return r
+		}, strings.ToLower(s))
+	}
+	nq := norm(q)
+	if nq == "" {
+		return nil
+	}
+	var out []Container
+	for _, ct := range c.Containers {
+		base := ct.Path[strings.LastIndexByte(ct.Path, '/')+1:]
+		if strings.Contains(norm(base), nq) {
+			out = append(out, ct)
+		}
+	}
+	return out
+}
+
 // SearchRecipes finds recipes by name, field or module.
 func (c *Catalog) SearchRecipes(q string) []Recipe {
 	q = strings.ToLower(strings.TrimSpace(q))

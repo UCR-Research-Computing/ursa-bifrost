@@ -168,9 +168,15 @@ func printExplain(w io.Writer, e *core.Explanation) {
 	}
 }
 
-func printModules(w io.Writer, hs []core.ModuleHit) {
+func printModules(w io.Writer, r moduleResult) {
+	hs := r.Matches
+	for _, c := range r.Containers {
+		fmt.Fprintf(w, "container: %s (%.1f GB)  ->  apptainer exec [--nv] %s <cmd>\n", c.Path, c.SizeGB, c.Path)
+	}
 	if len(hs) == 0 {
-		fmt.Fprintln(w, "no matching modules")
+		if len(r.Containers) == 0 {
+			fmt.Fprintln(w, "no matching modules or containers")
+		}
 		return
 	}
 	t := tw(w)

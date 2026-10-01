@@ -239,3 +239,25 @@ func TestTicketDraftOverMCP(t *testing.T) {
 		t.Error("ticket text leaked into the reply draft")
 	}
 }
+
+// AlphaFold is a container, not a module (live question, 2026-10-01).
+func TestModulesSearchFindsContainers(t *testing.T) {
+	cs := connect(t)
+	m, res := call(t, cs, "modules_search", map[string]any{"query": "alphafold"})
+	if res.IsError {
+		t.Fatal(res.Content)
+	}
+	d := m["data"].(map[string]any)
+	cts, ok := d["containers"].([]any)
+	if !ok || len(cts) != 1 || !strings.Contains(cts[0].(map[string]any)["path"].(string), "alphafold-colabfold.sif") {
+		t.Fatalf("containers: %v", d)
+	}
+	if d["hint"] != nil {
+		t.Error("hint says nothing exists although a container does")
+	}
+	m, _ = call(t, cs, "modules_search", map[string]any{"query": "pytorch"})
+	d = m["data"].(map[string]any)
+	if d["containers"] == nil || d["recipes"] == nil {
+		t.Errorf("pytorch should return the container and the recipes: %v", d)
+	}
+}
