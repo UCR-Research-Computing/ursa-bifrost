@@ -304,6 +304,37 @@ func printTicket(w io.Writer, t *core.TicketDraft) {
 	fmt.Fprintln(w, t.InternalNote)
 }
 
+func printSubmitPlan(w io.Writer, p *core.SubmitPlan) {
+	fmt.Fprintf(w, "Plan (nothing submitted yet):\n")
+	fmt.Fprintf(w, "  job        %s\n  partition  %s, %d node(s), time limit %s\n", p.JobName, p.Partition, p.Nodes, p.TimeLimit)
+	fmt.Fprintf(w, "  folder     %s (on the cluster)\n  script     %d bytes, sha256 %s\n", p.RemoteDir, p.ScriptBytes, p.ScriptSHA256)
+	fmt.Fprintf(w, "  scheduler  %s\n", p.Scheduler)
+	fmt.Fprintf(w, "  worst case $%.2f  (today so far $%.2f of $%.2f day cap)\n", p.WorstCaseUSD, p.SpentTodayUS, p.DayCapUSD)
+	for _, o := range p.Overrides {
+		fmt.Fprintln(w, "  override  ", o)
+	}
+	for _, x := range p.Warnings {
+		fmt.Fprintln(w, "  warning   ", x)
+	}
+	fmt.Fprintf(w, "  token      %s (expires %s)\n", p.Token, p.ExpiresAt)
+}
+
+func printResults(w io.Writer, r *core.Results) {
+	fmt.Fprintf(w, "Job %s (%s): %s, %d file(s), %.1f MB\n", r.JobID, r.State, r.Folder, len(r.Files), float64(r.TotalBytes)/(1<<20))
+	for _, f := range r.Files {
+		fmt.Fprintf(w, "  %10d  %s  %s\n", f.Bytes, f.Modified[:16], f.Path)
+	}
+	for _, n := range r.Notes {
+		fmt.Fprintln(w, "note:", n)
+	}
+	if r.Preview != nil {
+		fmt.Fprintf(w, "\n--- %s (untrusted, redacted) ---\n%s\n", r.PreviewOf, r.Preview.Text)
+	}
+	if r.Downloaded != "" {
+		fmt.Fprintf(w, "\nDownloaded %d file(s) to %s\n", len(r.Saved), r.Downloaded)
+	}
+}
+
 // doctor checks config, gcloud/ssh, the cluster user and the catalog.
 func doctor(ctx context.Context, svc *core.Service, w io.Writer, g globals) int {
 	type check struct {

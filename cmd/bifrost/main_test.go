@@ -14,7 +14,8 @@ func testConfig(t *testing.T, tiers string) string {
 	dir := t.TempDir()
 	td, _ := filepath.Abs("../../testdata")
 	p := filepath.Join(dir, "config.yaml")
-	body := "backend: fixture\nfixtures_dir: " + td + "\ncluster_user: alice_ucr_edu\ntiers: [" + tiers + "]\naudit_path: " + filepath.Join(dir, "audit.jsonl") + "\n"
+	body := "backend: fixture\nfixtures_dir: " + td + "\ncluster_user: alice_ucr_edu\ntiers: [" + tiers + "]\naudit_path: " + filepath.Join(dir, "audit.jsonl") +
+		"\nstate_path: " + filepath.Join(dir, "a1.json") + "\nresults_dir: " + filepath.Join(dir, "results") + "\n"
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -132,5 +133,32 @@ func TestCLIP2StaffCommands(t *testing.T) {
 	out, _, code = runCLI(t, "health", "--json", "--config", r2)
 	if code != 0 || !strings.Contains(out, `"ok": true`) {
 		t.Errorf("health: %d %s", code, out)
+	}
+}
+
+func TestCLISubmitNeedsConfirmation(t *testing.T) {
+	cfg := testConfig(t, "R1, A1")
+	dir := t.TempDir()
+	sc := filepath.Join(dir, "j.sh")
+	_ = os.WriteFile(sc, []byte("#!/bin/bash\n#SBATCH -p standard\n#SBATCH -t 20\necho hi\n"), 0o600)
+	// --json without --yes only prepares
+	out, _, code := runCLI(t, "submit", sc, "--json", "--config", cfg)
+	if code != 0 || !strings.Contains(out, "confirm_token") || strings.Contains(out, `"job_id"`) {
+		t.Fatalf("prepare: %d %s", code, out)
+	}
+	var v struct {
+		Data struct {
+			Token string `json:"confirm_token"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal([]byte(out), &v)
+	out, _, code = runCLI(t, "confirm", v.Data.Token, "--config", cfg)
+	if code != 0 || !strings.Contains(out, "Submitted job 9001") {
+		t.Fatalf("confirm: %d %s", code, out)
+	}
+	// R1-only config cannot submit
+	out, _, code = runCLI(t, "submit", sc, "--yes", "--json", "--config", testConfig(t, "R1"))
+	if code != 1 || !strings.Contains(out, "needs tier A1") {
+		t.Fatalf("R1 submit: %d %s", code, out)
 	}
 }

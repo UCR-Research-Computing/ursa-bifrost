@@ -52,6 +52,10 @@ Usage:
   bifrost waste [--since T] [--cpu PCT] [--all] [--user U]   avoidable spend
   bifrost health                           down/drained nodes, stockouts, stuck jobs (R2)
   bifrost ticket <id> [--text FILE|-]      draft a ticket reply (R2; never sent)
+  bifrost results <id> [--read FILE] [--download] [--files a,b]   job outputs (own jobs)
+  bifrost submit <script.sh|-> [--partition P] [--nodes N] [--time T] [--name J] [--yes]   (A1)
+  bifrost cancel|hold|release <id> [--yes]                      (A1)
+  bifrost confirm <token>                  confirm a prepared action (A1)
   bifrost config init|show|path
   bifrost doctor                           check config, SSH and the catalog
   bifrost version
@@ -282,10 +286,138 @@ func run(args []string, stdout, stderr io.Writer) int {
 				return svc.TicketDraft(ctx, core.TicketDraftInput{JobID: id, TicketText: text, AnyUser: true})
 			})
 		return out(stdout, stderr, g, r, err, func(w io.Writer) { printTicket(w, r.Data) })
+	case "results":
+		if len(rest) < 1 {
+			return fail(stdout, stderr, g, errors.New("usage: bifrost results <job id> [--read FILE] [--download] [--files a,b]"))
+		}
+		id := rest[0]
+		fs := newFlags("results")
+		read := fs.String("read", "", "show one text file")
+		dl := fs.Bool("download", false, "copy the job folder to results_dir/<id>")
+		files := fs.String("files", "", "comma-separated files to download")
+		if err := fs.Parse(rest[1:]); err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		in := core.ResultsInput{JobID: id, Read: *read, Download: *dl || *files != ""}
+		if *files != "" {
+			in.Files = strings.Split(*files, ",")
+		}
+		r, err := core.Call(ctx, svc, "cli", "job_results", "R1", map[string]any{"job_id": id, "read": *read, "download": in.Download}, false,
+			func(ctx context.Context) (*core.Results, error) { return svc.JobResults(ctx, in) })
+		return out(stdout, stderr, g, r, err, func(w io.Writer) { printResults(w, r.Data) })
+	case "submit":
+		if len(rest) < 1 {
+			return fail(stdout, stderr, g, errors.New("usage: bifrost submit <script.sh|-> [--partition P] [--nodes N] [--time T] [--name J] [--yes]"))
+		}
+		src := rest[0]
+		fs := newFlags("submit")
+		part := fs.String("partition", "", "partition")
+		nodes := fs.Int("nodes", 0, "nodes")
+		tl := fs.String("time", "", "time limit")
+		name := fs.String("name", "", "job name")
+		yes := fs.Bool("yes", false, "confirm without asking (still within caps)")
+		if err := fs.Parse(rest[1:]); err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		var b []byte
+		if src == "-" {
+			b, err = io.ReadAll(io.LimitReader(os.Stdin, int64(cfg.Limits.ScriptBytes)+1))
+		} else {
+			b, err = os.ReadFile(src)
+		}
+		if err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		r, err := core.Call(ctx, svc, "cli", "job_submit", "A1", map[string]any{"file": src, "partition": *part, "nodes": *nodes, "time": *tl}, false,
+			func(ctx context.Context) (*core.SubmitPlan, error) {
+				return svc.PrepareSubmit(ctx, core.SubmitInput{Script: string(b), Partition: *part, Nodes: *nodes, Time: *tl, JobName: *name})
+			})
+		if err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		if g.json && !*yes {
+			return emit(stdout, g, r, nil)
+		}
+		if !g.json {
+			printSubmitPlan(stdout, r.Data)
+		}
+		if !*yes && !askYes(stdout, "Submit this job?") {
+			fmt.Fprintln(stdout, "Not submitted.")
+			return 0
+		}
+		return confirmCmd(ctx, svc, "submit", r.Data.Token, stdout, stderr, g)
+	case "cancel", "hold", "release":
+		if len(rest) < 1 {
+			return fail(stdout, stderr, g, fmt.Errorf("usage: bifrost %s <job id> [--yes]", cmd))
+		}
+		id := rest[0]
+		fs := newFlags(cmd)
+		yes := fs.Bool("yes", false, "confirm without asking")
+		if err := fs.Parse(rest[1:]); err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		r, err := core.Call(ctx, svc, "cli", "job_"+cmd, "A1", map[string]any{"job_id": id}, false,
+			func(ctx context.Context) (*core.ActionPlan, error) { return svc.PrepareAction(ctx, cmd, id) })
+		if err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		if g.json && !*yes {
+			return emit(stdout, g, r, nil)
+		}
+		if !g.json {
+			fmt.Fprintf(stdout, "%s job %s (%s, %s)\n  %s\n", strings.ToUpper(cmd[:1])+cmd[1:], r.Data.JobID, r.Data.JobName, r.Data.State, r.Data.Effect)
+		}
+		if !*yes && !askYes(stdout, "Go ahead?") {
+			fmt.Fprintln(stdout, "Nothing changed.")
+			return 0
+		}
+		return confirmCmd(ctx, svc, cmd, r.Data.Token, stdout, stderr, g)
+	case "confirm":
+		if len(rest) != 1 {
+			return fail(stdout, stderr, g, errors.New("usage: bifrost confirm <token>"))
+		}
+		return confirmCmd(ctx, svc, "", rest[0], stdout, stderr, g)
 	case "doctor":
 		return doctor(ctx, svc, stdout, g)
 	}
 	return fail(stdout, stderr, g, fmt.Errorf("unknown command %q (bifrost --help)", cmd))
+}
+
+// confirmCmd runs a prepared action; kind "" looks the kind up from the token.
+func confirmCmd(ctx context.Context, svc *core.Service, kind, token string, stdout, stderr io.Writer, g globals) int {
+	var r core.Result[*core.Confirmed]
+	var err error
+	if kind == "" {
+		kind, err = svc.PendingKind(token)
+		if err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+	}
+	tool := "job_" + kind + "_confirm"
+	if kind == "submit" {
+		r, err = core.Call(ctx, svc, "cli", tool, "A1", nil, false, func(ctx context.Context) (*core.Confirmed, error) { return svc.ConfirmSubmit(ctx, token) })
+	} else {
+		r, err = core.Call(ctx, svc, "cli", tool, "A1", nil, false, func(ctx context.Context) (*core.Confirmed, error) { return svc.ConfirmAction(ctx, kind, token) })
+	}
+	return out(stdout, stderr, g, r, err, func(w io.Writer) {
+		fmt.Fprintln(w, r.Data.Message)
+		if r.Data.RemoteDir != "" {
+			fmt.Fprintf(w, "folder on the cluster: %s\n", r.Data.RemoteDir)
+		}
+		if r.Data.JobID != "" && kind == "submit" {
+			fmt.Fprintf(w, "watch: bifrost job show %s    results: bifrost results %s --download\n", r.Data.JobID, r.Data.JobID)
+		}
+	})
+}
+
+func askYes(w io.Writer, q string) bool {
+	fmt.Fprintf(w, "%s [y/N] ", q)
+	var a string
+	if _, err := fmt.Fscanln(os.Stdin, &a); err != nil {
+		return false
+	}
+	a = strings.ToLower(strings.TrimSpace(a))
+	return a == "y" || a == "yes"
 }
 
 func jobCmd(ctx context.Context, svc *core.Service, args []string, stdout, stderr io.Writer, g globals) int {

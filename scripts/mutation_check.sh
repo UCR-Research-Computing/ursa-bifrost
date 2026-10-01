@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go"
+FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
@@ -32,6 +32,21 @@ mutate "redaction"         internal/policy/redact.go  's = r.re.ReplaceAllString
 mutate "log line cap"      internal/core/jobs.go      'lines = s.Cfg.Limits.LogLines' 'lines = lines'
 mutate "rate limit"        internal/policy/audit.go   'if l.tokens < 1 {' 'if false {'
 mutate "script redaction"  internal/core/jobs.go      'd.Script = policy.Wrap(j.Script, s.Cfg.Limits.ScriptBytes)' 'd.Script = \&policy.Untrusted{Note: policy.UntrustedNote, Text: j.Script}'
+mutate "A1 single-use token"  internal/core/a1.go 'delete(st.Pending, key) // single use, even when it then fails' '_ = key'
+mutate "A1 token expiry"      internal/core/a1.go 'if s.Now().After(p.Expires) {
+		return pending{}, errors.New("confirm_token expired' 'if false {
+		return pending{}, errors.New("confirm_token expired'
+mutate "A1 plan hash check"   internal/core/a1.go 'hashOf(p.Script)) != p.Hash {' 'hashOf(p.Script)) == "never" {'
+mutate "A1 node cap"          internal/core/a1.go 'if nodes > caps.MaxNodes {' 'if false {'
+mutate "A1 hour cap"          internal/core/a1.go 'if float64(mins) > caps.MaxHours*60 {' 'if false {'
+mutate "A1 job cost cap"      internal/core/a1.go 'if worst > caps.MaxCostPerJobUSD {' 'if false {'
+mutate "A1 day cap (prepare)" internal/core/a1.go 'if spent+worst > caps.MaxCostPerDayUSD {' 'if false {'
+mutate "A1 day cap (confirm)" internal/core/a1.go 'if spent+p.WorstUSD > s.Cfg.Caps.MaxCostPerDayUSD {' 'if false {'
+mutate "A1 time required"     internal/core/a1.go 'if !ok || mins <= 0 {' 'if false {'
+mutate "A1 kind check"        internal/core/a1.go 'if p.Kind != kind {' 'if false {'
+mutate "results traversal"    internal/core/results.go 'if path.IsAbs(name) || name == ".." || strings.HasPrefix(name, "../") {' 'if false {'
+mutate "results no overwrite" internal/core/results.go 'target = freeName(target)' 'target = target'
+mutate "results home guard"   internal/core/results.go 'if dir == home || dir == home+"/" {' 'if false {'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

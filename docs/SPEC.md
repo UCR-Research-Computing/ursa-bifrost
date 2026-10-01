@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Document | Specification and design (draft for decision) |
-| Status | Draft 3, 2026-10-01. P1 (v0.1.0) and P2 (v0.2.0) built; see section 17. Open questions in section 15. |
+| Status | Draft 4, 2026-10-01. P1 (v0.1.0), P2 (v0.2.0) and P3 (v0.3.0) built; see section 17. Open questions in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `ursa-bifrost`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -467,6 +467,34 @@ them from deep-research's `lab-warm` keep-warm jobs (22 jobs, 38.6 h, about $72 
 8 groups of repeated fast failures (Spack builds, ucr-stack, lab runs). `health`: OK,
 13 jobs ended in 24 h, 8% failed.
 
+### P3 (v0.3.0, 2026-10-01): act tier A1 and results
+
+Decisions (Q7): actions allowed for the operator's own jobs; caps max 4 nodes, 24 h, $25 per
+job, $50 per day (worst case = nodes x hours x list price), 20 submits per day, confirm
+tokens valid 10 minutes. Results land in `~/ursa-results/<job_id>/`.
+
+| Tool | Tier | Behaviour |
+|---|---|---|
+| `job_submit` | A1 | script_check (errors block), caps, `sbatch --test-only` with the enforced flags (answer shown), store the exact action under a random single-use token; nothing submitted |
+| `job_submit_confirm` | A1 | input is only `confirm_token`; re-checks the plan hash and the day cap, then writes the script to a new `~/bifrost-jobs/<stamp>-<name>/job.sbatch` and runs `sbatch --parsable --chdir=<folder> --partition --nodes --time --job-name --comment=bifrost:<plan hash>`. Command-line options override #SBATCH, so the enforced values are what Slurm uses; replaced #SBATCH values are listed as overrides in the plan |
+| `job_cancel` / `job_hold` / `job_release` (+ `_confirm`) | A1 | own jobs only (checked at prepare and again at confirm); state checked (only pending/running can be cancelled, only pending held/released) |
+| `job_results` | R1 | list files in the job's working directory, show one text file (64 KB, untrusted, redacted), or download (tar.gz over the same SSH connection, unpacked safely: regular files only, no absolute paths, no `..`, no links, never overwrites; 2 GB cap) |
+
+Gating: A1 tools register only when the config grants A1, carry `readOnlyHint: false`
+(cancel confirm is `destructiveHint: true`), and the server instructions tell the model to
+confirm only after the user approves. Spend is tracked in a local ledger
+(`state_path`, mode 0600) of worst-case costs per day. The submit template is fixed shell
+text; the folder and flags arrive as positional parameters. Mutation check covers 22 guards
+(13 new for A1 and results).
+
+Live test (2026-10-01): job 265 (standard) submitted through the two-step flow, token reuse
+refused; standard then hit a GCP stockout (ZONE_RESOURCE_POOL_EXHAUSTED, nodes DOWN), so 265 was
+cancelled through the two-step cancel. Job 267 resubmitted to computehigh (override shown in the
+plan), started in about a minute, completed, and `job_results --download` copied it to
+~/ursa-results/267/. Because `sbatch --test-only` ignores cloud capacity, job_submit now warns when
+the chosen partition has nodes that failed to boot and suggests one with an idle node up or no
+failures (computehigh usually has capacity).
+
 Not yet built: `job_pending_reason` is
 folded into `job_show`/`job_explain`; A1 submit/cancel (P3); HTTP transport, SSO and REST
 backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, unused).
@@ -477,6 +505,7 @@ backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, 
 |---|---|---|
 | 2026-10-01 | Draft 1 | Spec and design (as `hpc-agent`) |
 | 2026-10-01 | Draft 2 / v0.1.0 | Renamed `ursa-bifrost`; P1 built and verified live; section 17 added |
+| 2026-10-01 | Draft 4 / v0.3.0 | P3: A1 submit/cancel/hold/release with single-use confirm tokens and caps; job_results (list/read/download to ~/ursa-results) |
 | 2026-10-01 | v0.2.2 | modules_search also returns matching prebuilt containers and recipes (AlphaFold is a container, not a module) |
 | 2026-10-01 | v0.2.1 | python-error rule (NameError/TypeError/... in the script's own code; found on live job 237); no false srun warning when --ntasks-per-node is set |
 | 2026-10-01 | Draft 3 / v0.2.0 | P2: waste_report(_all), health, ticket_draft, triage_ticket prompt; public repo in the UCR-Research-Computing org; Hermes connected |
