@@ -257,6 +257,33 @@ func TestScriptCheck(t *testing.T) {
 		t.Errorf("MPI prerequisite not caught: %s", issues(sc))
 	}
 
+	// a package built for several MPIs is satisfied by whichever one is loaded
+	multi := "#!/bin/bash\n#SBATCH -p computehigh\n#SBATCH -t 10\nmodule load gcc/13.5.0 openmpi/5.0.10 fftw/3.3.11 hdf5/1.14.6\n"
+	sc, _ = s.ScriptCheck(context.Background(), multi)
+	if strings.Contains(issues(sc), "MPI-built") {
+		t.Errorf("hdf5/fftw under openmpi falsely flagged: %s", issues(sc))
+	}
+	multiMpich := "#!/bin/bash\n#SBATCH -p computehigh\n#SBATCH -t 10\nmodule load mpich\nmodule load hdf5/1.14.6\n"
+	sc, _ = s.ScriptCheck(context.Background(), multiMpich)
+	if strings.Contains(issues(sc), "MPI-built") {
+		t.Errorf("hdf5 under mpich falsely flagged: %s", issues(sc))
+	}
+	none := "#!/bin/bash\n#SBATCH -p computehigh\n#SBATCH -t 10\nmodule load hdf5/1.14.6\n"
+	sc, _ = s.ScriptCheck(context.Background(), none)
+	m0 := issues(sc)
+	for _, want := range []string{"`module load intel-oneapi-mpi`", "`module load mpich`", "`module load openmpi`"} {
+		if !strings.Contains(m0, want) {
+			t.Errorf("hdf5 with no MPI should list %s: %s", want, m0)
+		}
+	}
+	cat, err := s.Catalog(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cat.ModuleRequires("hdf5/1.14.6"); len(got) != 3 {
+		t.Errorf("ModuleRequires(hdf5) = %v, want 3 MPIs", got)
+	}
+
 	tooBig := "#!/bin/bash\n#SBATCH -p gpul4\n#SBATCH -c 16\n#SBATCH --mem=100G\n#SBATCH -t 1:00:00\n#SBATCH --gres=gpu:2\n"
 	sc, _ = s.ScriptCheck(context.Background(), tooBig)
 	m := issues(sc)
