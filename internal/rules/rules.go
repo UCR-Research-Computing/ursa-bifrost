@@ -142,6 +142,11 @@ var logRules = []logRule{
 		re:         regexp.MustCompile(`(?m)(\S+): command not found$`),
 		suggestion: "Load the module that provides it (modules_search) or fix PATH in the job script.",
 	},
+	{
+		id: "python-error", severity: Error, title: "Python error in the script's own code",
+		re:         regexp.MustCompile(`(?m)^(NameError|TypeError|ValueError|IndexError|KeyError|UnboundLocalError|FileNotFoundError|AssertionError|RuntimeError): .+$`),
+		suggestion: "A bug in the script (not the cluster): read the traceback just above this line for the file and line number, fix it there, and rerun. If earlier stages finished, rerun only the failed step instead of the whole job.",
+	},
 }
 
 // Explain runs every rule and returns the findings, most important first.

@@ -473,7 +473,7 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 			sc.EstCostUSD = &c
 		}
 	}
-	if strings.Contains(script, "srun") && sc.Request["ntasks"] == "" && atoiDefault(sc.Request["nodes"], 1) > 1 {
+	if strings.Contains(script, "srun") && sc.Request["ntasks"] == "" && sc.Request["ntasks-per-node"] == "" && atoiDefault(sc.Request["nodes"], 1) > 1 {
 		add("warning", 0, "multi-node srun without --ntasks/--ntasks-per-node runs one task per node")
 	}
 	if regexp.MustCompile(`(?m)^\s*(pip|pip3)\s+install\b`).MatchString(script) && !strings.Contains(script, "venv") && !strings.Contains(script, "uv ") && !strings.Contains(script, "pixi") && !strings.Contains(script, "--user") {
