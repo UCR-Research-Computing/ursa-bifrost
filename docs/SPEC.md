@@ -508,6 +508,7 @@ SDK Hermes uses) found five bugs, all fixed with a test that fails on v0.3.0:
 | 4 | Jobs cancelled before they started kept their worst case on the day cap | cancel of a never-started job releases its ledger entry (submit count unchanged) |
 | 5 | Jobs that ran under a second showed elapsed "-" | "-" only for jobs that never ran |
 | 6 (v0.3.2) | Cancelled-before-start jobs showed `started 2106-02-07`: sacct uses 4294967294 (NO_VAL-1) for "no time" | timestamps >= 4294967294 are treated as unset |
+| 7 (v0.3.3) | script_check flagged `openmpi` + `hdf5/1.14.6` / `fftw/3.3.11` as "needs mpich first": the catalog lists those under three MPIs and only the first match was checked | any loaded MPI that the package is built for satisfies the check (`Catalog.ModuleRequires`) |
 
 Mutation check: 26 guards, all killed.
 
@@ -522,6 +523,7 @@ backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, 
 | 2026-10-01 | Draft 1 | Spec and design (as `hpc-agent`) |
 | 2026-10-01 | Draft 2 / v0.1.0 | Renamed `ursa-bifrost`; P1 built and verified live; section 17 added |
 | 2026-10-01 | v0.3.2 | Slurm NO_VAL timestamps (year 2106) treated as unset |
+| 2026-10-01 | v0.3.3 | script_check: a package built for several MPIs (hdf5, fftw) is satisfied by whichever MPI is loaded; the error lists every choice. Found by the GADGET-4 pilot (job 305: openmpi + hdf5/fftw flagged as needing mpich, yet ran fine) |
 | 2026-10-01 | v0.3.1 | Live test campaign: cross-process token lock, redaction order, booting nodes not down, day-cap release on cancel-before-start, elapsed display |
 | 2026-10-01 | Draft 4 / v0.3.0 | P3: A1 submit/cancel/hold/release with single-use confirm tokens and caps; job_results (list/read/download to ~/ursa-results) |
 | 2026-10-01 | v0.2.2 | modules_search also returns matching prebuilt containers and recipes (AlphaFold is a container, not a module) |

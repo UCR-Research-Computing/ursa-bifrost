@@ -409,7 +409,8 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 					continue
 				}
 				sc.Modules = append(sc.Modules, mod)
-				ok, needs := cat.ModuleExists(mod)
+				ok, _ := cat.ModuleExists(mod)
+				needs, satisfied := mpiSatisfied(lines[:i+1], cat.ModuleRequires(mod))
 				switch {
 				case !ok:
 					msg := "module %q not found in the cluster catalog"
@@ -417,7 +418,7 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 						msg += "; closest: " + strings.Join(c, ", ")
 					}
 					add("error", i+1, msg, mod)
-				case needs != "" && !loadedBefore(lines[:i+1], strings.TrimPrefix(needs, "module load ")):
+				case !satisfied:
 					add("error", i+1, "module %q is MPI-built and needs `%s` first", mod, needs)
 				}
 			}
@@ -612,6 +613,26 @@ func slurmMinutes(s string) (int, bool) {
 		return atoiDefault(p[0], 0)*60 + atoiDefault(p[1], 0), true
 	}
 	return 0, false
+}
+
+// mpiSatisfied reports whether any of the MPI prerequisites in reqs is loaded in
+// lines; with none loaded it returns a readable "need" text naming all choices.
+func mpiSatisfied(lines []string, reqs []string) (string, bool) {
+	if len(reqs) == 0 {
+		return "", true
+	}
+	names := make([]string, 0, len(reqs))
+	for _, r := range reqs {
+		mpi := strings.TrimPrefix(r, "module load ")
+		if loadedBefore(lines, mpi) {
+			return "", true
+		}
+		names = append(names, mpi)
+	}
+	if len(names) == 1 {
+		return "module load " + names[0], false
+	}
+	return "module load " + strings.Join(names, "` or `module load "), false
 }
 
 func loadedBefore(lines []string, mpi string) bool {

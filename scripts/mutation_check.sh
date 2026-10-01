@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go"
+FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
@@ -37,6 +37,7 @@ mutate "A1 token expiry"      internal/core/a1.go 'if s.Now().After(p.Expires) {
 		return pending{}, errors.New("confirm_token expired' 'if false {
 		return pending{}, errors.New("confirm_token expired'
 mutate "A1 plan hash check"   internal/core/a1.go 'hashOf(p.Script)) != p.Hash {' 'hashOf(p.Script)) == "never" {'
+mutate "MPI prerequisite"     internal/core/cluster.go 'if loadedBefore(lines, mpi) {' 'if true {'
 mutate "A1 node cap"          internal/core/a1.go 'if nodes > caps.MaxNodes {' 'if false {'
 mutate "A1 hour cap"          internal/core/a1.go 'if float64(mins) > caps.MaxHours*60 {' 'if false {'
 mutate "A1 job cost cap"      internal/core/a1.go 'if worst > caps.MaxCostPerJobUSD {' 'if false {'

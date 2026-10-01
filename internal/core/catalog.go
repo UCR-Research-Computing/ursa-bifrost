@@ -184,14 +184,35 @@ func (c *Catalog) ModuleExists(spec string) (bool, string) {
 			return true, ""
 		}
 	}
+	if reqs := c.mpiRequires(match); len(reqs) > 0 {
+		return true, reqs[0]
+	}
+	return false, ""
+}
+
+// ModuleRequires lists every MPI prerequisite ("module load openmpi", ...) under which
+// spec is built, sorted; nil for core modules or unknown ones. A package built for
+// several MPIs is satisfied by loading any one of them.
+func (c *Catalog) ModuleRequires(spec string) []string {
+	name, ver, _ := strings.Cut(spec, "/")
+	return c.mpiRequires(func(full string) bool {
+		n, v, _ := strings.Cut(full, "/")
+		return n == name && (ver == "" || v == ver)
+	})
+}
+
+func (c *Catalog) mpiRequires(match func(string) bool) []string {
+	var out []string
 	for _, g := range c.Modules.MPIDependent {
 		for _, m := range g.Modules {
 			if match(m) {
-				return true, g.Requires
+				out = append(out, g.Requires)
+				break
 			}
 		}
 	}
-	return false, ""
+	sort.Strings(out)
+	return out
 }
 
 // SearchContainers finds prebuilt Apptainer images whose file name contains q
