@@ -188,6 +188,11 @@ mutate "v080 failed read is exclusive"   internal/core/shared.go '	if err != nil
 	for _, line'
 mutate "v080 every core request counts"  internal/core/shared.go '	for _, k := range []string{"cpus-per-task", "ntasks", "ntasks-per-node", "exclusive"} {' '	for _, k := range []string{"cpus-per-task"} {'
 mutate "v080 script_check share price"   internal/core/cluster.go '			c := round(price*float64(nodes)*cr.NodeShare*float64(mins)/60, 2)' '			c := round(price*float64(nodes)*float64(mins)/60, 2)'
+mutate "v081 no-core error wording"     internal/core/cluster.go 'or #SBATCH --exclusive for the whole node", part, cr.DefaultNote)' 'or #SBATCH --exclusive for the whole node", part, strings.TrimPrefix(cr.DefaultNote, "asks for no cores, so Slurm gives it "))'
+mutate "v081 commented module load"     internal/core/cluster.go '		if strings.HasPrefix(ln, "#") {
+			continue // a comment that mentions `module load x` loads nothing
+		}' ''
+mutate "v081 run-time checks skip comments" internal/core/cluster.go '	code := codeOnly(script)' '	code := script'
 mutate "v080 usage cost share"           internal/core/cluster.go '				x.row.CostUSD += price * nodes * hrs * allocShare(cat, j.Partition, int64(nodes), int64(cores), j.TRES.Allocated.Get("mem"))' '				x.row.CostUSD += price * nodes * hrs'
 mutate "v080 job list cost share"        internal/core/jobs.go '		share := allocShare(cat, j.Partition, n, js.CPUs, j.TRES.Allocated.Get("mem"))' '		share := 1.0'
 mutate "v080 waste node-hours share"    internal/core/p2.go '		share := allocShare(cat, j.Partition, int64(nodes), int64(cores), j.TRES.Allocated.Get("mem"))' '		share := 1.0'

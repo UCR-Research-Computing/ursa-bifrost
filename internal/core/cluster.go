@@ -408,6 +408,9 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 		if ln != "" && !strings.HasPrefix(ln, "#") {
 			bodyStarted = true
 		}
+		if strings.HasPrefix(ln, "#") {
+			continue // a comment that mentions `module load x` loads nothing
+		}
 		for _, m := range reModLoad.FindAllStringSubmatch(raw, -1) {
 			for _, mod := range strings.Fields(m[1]) {
 				if strings.HasPrefix(mod, "-") || strings.Contains(mod, "$") {
@@ -480,7 +483,7 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 		if shared && !cr.CoresAsked {
 			// a job with no core request gets 1 core on a shared node and is held
 			// there; refuse rather than let it run 20x slower than its author meant
-			add("error", 0, "%s shares nodes between jobs: this script %s. Ask for the cores it needs (#SBATCH --cpus-per-task=N, or --ntasks-per-node=N for MPI ranks), or #SBATCH --exclusive for the whole node", part, strings.TrimPrefix(cr.DefaultNote, "asks for no cores, so Slurm gives it "))
+			add("error", 0, "%s shares nodes between jobs: this script %s. Ask for the cores it needs (#SBATCH --cpus-per-task=N, or --ntasks-per-node=N for MPI ranks), or #SBATCH --exclusive for the whole node", part, cr.DefaultNote)
 		}
 		if shared && !cr.Exclusive {
 			if m := reAllCores.FindString(script); m != "" {
@@ -497,16 +500,18 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 			sc.Note += fmt.Sprintf(" %s gives whole nodes, so cost is per node regardless of cores used.", part)
 		}
 	}
-	if strings.Contains(script, "srun") && sc.Request["ntasks"] == "" && sc.Request["ntasks-per-node"] == "" && atoiDefault(sc.Request["nodes"], 1) > 1 {
+	// the run-time checks below read code only: a comment (# ...) runs nothing
+	code := codeOnly(script)
+	if strings.Contains(code, "srun") && sc.Request["ntasks"] == "" && sc.Request["ntasks-per-node"] == "" && atoiDefault(sc.Request["nodes"], 1) > 1 {
 		add("warning", 0, "multi-node srun without --ntasks/--ntasks-per-node runs one task per node")
 	}
-	if regexp.MustCompile(`(?m)^\s*(pip|pip3)\s+install\b`).MatchString(script) && !strings.Contains(script, "venv") && !strings.Contains(script, "uv ") && !strings.Contains(script, "pixi") && !strings.Contains(script, "--user") {
+	if regexp.MustCompile(`(?m)^\s*(pip|pip3)\s+install\b`).MatchString(code) && !strings.Contains(code, "venv") && !strings.Contains(code, "uv ") && !strings.Contains(code, "pixi") && !strings.Contains(code, "--user") {
 		add("warning", 0, "bare `pip install` without a virtual environment; use `uv venv $TMPDIR/v` or a Pixi/conda env")
 	}
-	if strings.Contains(script, "python") && !regexp.MustCompile(`python-(sci|ml)|venv|conda|pixi|uv |apptainer|miniforge`).MatchString(script) {
+	if strings.Contains(code, "python") && !regexp.MustCompile(`python-(sci|ml)|venv|conda|pixi|uv |apptainer|miniforge`).MatchString(code) {
 		add("warning", 0, "calls python without loading python-sci/python-ml or an environment (system Python 3.6 on Rocky 8)")
 	}
-	if strings.Contains(script, "apptainer") && strings.Contains(script, "--nv") && part != "gpul4" {
+	if strings.Contains(code, "apptainer") && strings.Contains(code, "--nv") && part != "gpul4" {
 		add("warning", 0, "apptainer --nv on a partition without GPUs")
 	}
 	sc.OK = true
@@ -516,6 +521,24 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 		}
 	}
 	return sc, nil
+}
+
+// codeOnly drops comment lines and trailing comments (" # ..."), keeping the
+// shebang out too, so checks don't fire on a commented-out alternative.
+func codeOnly(script string) string {
+	var b strings.Builder
+	for _, l := range strings.Split(script, "\n") {
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if i := strings.Index(l, " #"); i >= 0 && !strings.ContainsAny(l[:i], "'\"") {
+			l = l[:i]
+		}
+		b.WriteString(l)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func parseSbatch(opts string, req map[string]string) {

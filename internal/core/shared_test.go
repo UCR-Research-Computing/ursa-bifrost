@@ -60,8 +60,12 @@ func TestScriptWithoutCoresIsRefusedOnSharedPartition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sc.OK || !strings.Contains(issues(sc), "computehigh shares nodes between jobs") || !strings.Contains(issues(sc), "1 core") {
-		t.Fatalf("no-core script on a shared partition must be an error: %s", issues(sc))
+	if sc.OK || !strings.Contains(issues(sc), "computehigh shares nodes between jobs: this script asks for no cores, so Slurm gives it 1 core and about 4 GB") {
+		t.Fatalf("no-core script on a shared partition must be an error that reads as a sentence: %s", issues(sc))
+	}
+	// what the job will get, as numbers: 1 core, not "the node"
+	if sc.Cores == nil || sc.Cores.CoresPerNod != 1 || sc.Cores.NodeShare >= 0.1 {
+		t.Fatalf("no-core request should be 1 core, a small share: %+v", sc.Cores)
 	}
 	// job_submit refuses it and submits nothing
 	if _, err := s.PrepareSubmit(ctx, SubmitInput{Script: script("#SBATCH -p computehigh", "#SBATCH -t 30")}); err == nil || !strings.Contains(err.Error(), "shares nodes") {
@@ -363,5 +367,49 @@ func TestWasteUsesTheShareHeld(t *testing.T) {
 	w, sh := waste("../../testdata"), waste(sharedFixtureDir(t))
 	if w.NodeHours <= 0 || math.Abs(sh.NodeHours-round(w.NodeHours*2/22, 2)) > 0.011 {
 		t.Errorf("job 93 node-hours: shared %v, whole %v (want 2/22)", sh.NodeHours, w.NodeHours)
+	}
+}
+
+func TestCommentedModuleLoadIsNotChecked(t *testing.T) {
+	s := sharedService(t)
+	sc, err := s.ScriptCheck(context.Background(), script("#SBATCH -p computehigh", "#SBATCH -t 30", "#SBATCH -n 22",
+		"module load openmpi gromacs",
+		"srun gmx_mpi mdrun -deffnm md",
+		"# GPU build: module load gromacs/<version>-cuda on the gpul4 partition",
+		"   # module load nosuchmodule"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(issues(sc), "not found") {
+		t.Fatalf("commented module loads must be ignored: %s", issues(sc))
+	}
+	for _, m := range sc.Modules {
+		if strings.Contains(m, "cuda") || m == "on" || m == "nosuchmodule" {
+			t.Fatalf("modules = %v: a commented load was counted", sc.Modules)
+		}
+	}
+}
+
+func TestCommentsDoNotTriggerRunTimeChecks(t *testing.T) {
+	s := sharedService(t)
+	ctx := context.Background()
+	// a commented-out GPU alternative and a "python" mention in a comment
+	sc, _ := s.ScriptCheck(ctx, script("#SBATCH -p standard", "#SBATCH -t 30", "#SBATCH -c 4",
+		"module load apptainer",
+		"apptainer exec /apps/containers/r.sif Rscript x.R",
+		"# GPU: apptainer exec --nv /apps/containers/pytorch.sif python train.py",
+		"Rscript y.R   # not python"))
+	if strings.Contains(issues(sc), "--nv") || strings.Contains(issues(sc), "calls python") {
+		t.Fatalf("comments must not trigger run-time checks: %s", issues(sc))
+	}
+	// the same lines as code still warn
+	sc, _ = s.ScriptCheck(ctx, script("#SBATCH -p standard", "#SBATCH -t 30", "#SBATCH -c 4",
+		"module load apptainer", "apptainer exec --nv /apps/containers/pytorch.sif nvidia-smi"))
+	if !strings.Contains(issues(sc), "--nv") {
+		t.Fatalf("a real --nv must still warn: %s", issues(sc))
+	}
+	sc, _ = s.ScriptCheck(ctx, "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -t 30\n#SBATCH -c 4\n# module load python-sci (not yet)\npython3 x.py  # main step\n")
+	if !strings.Contains(issues(sc), "calls python") {
+		t.Fatalf("a real bare python must still warn: %s", issues(sc))
 	}
 }
