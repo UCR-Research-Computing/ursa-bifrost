@@ -46,6 +46,7 @@ type pendingAuth struct {
 	Resource      string
 	Created       time.Time
 	GoogleVerif   string // PKCE verifier for the Google leg
+	Consent       bool   // this Google leg used prompt=consent (forces a refresh token)
 }
 
 // authCode is issued to the MCP client after Google sign-in.
@@ -306,26 +307,52 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		fail("invalid_target", "unknown resource")
 		return
 	}
-	gState := randToken("")
-	gVerif := randToken("")
-	s.auth.mu.Lock()
-	s.auth.pending[gState] = pendingAuth{ClientID: c.ID, RedirectURI: ru, State: q.Get("state"),
-		CodeChallenge: q.Get("code_challenge"), Resource: q.Get("resource"), Created: time.Now(), GoogleVerif: gVerif}
-	s.auth.mu.Unlock()
+	gURL := s.googleURL(pendingAuth{ClientID: c.ID, RedirectURI: ru, State: q.Get("state"),
+		CodeChallenge: q.Get("code_challenge"), Resource: q.Get("resource")}, false)
+	// A browser that has already been through the explanation page goes
+	// straight to Google (one click: pick the account).
+	if ck, err := r.Cookie(seenCookie); err == nil && ck.Value == "1" {
+		http.Redirect(w, r, gURL, http.StatusFound)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: seenCookie, Value: "1", Path: "/", MaxAge: 365 * 24 * 3600,
+		HttpOnly: true, Secure: strings.HasPrefix(s.base, "https://"), SameSite: http.SameSiteLaxMode})
+	s.consentPage(w, c, gURL)
+}
 
+// seenCookie marks a browser that has seen the explanation page. It holds no
+// identity and grants nothing; it only skips a page.
+const seenCookie = "bifrost_seen"
+
+// googleURL registers a pending Google sign-in for p and returns its URL.
+// Normally prompt=select_account: Google shows only the account picker once
+// the person has granted access. consent=true forces the full consent screen,
+// the only way to get a new Google refresh token after the first grant.
+func (s *Server) googleURL(p pendingAuth, consent bool) string {
+	gState := randToken("")
+	p.GoogleVerif = randToken("")
+	p.Created = time.Now()
+	p.Consent = consent
+	s.auth.mu.Lock()
+	s.auth.pending[gState] = p
+	s.auth.mu.Unlock()
+	prompt := "select_account"
+	if consent {
+		prompt = "consent select_account"
+	}
 	v := url.Values{
 		"client_id":             {s.google.ClientID},
 		"redirect_uri":          {s.base + "/oauth/google/callback"},
 		"response_type":         {"code"},
 		"scope":                 {"openid email https://www.googleapis.com/auth/cloud-platform"},
 		"access_type":           {"offline"},
-		"prompt":                {"consent"},
+		"prompt":                {prompt},
 		"state":                 {gState},
-		"code_challenge":        {s256(gVerif)},
+		"code_challenge":        {s256(p.GoogleVerif)},
 		"code_challenge_method": {"S256"},
 		"hd":                    {s.users.Domain()},
 	}
-	s.consentPage(w, c, s.google.AuthURL+"?"+v.Encode())
+	return s.google.AuthURL + "?" + v.Encode()
 }
 
 var consentTmpl = template.Must(template.New("c").Parse(`<!doctype html><html><head><meta charset="utf-8">
@@ -416,6 +443,13 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if ok, _ := s.store.Get("session", id.Email, &session{}); !ok {
+		// Google only returns a refresh token on a consent screen. The person
+		// granted access before (e.g. signed out since), so ask once more with
+		// the consent screen; give up if even that returns none.
+		if !p.Consent {
+			http.Redirect(w, r, s.googleURL(p, true), http.StatusFound)
+			return
+		}
 		back(url.Values{"error": {"server_error"}, "error_description": {"Google returned no refresh token; remove ursa-bifrost from your Google account permissions and sign in again"}})
 		return
 	}

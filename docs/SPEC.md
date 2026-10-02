@@ -548,3 +548,10 @@ sign-in on a 401 rather than refreshing). Access tokens are now also sealed in
 the store and reloaded on demand, and only while the person still has a session
 (sign-out still ends them).
 
+### v0.5.3: one-click repeat sign-in
+Google is asked with prompt=select_account, so once someone has granted access a
+repeat sign-in is just the account picker; the explanation page shows once per
+browser (a cookie that holds no identity). Google only issues a refresh token on
+a consent screen, so when bifrost has no session for the person (first time, or
+after sign-out) and Google returns none, bifrost goes back to Google once with
+prompt=consent, automatically.
