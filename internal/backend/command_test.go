@@ -93,7 +93,7 @@ func TestAllowListIsClosed(t *testing.T) {
 			t.Errorf("%v must be marked write", c.argv)
 		}
 	}
-	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), Nodes(), cat, tl, ms, to, lf, hd, td} {
+	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), PartitionSharing(), Nodes(), cat, tl, ms, to, lf, hd, td} {
 		if c.Write() {
 			t.Errorf("read command marked write: %v", c.argv)
 		}

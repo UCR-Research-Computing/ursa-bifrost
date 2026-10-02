@@ -233,7 +233,7 @@ type InteractiveHelp struct {
 	Connect      string   `json:"connect"`        // how to reach the login node
 	Command      string   `json:"command"`        // one-step: shell on a compute node
 	Alternative  string   `json:"alternative"`    // salloc, then srun
-	USDPerHour   float64  `json:"usd_per_hour"`   // whole nodes are billed
+	USDPerHour   float64  `json:"usd_per_hour"`   // whole nodes, or the share held on shared partitions
 	WorstCaseUSD float64  `json:"worst_case_usd"` // if the session runs to the limit
 	Warnings     []string `json:"warnings"`
 	Notes        []string `json:"notes"`
@@ -291,9 +291,26 @@ func (s *Service) InteractiveHelp(ctx context.Context, in InteractiveInput) (*In
 	ic := s.Cfg.IAP
 	inst, zone, proj := firstNonEmpty(ic.Instance, "ucrslurmcl-slurm-login-001"), firstNonEmpty(ic.Zone, "us-central1-a"), firstNonEmpty(ic.Project, "ucr-ursa-major-hpc-cluster")
 	r.Connect = fmt.Sprintf("gcloud compute ssh %s --zone %s --project %s --tunnel-through-iap", inst, zone, proj)
+	// shared partitions bill the share of the node the session holds (v0.8.0)
+	shared := s.partitionShared(ctx, part)
+	share := 1.0
+	if shared {
+		req := map[string]string{}
+		if in.CPUs > 0 {
+			req["cpus-per-task"] = strconv.Itoa(in.CPUs)
+		}
+		if in.Memory != "" {
+			req["mem"] = in.Memory
+		}
+		cr := coreRequest(req, cp, true)
+		share = cr.NodeShare
+		if in.CPUs == 0 {
+			r.Warnings = append(r.Warnings, fmt.Sprintf("%s shares nodes between jobs: without cpus the session gets 1 core. Set cpus to what you need.", part))
+		}
+	}
 	if price, priced := s.price(cat, part); priced {
-		r.USDPerHour = round(price*float64(nodes), 2)
-		r.WorstCaseUSD = round(price*float64(nodes)*float64(mins)/60, 2)
+		r.USDPerHour = round(price*float64(nodes)*share, 2)
+		r.WorstCaseUSD = round(price*float64(nodes)*share*float64(mins)/60, 2)
 	}
 	if cp.GPUsPerNode > 0 && in.GPUs == 0 {
 		r.Warnings = append(r.Warnings, fmt.Sprintf("%s nodes have a GPU, but without --gres=gpu:1 your session cannot see it.", part))
@@ -302,12 +319,12 @@ func (s *Service) InteractiveHelp(ctx context.Context, in InteractiveInput) (*In
 		r.Warnings = append(r.Warnings, "Spot nodes can be taken back by Google at any time; do not use them for work you cannot lose.")
 	}
 	if float64(mins) > s.Cfg.Caps.MaxHours*60 {
-		r.Warnings = append(r.Warnings, fmt.Sprintf("That is longer than the %.0f h bifrost cap for batch jobs; an idle interactive session still bills the whole node.", s.Cfg.Caps.MaxHours))
+		r.Warnings = append(r.Warnings, fmt.Sprintf("That is longer than the %.0f h bifrost cap for batch jobs; an idle interactive session still bills what it holds.", s.Cfg.Caps.MaxHours))
 	}
 	r.Notes = append(r.Notes,
 		"bifrost does not open shells. Run these yourself: first connect to the login node, then start the session.",
 		"Nodes power up on demand, so the first session can take a few minutes to start.",
-		"The node is billed until the session ends: exit as soon as you are done.",
+		"The session is billed until it ends: exit as soon as you are done.",
 		"Do not run heavy work on the login node itself; that is what the interactive session is for.")
 	if !s.Cfg.ShowCost {
 		r.USDPerHour, r.WorstCaseUSD = 0, 0

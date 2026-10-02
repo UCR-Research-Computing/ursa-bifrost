@@ -147,7 +147,7 @@ func (s *Service) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 	}
 	cs.Notes = []string{
 		"Cloud nodes (slurm-gcp): powered-down nodes have no VM and cost nothing; powered-up nodes bill per hour whether or not a job runs.",
-		"Partitions are whole-node (exclusive).",
+		s.sharedSummary(ctx),
 	}
 	if len(cs.IdleBilling) > 0 {
 		cs.Notes = append(cs.Notes, fmt.Sprintf("%d node(s) are powered up with no job (billing while idle). A warm worker kept on purpose looks like this too.", len(cs.IdleBilling)))
@@ -296,7 +296,9 @@ func (s *Service) Usage(ctx context.Context, in UsageInput) (*Usage, error) {
 			x.row.CoreHours += cores * hrs
 			x.row.GPUHours += gpus * hrs
 			if priced {
-				x.row.CostUSD += price * nodes * hrs
+				// shared partitions bill the share of the node the job held (v0.8.0);
+				// on exclusive partitions Slurm allocates whole nodes, so share is 1
+				x.row.CostUSD += price * nodes * hrs * allocShare(cat, j.Partition, int64(nodes), int64(cores), j.TRES.Allocated.Get("mem"))
 			}
 			x.cpuSec += j.Time.Total.Float()
 			x.coreSec += cores * float64(j.Time.Elapsed)
@@ -318,7 +320,7 @@ func (s *Service) Usage(ctx context.Context, in UsageInput) (*Usage, error) {
 	if u.Rows == nil {
 		u.Rows = []UsageRow{}
 	}
-	u.Notes = []string{"Estimated cost = partition list price x nodes x elapsed hours (whole-node billing); it excludes boot/idle time and credits. Treat as an estimate."}
+	u.Notes = []string{"Estimated cost = partition list price x nodes x elapsed hours x the share of each node the job held (1 on whole-node partitions; cores or memory share, whichever is larger, on shared ones); it excludes boot/idle time and credits. Treat as an estimate."}
 	if len(missingPrice) > 0 {
 		var m []string
 		for k := range missingPrice {
@@ -360,11 +362,14 @@ type ScriptCheck struct {
 	Request    map[string]string `json:"request"`
 	Modules    []string          `json:"modules"`
 	Issues     []ScriptIssue     `json:"issues"`
+	Cores      *CoreRequest      `json:"cores,omitempty"` // what the job holds per node (v0.8.0)
 	EstCostUSD *float64          `json:"est_max_cost_usd,omitempty"`
 	Note       string            `json:"note"`
 }
 
 var (
+	// idioms that count the whole node's cores rather than the job's
+	reAllCores = regexp.MustCompile(`os\.cpu_count\(\)|multiprocessing\.cpu_count\(\)|nproc\s+--all|/proc/cpuinfo`)
 	reSbatch   = regexp.MustCompile(`^#SBATCH\s+(.*)$`)
 	reModLoad  = regexp.MustCompile(`\bmodule\s+(?:load|add)\s+([^;&|#\n]+)`)
 	reMemValue = regexp.MustCompile(`^(\d+)([KMGT]?)B?$`)
@@ -381,7 +386,7 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 		return nil, err
 	}
 	sc := &ScriptCheck{Request: map[string]string{}, Issues: []ScriptIssue{}, Modules: []string{},
-		Note: "Static check only; nothing was submitted. Partitions are whole-node, so cost is per node regardless of cores used."}
+		Note: "Static check only; nothing was submitted."}
 	add := func(sev string, line int, msg string, a ...any) {
 		sc.Issues = append(sc.Issues, ScriptIssue{Severity: sev, Line: line, Message: fmt.Sprintf(msg, a...)})
 	}
@@ -469,9 +474,27 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 		if p.Spot && !strings.Contains(script, "--requeue") {
 			add("warning", 0, "spot nodes can be reclaimed with ~30 s notice; add #SBATCH --requeue and make the job restartable")
 		}
+		shared := s.partitionShared(ctx, part)
+		cr := coreRequest(sc.Request, p, shared)
+		sc.Cores = &cr
+		if shared && !cr.CoresAsked {
+			// a job with no core request gets 1 core on a shared node and is held
+			// there; refuse rather than let it run 20x slower than its author meant
+			add("error", 0, "%s shares nodes between jobs: this script %s. Ask for the cores it needs (#SBATCH --cpus-per-task=N, or --ntasks-per-node=N for MPI ranks), or #SBATCH --exclusive for the whole node", part, strings.TrimPrefix(cr.DefaultNote, "asks for no cores, so Slurm gives it "))
+		}
+		if shared && !cr.Exclusive {
+			if m := reAllCores.FindString(script); m != "" {
+				add("warning", 0, "the script counts every core on the node (%s), but on shared %s the job holds %d; use $SLURM_CPUS_PER_TASK or $SLURM_CPUS_ON_NODE", m, part, cr.CoresPerNod)
+			}
+		}
 		if price, ok := s.price(cat, part); ok && hasTime && s.Cfg.ShowCost {
-			c := round(price*float64(nodes)*float64(mins)/60, 2)
+			c := round(price*float64(nodes)*cr.NodeShare*float64(mins)/60, 2)
 			sc.EstCostUSD = &c
+		}
+		if shared {
+			sc.Note += fmt.Sprintf(" %s shares nodes: cost is the share of the node held (%.0f%%, by %s).", part, 100*cr.NodeShare, firstNonEmpty(cr.Basis, "whole node"))
+		} else {
+			sc.Note += fmt.Sprintf(" %s gives whole nodes, so cost is per node regardless of cores used.", part)
 		}
 	}
 	if strings.Contains(script, "srun") && sc.Request["ntasks"] == "" && sc.Request["ntasks-per-node"] == "" && atoiDefault(sc.Request["nodes"], 1) > 1 {

@@ -257,7 +257,7 @@ func Explain(f Facts) []Finding {
 		if eff < 0.2 {
 			add(Finding{Rule: "low-cpu-efficiency", Severity: Warning, Title: "Most allocated cores sat idle",
 				Evidence:   []string{fmt.Sprintf("CPU efficiency %.0f%% (%d cores x %s)", eff*100, f.CPUsAlloc, dur(f.ElapsedSec))},
-				Suggestion: "The program used few cores: enable its threading/MPI options (-ntomp, OMP_NUM_THREADS, srun) or choose a smaller partition. Partitions are whole-node, so idle cores still bill."})
+				Suggestion: "The program used few cores: enable its threading/MPI options (-ntomp, OMP_NUM_THREADS, srun) or ask for fewer cores (on a shared partition only the cores held bill; on a whole-node partition idle cores still bill)."})
 		}
 	}
 

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Document | Specification and design (draft for decision) |
-| Status | v0.7.2, 2026-10-02. Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), ursa-agent chat on top. Sections 17-18 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
+| Status | v0.8.0, 2026-10-02. Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), ursa-agent chat on top. Sections 17-19 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -189,12 +189,12 @@ fields the assistant would read as instructions.
 | `files_list` | `path?`, `pattern?`, `offset?`, `limit?` | One folder under your home or scratch; hidden and credential-like entries are never shown (section 18.4) |
 | `files_read` | `path`, `offset?`, `bytes?`, `grep?` | One text file under your home or scratch, in chunks or searched; same deny rules (section 18.4) |
 | `env_check` | `modules[]?`, `commands[]?` | Loads modules on the login node and reports whether each loads, the resulting module list, and which `python3`, `gcc`, `mpirun`... you get, with versions (section 18.4) |
-| `interactive_help` | `partition?`, `nodes?`, `cpus?`, `gpus?`, `time?`, `memory?` | The exact `srun --pty`/`salloc` command for an interactive session, its hourly and worst-case cost and how to reach the login node. Runs nothing (section 18.4) |
+| `interactive_help` | `partition?`, `nodes?`, `cpus?`, `gpus?`, `time?`, `memory?` | The exact `srun --pty`/`salloc` command for an interactive session, its hourly and worst-case cost (share of the node on shared partitions) and how to reach the login node. Runs no job (section 18.4) |
 | `modules_search` | `query?` | Matching modules and versions with their MPI prerequisite and GPU builds, plus matching prebuilt containers and recipes |
 | `module_show` | `name`, `mpi?` | What the module sets (paths, environment, dependencies). MPI-built packages (hdf5, fftw, petsc...) exist only under an MPI in the site's hierarchical Lmod, so they are shown after `module load <mpi>` (openmpi by default, or the `mpi` given, which must be one of the package's builds); the answer names the MPI loaded and every build available |
 | `recipes` | `query?` | Known-good recipes from the cluster catalog (modules, run command, partition, notes) plus the site rules |
-| `script_check` | `script` | Static check of a batch script against the cluster: partition exists, limits fit, modules exist and their MPI prerequisite is loaded, GPU request matches partition, login-node misuse patterns, worst-case cost. No submission |
-| `my_usage` | `since?`, `until?`, `group_by?` | Caller's node-hours, core-hours, CPU efficiency and estimated cost, by partition or by job name |
+| `script_check` | `script` | Static check of a batch script against the cluster: partition exists, limits fit, modules exist and their MPI prerequisite is loaded, GPU request matches partition, a core request on shared partitions (section 19), worst-case cost (share of the node on shared partitions) and `cores` (what the job holds per node). No submission |
+| `my_usage` | `since?`, `until?`, `group_by?` | Caller's node-hours, core-hours, CPU efficiency and estimated cost, by partition (default), state or user |
 | `waste_report` | `since?`, `cpu_threshold?`, `min_node_hours?` | Avoidable spend in the caller's own jobs: low CPU efficiency, idle time before a timeout, warm workers, repeated fast failures, oversized memory requests, idle nodes (details in section 17, P2) |
 
 ### 7.2 Read tier R2 (staff: all users)
@@ -358,7 +358,8 @@ Retention per Q12. A weekly summary is cheap to produce from the file.
 
 - Cache and rate limits keep scheduler load low; no polling unless a watch is explicitly
   requested.
-- A1 caps: max nodes, max wall time, max estimated cost per job and per day per user.
+- A1 caps: max nodes, max wall time, max estimated cost per job and per day per user. On a
+  shared partition the estimate is the share of the node the job holds (section 19).
 - `waste_report` treats powered-down cloud nodes as free (slurm-gcp), so it does not
   raise false alarms.
 
@@ -444,7 +445,7 @@ retention settings.
 - `make check` (gofmt, vet, `go test -race`, build) before every commit; CI runs it plus the
   ursa-agent tests on every PR.
 - `scripts/mutation_check.sh`: disables each safety guard in turn and requires a test to
-  fail (95 guards as of v0.7.2). A guard whose pattern no longer applies is reported BROKEN
+  fail (113 guards as of v0.8.0). A guard whose pattern no longer applies is reported BROKEN
   and fails the run.
 - Live campaigns against the real cluster, read-only except jobs submitted through the
   two-step flow: v0.3.1 (13 jobs, 16 negative CLI cases, 22 MCP checks), v0.7.0/v0.7.1
@@ -711,7 +712,7 @@ boundary and the line numbers say exactly what was returned, so paging never ski
 | `files_list` | `realpath -e`, then `find <dir> -mindepth 1 -maxdepth 1 -printf ...` | Path under `/home/<user>/` or `/scratch/<user>/` (or `~/...`), clean and absolute; every component checked, before and after symlinks are resolved. Commands run as the person, so file permissions are theirs |
 | `files_read` | `stat`, `dd` (byte window) or `grep -n` | Same path rule; text only; redacted; untrusted |
 | `env_check` | A fixed `bash -lc` template: `module load` each given module (with Lmod's message when it fails), `module list`, then `command -v` for each command; versions only for a known list (python3, gcc, mpirun, nvcc, cmake, R, julia, java, apptainer...) | Module and command names validated; at most 10 modules and 15 commands; each version probe under `timeout 10` |
-| `interactive_help` | Nothing (catalog only) | Validated against partitions and caps |
+| `interactive_help` | Nothing but reads: the catalog and `sinfo -h -o %R\|%h` (sharing, v0.8.0) | Validated against partitions and caps |
 
 Hidden entries (any path component starting with `.`: `.ssh`, `.config`, `.aws`,
 `.bash_history`...) and credential-like names (`id_*`, `*.pem`, `*.key`, `*.p12`,
@@ -740,10 +741,50 @@ for a shell from an assistant: disk space, browsing their files, checking a modu
 - ursa-agent: an Attach button uploads through `upload_prepare` straight to the bucket and
   tells the agent the upload id; links in replies are clickable.
 
+## 19. Shared partitions: cores and cost (v0.8.0)
+
+Ursa Major is moving to shared nodes (blueprint branch `lab-partition-shared-nodes`, not
+yet applied): every partition except `highmem` and `gpul4` will let several jobs share a
+node. On a shared partition a job gets only the cores and memory it asks for, held there by
+the cgroup; a job that asks for nothing gets 1 core and `DefMemPerCPU` (node memory / node
+cores). Measured before the change (job 324, 2026-10-02, all partitions
+`OverSubscribe=EXCLUSIVE`): a job with `--cpus-per-task=2` still received all 22 cores and
+was billed for the node.
+
+### 19.1 Which partitions share
+
+Read live from Slurm with `sinfo -h -o %R|%h` (new allow-listed command, cached like node
+state). Any OverSubscribe value other than `EXCLUSIVE` (NO, YES, FORCE, with or without a
+count) counts as shared. The JSON output of Slurm 25.11 has no usable field for this (its
+`oversubscribe.flags` list is empty for EXCLUSIVE partitions). If the read fails, every
+partition counts as exclusive: whole-node pricing is the higher estimate and the core rule
+below never fires on a guess. `cluster_status` notes name the shared and whole-node
+partitions.
+
+### 19.2 Rules on a shared partition
+
+| Where | Behaviour |
+|---|---|
+| `script_check` | Error when the script asks for no cores (none of `--cpus-per-task`/`-c`, `--ntasks`/`-n`, `--ntasks-per-node`, `--exclusive`). Warning when it counts every core on the node (`os.cpu_count()`, `nproc --all`, `/proc/cpuinfo`) while holding fewer. The answer carries `cores` (cores and memory per node, share of the node and which share decided) |
+| `job_submit` | The error blocks the plan (decided by Chuck, 2026-10-02: refuse, do not add a default). Checked again against the partition the job will run on, so an override onto a shared partition is caught |
+| Cost: worst case, per-job and day caps, `script_check` estimate, `interactive_help` | price x nodes x share x hours, share = max(cores / node cores, memory / node memory), capped at 1; `--exclusive` is 1 |
+| Spent cost: `jobs_list`, `job_show`, `my_usage`, `usage_report`, `waste_report` | the share of the node the job was allocated (accounting TRES or squeue). On exclusive partitions Slurm allocates the whole node, so the share is 1 there and costs are unchanged; checked against the fixtures |
+| `interactive_help` | Warns that a session without `cpus` gets 1 core |
+
+Whole-node partitions keep today's behaviour: no core request needed, whole-node pricing.
+
+### 19.3 Not changed
+
+The rule switches on by itself when Slurm reports a partition as shared, so nothing changes
+before the blueprint is applied. `waste_report`'s CPU efficiency was already measured
+against the allocated cores. deep-research v0.52.1 writes an explicit core request (default
+2) on shared partitions, so its jobs pass the rule.
+
 ## Change log
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-02 | v0.8.0 | Section 19, shared partitions: sharing read live from Slurm (`sinfo -h -o %R\|%h`); on a shared partition `script_check`/`job_submit` refuse a script with no core request, and every cost (worst case, caps, estimates, spent cost, interactive sessions) is the share of the node held; `cluster_status` names shared and whole-node partitions. No change until the cluster's partitions are shared. 18 new mutation guards (113); jobs_list cap guard now tested. Spec fixes: `my_usage` groups by partition, state or user (not job name) |
 | 2026-10-02 | Draft 5 (docs) | Spec brought in line with v0.7.2: header, tool catalog from the live `tools/list` (36 tools), resources, diagnosis rules as built, configuration, identity (IAP + OS Login, not slurmrestd), integration, testing, phases C1-C6, decided questions marked |
 | 2026-10-02 | v0.7.2 | Fixes from the 2026-10-01 tool sweep: `module_show` loads the package's MPI first (hierarchical Lmod; hdf5/fftw failed with "bash exited 1: no error text") and reports a real "not found"; `ticket_draft` calls a COMPLETED, exit-0 job a success instead of "could not match the failure" (job 307); `jobs_list` defaults to 50 rows (200-row default answers were ~70 KB). Six new mutation guards |
 | 2026-10-02 | v0.7.1 | SSH session limit: at most 8 commands at once per person's connection (login node MaxSessions is 10); a refused channel is retried without dropping the connection; transport errors no longer read as "does not exist". Found by a 30-call parallel burst (9 failed on v0.7.0) |
@@ -846,3 +887,11 @@ Found by touching every hosted tool on 2026-10-01 (v0.5.x) and re-checked on v0.
   summarised as a success, and the reply asks which output was missing or unexpected.
 - `jobs_list` with no `limit` returned the 200-row cap (~70 KB). The default page is now
   50 rows; `limit` still goes up to the configured cap.
+
+### v0.8.0: shared partitions
+Section 19. Ursa Major will share nodes on every partition but highmem and gpul4; on a shared
+partition a job that asks for no cores gets one. bifrost reads which partitions share from
+Slurm, refuses no-core scripts there (script_check error, job_submit blocked, including after
+a partition override), and prices only the share of the node a job holds. Spent costs use the
+share Slurm allocated, so they are unchanged on today's exclusive cluster. The mutation check
+found two guards no test covered (the core cap and the jobs_list row cap); both now have tests.

@@ -152,6 +152,10 @@ Resources: `hpc://catalog`, `hpc://policies`. Prompts: `diagnose_job`,
   (mode 600): caller, client, tool, redacted args, decision, commands, size, duration.
 - Short-TTL cache and a per-process rate limit keep scheduler load low; no background polling.
 - Other users' jobs are denied unless the config grants tier R2.
+- Shared partitions (docs/SPEC.md 19): which partitions share nodes is read from Slurm. On a
+  shared one, a script must ask for its cores (`--cpus-per-task`, `--ntasks-per-node` or
+  `--exclusive`) or `script_check` and `job_submit` refuse it, and costs are the share of the
+  node the job holds.
 
 ## Development
 

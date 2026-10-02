@@ -50,6 +50,9 @@ type Fixture struct {
 	Puts map[string]string
 	// Out answers a bash template exactly (env_check, du ...): template -> output.
 	Out map[string]string
+	// Sharing answers `sinfo -h -o %R|%h` (partition|OverSubscribe lines); empty
+	// means every partition is EXCLUSIVE, as on the real cluster in 2026-10.
+	Sharing string
 }
 
 // Name is the backend label.
@@ -86,6 +89,14 @@ func (f *Fixture) Run(_ context.Context, c Command) ([]byte, error) {
 		}
 		return b, nil
 	case "sinfo":
+		if len(a) > 1 && a[1] == "-h" {
+			// PartitionSharing: the test's Sharing text, else today's real
+			// cluster (every partition EXCLUSIVE)
+			if f.Sharing != "" {
+				return []byte(f.Sharing), nil
+			}
+			return []byte("computehigh|EXCLUSIVE\ngpul4|EXCLUSIVE\nhighmem|EXCLUSIVE\nnvmescratch|EXCLUSIVE\nspot|EXCLUSIVE\nstandard|EXCLUSIVE\n"), nil
+		}
 		return read("sinfo.json")
 	case "scontrol":
 		if a[1] == "hold" || a[1] == "release" {

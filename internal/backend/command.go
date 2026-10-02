@@ -198,6 +198,14 @@ func SacctStates(user, since, states string) (Command, error) {
 // Sinfo is `sinfo --json`.
 func Sinfo() Command { return Command{argv: []string{"sinfo", "--json"}, kind: KindNodes} }
 
+// PartitionSharing is `sinfo -h -o %R|%h`: each partition's OverSubscribe setting
+// (EXCLUSIVE, NO, YES, FORCE...), which says whether jobs share nodes. The JSON
+// output of Slurm 25.11 carries no such field (its oversubscribe flags stay empty
+// for EXCLUSIVE partitions), so the format string is the reliable source.
+func PartitionSharing() Command {
+	return Command{argv: []string{"sinfo", "-h", "-o", "%R|%h"}, kind: KindNodes}
+}
+
 // Nodes is `scontrol show nodes --json`.
 func Nodes() Command {
 	return Command{argv: []string{"scontrol", "show", "nodes", "--json"}, kind: KindNodes}

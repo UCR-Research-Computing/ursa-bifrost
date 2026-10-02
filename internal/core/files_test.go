@@ -645,9 +645,21 @@ func TestInteractiveHelp(t *testing.T) {
 		t.Errorf("connect: %s", r.Connect)
 	}
 	for _, c := range fx.Calls[n:] {
-		if !strings.HasPrefix(c, "cat ") { // only the catalog is read
+		// only the catalog and the partitions' sharing mode are read (v0.8.0)
+		if !strings.HasPrefix(c, "cat ") && c != "sinfo -h -o '%R|%h'" {
 			t.Errorf("interactive_help ran %s", c)
 		}
+	}
+	// on a shared partition the session costs the share of the node it holds
+	fx.Sharing = "computehigh|NO\n"
+	s.cache = map[string]cacheEntry{} // the sharing answer is cached like node state
+	r, _ = s.InteractiveHelp(context.Background(), InteractiveInput{Partition: "computehigh", Time: "2:00:00", CPUs: 11})
+	if r.WorstCaseUSD != 1.87 || r.USDPerHour != 0.94 {
+		t.Errorf("shared session (11 of 22 cores, 2 h): %+v", r)
+	}
+	r, _ = s.InteractiveHelp(context.Background(), InteractiveInput{Partition: "computehigh", Time: "1:00:00"})
+	if !strings.Contains(strings.Join(r.Warnings, " "), "gets 1 core") {
+		t.Errorf("no cpus on a shared partition should warn: %v", r.Warnings)
 	}
 	for _, bad := range []InteractiveInput{{Partition: "nope"}, {Partition: "computehigh", GPUs: 1}, {Partition: "computehigh", Memory: "16G; id"}, {Partition: "computehigh", Time: "forever"}, {Partition: "computehigh", CPUs: 9999}} {
 		if _, err := s.InteractiveHelp(context.Background(), bad); err == nil {

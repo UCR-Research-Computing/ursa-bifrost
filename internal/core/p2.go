@@ -52,8 +52,8 @@ type WasteInput struct {
 
 // Waste finds avoidable node-hours: idle powered-up nodes, jobs that left most
 // cores idle, jobs that ran far longer than their CPU use, repeated fast
-// failures. Partitions bill whole nodes, so wasted node-hours = node-hours x
-// (1 - CPU efficiency), a deliberate upper bound.
+// failures. Wasted node-hours = billed node-hours (the share of each node held, 1 on
+// whole-node partitions) x (1 - CPU efficiency), a deliberate upper bound.
 func (s *Service) Waste(ctx context.Context, in WasteInput) (*WasteReport, error) {
 	if in.Since == "" {
 		in.Since = "now-7days"
@@ -107,8 +107,11 @@ func (s *Service) Waste(ctx context.Context, in WasteInput) (*WasteReport, error
 	failsByKey := map[string][]slurm.AcctJob{}
 	for _, j := range a.Jobs {
 		nodes := float64(max(j.AllocationNodes, 1))
-		nh := nodes * float64(j.Time.Elapsed) / 3600
 		cores := float64(j.TRES.Allocated.Get("cpu"))
+		// node-hours billed: on shared partitions only the share of the node held
+		// (v0.8.0); CPU efficiency is already judged against the allocated cores
+		share := allocShare(cat, j.Partition, int64(nodes), int64(cores), j.TRES.Allocated.Get("mem"))
+		nh := nodes * share * float64(j.Time.Elapsed) / 3600
 		st := j.StateName()
 		if st == "FAILED" && j.Time.Elapsed < 600 {
 			key := j.User + "|" + j.Partition + "|" + nameStem(j.Name)
@@ -155,7 +158,8 @@ func (s *Service) Waste(ctx context.Context, in WasteInput) (*WasteReport, error
 		var nh float64
 		ids := []string{}
 		for _, j := range js {
-			nh += float64(max(j.AllocationNodes, 1)) * float64(j.Time.Elapsed) / 3600
+			n := max(j.AllocationNodes, 1)
+			nh += float64(n) * allocShare(cat, j.Partition, n, j.TRES.Allocated.Get("cpu"), j.TRES.Allocated.Get("mem")) * float64(j.Time.Elapsed) / 3600
 			ids = append(ids, fmt.Sprint(j.JobID))
 		}
 		sort.Strings(ids)
@@ -216,7 +220,7 @@ func (s *Service) Waste(ctx context.Context, in WasteInput) (*WasteReport, error
 		rep.Items = []WasteItem{}
 	}
 	rep.Notes = []string{
-		"Wasted node-hours = node-hours x (1 - CPU efficiency): an upper bound, because partitions bill whole nodes and some programs are I/O- or GPU-bound by design.",
+		"Wasted node-hours = billed node-hours x (1 - CPU efficiency over the allocated cores): an upper bound, because some programs are I/O- or GPU-bound by design. On shared partitions only the share of the node a job held is billed.",
 		"Running jobs have no CPU totals until they end; they appear only through node load (allocated-idle-node).",
 		"allocated-idle-node and oversized-memory are listed with 0 wasted hours: they need a person's judgment.",
 		"warm-worker items are keep-warm jobs (name contains warm/keepalive): idle by design; their hours are the cost of fast starts.",
