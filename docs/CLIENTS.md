@@ -42,7 +42,7 @@ hermes mcp test ursa
 
 `add` opens the browser to sign in and asks which tools to enable. Tokens are kept in
 `~/.hermes/mcp-tokens/` and refresh on their own. Start a new session to get the tools
-(`mcp_ursa_cluster_status`, ...).
+(`mcp__ursa__cluster_status`, ...).
 
 Approval prompts: Hermes asks before every tool on an untrusted server. bifrost's
 read tools are marked `readOnlyHint: true` and its act tools need a second confirm call
