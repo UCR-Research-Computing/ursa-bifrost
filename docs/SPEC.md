@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (Draft 6; built through bifrost v0.8.2 and ursa-agent 0.3.0) |
-| Status | bifrost v0.8.2, ursa-agent 0.3.0, 2026-10-02 (spec Draft 6). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-20 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
+| Document | Specification and design (Draft 7; built through bifrost v0.9.0 and ursa-agent 0.3.0) |
+| Status | bifrost v0.9.0, ursa-agent 0.3.0, 2026-10-02 (spec Draft 7). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -305,6 +305,9 @@ node). deep-research's `FAILURE_CLASSES` and lessons were the seed.
   their Google token (IAP + OS Login, their own SSH key, sealed at rest). Tiers come from
   `users.yaml`, checked on every request. No shared "AI" account that can see everything, and
   no token passthrough. Details: docs/CLOUD_PLAN.md sections 2.4-2.5.
+- Programs (v0.9.0, section 21): a program such as Ultra signs in as a person through a
+  pre-registered client from `users.yaml`. It never has more than the person, and its
+  `tiers` ceiling can give it less (Ultra: read tiers only, even for an A1 person).
 - The original plan (campus SSO with a per-user Slurm JWT through slurmrestd) was not needed:
   no slurmrestd daemon runs on the cluster, and IAP + OS Login gives per-person identity
   without one (CLOUD_PLAN.md 2.2-2.3).
@@ -352,6 +355,7 @@ cancel all jobs"). Rules:
 
 Every call appends one JSON line: time, caller, client, tool, arguments (redacted),
 result size, backend command, duration, decision (allowed, denied, needs approval).
+A program client's calls carry `client: "program:<id>/mcp:<name>"` (v0.9.0).
 Retention per Q12. A weekly summary is cheap to produce from the file.
 
 ### 9.7 Load and cost safety
@@ -883,10 +887,57 @@ Chat moves into a drawer on the right (full screen on phones), unchanged in beha
 `/api/chat`, plan cards and Approve/Reject. Each panel has an "Ask" button that opens the drawer
 with a question about that panel (e.g. "Why did job 315 fail?").
 
+## 21. Program clients (v0.9.0)
+
+Built for Ultra (Chuck's workstation app), which will read cluster facts for tickets and
+mail. Before v0.9.0 every client a person signed in got all of that person's tiers, so an
+Ultra token would have carried Chuck's A1 (submit, cancel), and all of a person's clients
+shared one 60-a-minute budget with the dashboard and Hermes.
+
+### 21.1 users.yaml
+
+```yaml
+clients:
+  - id: bifrost-ultra            # the OAuth client_id the program uses
+    name: Ultra
+    tiers: [R1, R2]              # ceiling: never more than the person, maybe less
+    calls_per_min: 120           # its own budget (0 or absent = limits.calls_per_min; max 600)
+    redirect_uris: ["http://127.0.0.1/callback"]
+    disabled: false
+```
+
+Checked when the file loads: id `^[a-z][a-z0-9-]{2,40}$` and unique, at least one tier,
+known tiers, budget 0-600, at least one redirect URI, each https or http loopback. A file
+without `clients:` behaves exactly as before.
+
+### 21.2 Rules
+
+| Rule | Where |
+|---|---|
+| A program's tools are the person's tiers intersected with its `tiers`; a ceiling never grants a tier the person lacks | `programConfig`, `ceiling` |
+| Its `calls_per_min` is its own token bucket per person, separate from the person's own clients | one `userConn` per person and program |
+| Program ids come only from users.yaml: `/register` always issues a random `bfc_` id, and a listed id is looked up in users.yaml, never in the store | `lookupClient` |
+| A disabled program is refused at `/authorize`, at code exchange, at refresh and on every request (live tokens stop working at once) | `lookupClient`, `tokenFromCode`, `tokenFromRefresh`, `requireAuth`, `/whoami` |
+| One backend per person: the person's clients and their programs share one SSH connection and one OS Login key, so a program does not add keys or sessions on the login node | `backendFor`; the idle sweep closes the connection only when none of the person's connections is left |
+| Audit `client` is `program:<id>/mcp:<client name>` | `core.Call` |
+| `/whoami` adds `program` and `calls_per_min` and shows the capped tiers | `handleWhoami` |
+
+The login node's limit still applies to the person as a whole: at most 8 commands at once
+over their one connection (v0.7.1), whichever client sent them.
+
+### 21.3 Tests
+
+`internal/server/server_test.go`: ceiling (A1 person through a read-only program gets no act
+tools, a refused call by name; an R1 person gains nothing; the person's own client keeps
+A1), separate budgets, interleaved use of both clients, one backend per person, disabled
+programs at each step (including mid sign-in), foreign redirects, and bad users files. 13
+new mutation guards (128 in all, every one caught).
+
 ## Change log
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-02 | v0.9.0 | Section 21, program clients: pre-registered clients in users.yaml with a tier ceiling and their own call budget, audited as `program:<id>`; one SSH connection per person shared by their clients and programs. 13 new mutation guards (128). Draft 7 |
 | 2026-10-02 | Draft 6 (docs) | Status brought up to date: cluster shared since 2026-10-02 (19.3 as applied), Q14 decided, dashboard in the header |
 | 2026-10-02 | ursa-agent 0.3.0 | Section 20: read-only dashboard (12 panels, 4 staff-only) with the chat in a drawer; per-person cache; token-refresh lock; strict CSP. Tag `agent-v0.3.0`, Cloud Run `ursa-agent` revision 00003. N5 amended |
 | 2026-10-02 | v0.8.1 | First day on shared nodes: no-core error reads as a sentence; script_check ignores `module load` and run-time patterns in comments. 116 mutation guards |
@@ -1015,6 +1066,11 @@ over on its own. Live checks found three wording and parsing bugs, fixed here:
 - The srun, pip, bare-python and `apptainer --nv` checks also read comments, so a
   commented-out GPU alternative warned "apptainer --nv on a partition without GPUs". They
   read code only now.
+
+### v0.9.0: program clients
+Section 21. Programs sign in through a client listed in users.yaml, capped by its tier
+ceiling and limited by their own call budget; audit records name the program. Built so Ultra
+can read cluster facts without holding Chuck's submit and cancel rights.
 
 ### ursa-agent 0.3.0: dashboard
 Section 20. The chat page becomes a read-only dashboard over bifrost tools (12 panels, 4 of them

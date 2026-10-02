@@ -217,6 +217,17 @@ async def main(token: str):
 For scripts with no browser, the local binary is simpler: `bifrost status --json`,
 `bifrost job explain 236 --json`. Every CLI command takes `--json`.
 
+## Programs (pre-registered clients)
+
+A long-running program (a dashboard, Ultra) can use a client id listed under `clients:` in
+the server's `users.yaml` instead of registering one. It signs in as a person like any
+client, but its tools are that person's tiers capped by the program's `tiers` (a ceiling,
+never a grant), and it has its own `calls_per_min`, separate from the person's chat
+clients. Use the listed `client_id` and one of its redirect URIs (loopback ports may
+differ); skip `/register`. `GET /whoami` shows `program`, the capped `tiers` and
+`calls_per_min`. Refresh tokens rotate: a program that refreshes from several threads must
+lock around the refresh. Audit records read `program:<id>/mcp:<client name>`.
+
 ## Any other client
 
 Point it at `URL` with transport "Streamable HTTP" (sometimes called "http"; not "SSE")
@@ -232,6 +243,7 @@ and let it do OAuth. Discovery starts from the `401` on `/mcp`, whose
 | Sign-in page says your account is not allowed | Only ucr.edu accounts listed in the server's `users.yaml` get in. Ask Research Computing to add you. |
 | `401` on every call after it worked | Access tokens last an hour and refresh tokens 30 days; refresh tokens rotate, so two clients sharing one token file break each other. Sign in again per client. |
 | Client says "SSE" or "invalid transport" | Choose Streamable HTTP / `http`. bifrost does not serve SSE. |
-| A tool you expected is missing | Tools follow your tier: R1 read, R2 staff, A1 submit/cancel. The tool list only shows what you may call. |
+| A tool you expected is missing | Tools follow your tier: R1 read, R2 staff, A1 submit/cancel. The tool list only shows what you may call. Through a program client, the program's tier ceiling also applies. |
+| `rate limited` | Over the call budget (default 60 a minute per person; a program client has its own). Wait a moment. |
 | `job_submit` returns a token, nothing runs | That is the design: show the plan, then call `job_submit_confirm` with the token after you approve. Tokens expire in 10 minutes. |
 | Every read asks for approval (Hermes) | Hermes treats untrusted servers' tools as writes; see the Hermes section for `trust full`. |

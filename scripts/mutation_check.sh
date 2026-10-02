@@ -88,13 +88,13 @@ mutate "srv consent retry"     internal/server/oauth.go '		if !p.Consent {
 mutate "srv no forced consent" internal/server/oauth.go '	prompt := "select_account"' '	prompt := "consent"'
 mutate "rule cmd-not-found case" internal/rules/rules.go '(?mi)(\S+): command not found\s*$' '(?m)(\S+): command not found$'
 mutate "rule exit 127"           internal/rules/rules.go 'if st == "FAILED" && f.ExitCode == "127" && !hasRule(out, "command-not-found") {' 'if false {'
-mutate "srv whoami auth"        internal/server/server.go '	_, u, err := s.verifyAccess(tok)
+mutate "srv whoami auth"        internal/server/server.go '	a, u, err := s.verifyAccess(tok)
 	if err != nil {
 		s.challenge(w, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"email": u.Email, "tiers": u.Tiers})' '	u := s.users.Lookup("bob@ucr.edu")
-	writeJSON(w, 200, map[string]any{"email": u.Email, "tiers": u.Tiers})'
+	p, err := s.programFor(a.ClientID)' '	a, u := \&accessRec{}, s.users.Lookup("bob@ucr.edu")
+	p, err := s.programFor(a.ClientID)'
 mutate "v07 user root check"     internal/core/files.go 'if p == r {
 			return nil
 		}
@@ -204,6 +204,38 @@ mutate "v080 interactive share"          internal/core/helpers.go '		share = cr.
 mutate "v080 interactive no-cpu warning" internal/core/helpers.go '		if in.CPUs == 0 {
 			r.Warnings' '		if false {
 			r.Warnings'
+mutate "v090 program tier ceiling"       internal/server/server.go '	c.Tiers = ceiling(c.Tiers, p.Tiers)' '	_ = ceiling'
+mutate "v090 ceiling never grants"        internal/server/store.go '		for _, l := range limit {
+			if t == l {' '		for _, l := range limit {
+			if t == l || l != "" {'
+mutate "v090 program budget"              internal/server/server.go '		c.Limits.CallsPerMin = p.CallsPerMin' '		_ = p'
+mutate "v090 program conn is separate"    internal/server/server.go '	return email + "|" + p.ID' '	return email'
+mutate "v090 disabled program per request" internal/server/server.go '		p, err := s.programFor(a.ClientID)
+		if err != nil {
+			s.audit("mcp", u.Email, "denied", err.Error())' '		p, err := s.programFor(a.ClientID)
+		if false {
+			s.audit("mcp", u.Email, "denied", err.Error())'
+mutate "v090 disabled program refresh"    internal/server/oauth.go '	if _, err := s.programFor(rec.ClientID); err != nil {' '	if false {'
+mutate "v090 disabled program sign-in"    internal/server/oauth.go '		p := s.users.Program(id)
+		if p == nil {
+			return nil, errors.New("client is disabled")
+		}' '		p := s.users.Program(id)
+		if p == nil {
+			p = \&ProgramClient{ID: id, RedirectURIs: []string{"http://127.0.0.1:33418/callback"}}
+		}'
+mutate "v090 disabled program code exchange" internal/server/oauth.go '		if _, err := s.programFor(c.ClientID); err != nil {
+			oauthErr(w, 400, "invalid_grant", err.Error())
+			return
+		}
+		s.issue(w, c.ClientID, c.Email)' '		s.issue(w, c.ClientID, c.Email)'
+mutate "v090 program redirect check"      internal/server/store.go '			if !validRedirect(r) {
+				return fmt.Errorf("users file: client %s redirect' '			if false {
+				return fmt.Errorf("users file: client %s redirect'
+mutate "v090 program budget range"        internal/server/store.go '		if c.CallsPerMin < 0 || c.CallsPerMin > MaxProgramCallsPerMin {' '		if false {'
+mutate "v090 one backend per person"      internal/server/server.go '	if b, ok := s.backends[email]; ok {
+		return b
+	}' ''
+mutate "v090 audit names the program"     internal/core/service.go '		client = "program:" + s.Program + "/" + client' '		_ = client'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

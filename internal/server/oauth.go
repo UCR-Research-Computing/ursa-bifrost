@@ -256,6 +256,14 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) lookupClient(id string) (*client, error) {
+	// program clients come from users.yaml, never from registration
+	if s.users.isProgramID(id) {
+		p := s.users.Program(id)
+		if p == nil {
+			return nil, errors.New("client is disabled")
+		}
+		return &client{ID: p.ID, Name: p.Name, RedirectURIs: p.RedirectURIs}, nil
+	}
 	var c client
 	ok, err := s.store.Get("client", id, &c)
 	if err != nil || !ok {
@@ -504,6 +512,11 @@ func (s *Server) tokenFromCode(w http.ResponseWriter, r *http.Request) {
 	case f.Get("code_verifier") == "" || s256(f.Get("code_verifier")) != c.CodeChallenge:
 		oauthErr(w, 400, "invalid_grant", "PKCE verification failed")
 	default:
+		// a program disabled while its user was at Google gets no tokens
+		if _, err := s.programFor(c.ClientID); err != nil {
+			oauthErr(w, 400, "invalid_grant", err.Error())
+			return
+		}
 		s.issue(w, c.ClientID, c.Email)
 	}
 }
@@ -522,6 +535,11 @@ func (s *Server) tokenFromRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.store.Delete("refresh", hashTok(rt)) // rotate
+	if _, err := s.programFor(rec.ClientID); err != nil {
+		oauthErr(w, 400, "invalid_grant", err.Error())
+		s.audit("refresh", rec.Email, "denied", err.Error())
+		return
+	}
 	if s.users.Lookup(rec.Email) == nil {
 		oauthErr(w, 400, "invalid_grant", "user is no longer allowed")
 		s.audit("refresh", rec.Email, "denied", "not on user list")
