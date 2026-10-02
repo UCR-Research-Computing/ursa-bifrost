@@ -208,3 +208,37 @@ func TestScriptOwnPythonError(t *testing.T) {
 		t.Errorf("order: %v", rulesOf(fs))
 	}
 }
+
+// Job 302 (live, 2026-10-01): GADGET-4's Makefile calls `python`, which the
+// nodes do not have. make prints "Command not found" with a capital C, so the
+// rule missed it and the job fell through to "no known pattern" (exit 5).
+func TestMakeCommandNotFoundCapitalC(t *testing.T) {
+	log := "[21:31:11] +4s cloned\nFAIL: build\nmake: python: Command not found\nmake: *** [buildsystem/Makefile.config:12: build/gadgetconfig.h] Error 127\ncat: build/gadgetconfig.h: No such file or directory\n"
+	fs := Explain(Facts{State: "FAILED", ExitCode: "5", Log: log, LogReadable: true})
+	f := want(t, fs, "command-not-found")
+	if !strings.Contains(f.Suggestion, "PYTHON=python3") {
+		t.Errorf("python advice missing: %q", f.Suggestion)
+	}
+	if hasRule(fs, "script-error") {
+		t.Error("fell through to script-error")
+	}
+}
+
+func TestCommandNotFoundAdvice(t *testing.T) {
+	for cmd, wantSub := range map[string]string{
+		"line 4: gmx_mpi": "modules_search gmx_mpi",
+		"mpirun":          "module load openmpi",
+		"module":          "#!/bin/bash -l",
+		"nvcc":            "gpul4",
+		"pip":             "python3",
+	} {
+		if got := commandNotFoundAdvice(cmd); !strings.Contains(got, wantSub) {
+			t.Errorf("%s: %q lacks %q", cmd, got, wantSub)
+		}
+	}
+}
+
+func TestExit127WithoutLog(t *testing.T) {
+	fs := Explain(Facts{State: "FAILED", ExitCode: "127", LogReadable: false})
+	want(t, fs, "command-not-found")
+}

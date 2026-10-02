@@ -555,3 +555,10 @@ browser (a cookie that holds no identity). Google only issues a refresh token on
 a consent screen, so when bifrost has no session for the person (first time, or
 after sign-out) and Google returns none, bifrost goes back to Google once with
 prompt=consent, automatically.
+
+### v0.5.4: command-not-found diagnosis
+job_explain/ticket_draft recognise make's "Command not found" (capital C) and
+exit code 127 without a log, and tailor the fix to the missing command (no bare
+`python` on the nodes: use python3 or `make PYTHON=python3`; mpirun needs
+`module load openmpi`; nvcc only on gpul4). Found live on job 302 (GADGET-4).
+
