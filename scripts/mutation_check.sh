@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go"
+FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
@@ -167,6 +167,38 @@ mutate "v072 jobs_list config cap"       internal/core/jobs.go '	if limit > s.Cf
 		limit = s.Cfg.Limits.ListRows
 	}
 	var qc' '	var qc'
+mutate "v080 no-core error on shared"   internal/core/cluster.go '		if shared && !cr.CoresAsked {' '		if false {'
+mutate "v080 submit re-checks override"  internal/core/a1.go '	} else if s.partitionShared(ctx, part) && !coresAsked(req) {' '	} else if false {'
+mutate "v080 shared price share"         internal/core/a1.go '		share = coreRequest(req, cp, true).NodeShare' '		share = 1'
+mutate "v080 exclusive pays the node"    internal/core/shared.go '	if r.Exclusive || !shared {' '	if !shared {'
+mutate "v080 memory share counts"        internal/core/shared.go '		if m := float64(mem) / float64(nodeMemMB); m > share {' '		if m := 0.0; m > share {'
+mutate "v080 memory capped at node"     internal/core/shared.go '	if nodeMemMB > 0 && mem > nodeMemMB {
+		mem = nodeMemMB
+	}' ''
+mutate "v080 cores capped at node"       internal/core/shared.go '	if nodeCores > 0 && cores > nodeCores {
+		cores = nodeCores
+	}' ''
+mutate "v080 EXCLUSIVE is not shared"    internal/core/shared.go '		out[strings.TrimSuffix(name, "*")] = mode != "" && mode != "EXCLUSIVE"' '		out[strings.TrimSuffix(name, "*")] = mode != ""'
+mutate "v080 failed read is exclusive"   internal/core/shared.go '	if err != nil {
+		return out
+	}
+	for _, line' '	if err != nil {
+		return map[string]bool{"computehigh": true}
+	}
+	for _, line'
+mutate "v080 every core request counts"  internal/core/shared.go '	for _, k := range []string{"cpus-per-task", "ntasks", "ntasks-per-node", "exclusive"} {' '	for _, k := range []string{"cpus-per-task"} {'
+mutate "v080 script_check share price"   internal/core/cluster.go '			c := round(price*float64(nodes)*cr.NodeShare*float64(mins)/60, 2)' '			c := round(price*float64(nodes)*float64(mins)/60, 2)'
+mutate "v080 usage cost share"           internal/core/cluster.go '				x.row.CostUSD += price * nodes * hrs * allocShare(cat, j.Partition, int64(nodes), int64(cores), j.TRES.Allocated.Get("mem"))' '				x.row.CostUSD += price * nodes * hrs'
+mutate "v080 job list cost share"        internal/core/jobs.go '		share := allocShare(cat, j.Partition, n, js.CPUs, j.TRES.Allocated.Get("mem"))' '		share := 1.0'
+mutate "v080 waste node-hours share"    internal/core/p2.go '		share := allocShare(cat, j.Partition, int64(nodes), int64(cores), j.TRES.Allocated.Get("mem"))' '		share := 1.0'
+mutate "v080 alloc share capped"         internal/core/shared.go '	if share <= 0 || share > 1 {' '	if share <= 0 {'
+mutate "v080 alloc memory share"         internal/core/shared.go '		share = math.Max(share, float64(memMB)/float64(nodes)/nodeMem)' '		_ = nodeMem'
+mutate "v080 interactive share"          internal/core/helpers.go '		share = cr.NodeShare
+' '		_ = cr
+'
+mutate "v080 interactive no-cpu warning" internal/core/helpers.go '		if in.CPUs == 0 {
+			r.Warnings' '		if false {
+			r.Warnings'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

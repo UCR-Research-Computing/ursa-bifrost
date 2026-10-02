@@ -468,4 +468,9 @@ func TestJobsListDefaultPage(t *testing.T) {
 	if len(got) != 3 {
 		t.Errorf("cap 3: got %d", len(got))
 	}
+	// an explicit limit above the cap is cut to the cap too
+	got, _ = s.JobsList(context.Background(), JobsListInput{Since: "now-30days", Limit: 100})
+	if len(got) != 3 {
+		t.Errorf("limit 100 with cap 3: got %d", len(got))
+	}
 }

@@ -223,6 +223,9 @@ func printCheck(w io.Writer, c *core.ScriptCheck) {
 	if c.EstCostUSD != nil {
 		fmt.Fprintf(w, "  worst-case cost $%.2f", *c.EstCostUSD)
 	}
+	if c.Cores != nil && c.Cores.NodeShare < 1 {
+		fmt.Fprintf(w, "  (%d cores, %.0f%% of a node)", c.Cores.CoresPerNod, 100*c.Cores.NodeShare)
+	}
 	fmt.Fprintln(w)
 	for _, is := range c.Issues {
 		loc := ""

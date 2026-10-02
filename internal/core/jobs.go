@@ -152,7 +152,12 @@ func (s *Service) queueSummary(j slurm.QueueJob, cat *Catalog) JobSummary {
 		js.ElapsedS = s.Now().Unix() - j.StartTime.Int()
 	}
 	if p, ok := s.price(cat, j.Partition); ok && s.Cfg.ShowCost && js.ElapsedS > 0 {
-		js.CostUSD = round(p*float64(js.NodeCount)*float64(js.ElapsedS)/3600, 2)
+		mem := j.MemoryPerNode.Int() * js.NodeCount
+		if mpc := j.MemoryPerCPU.Int(); mem <= 0 && mpc > 0 {
+			mem = mpc * js.CPUs
+		}
+		share := allocShare(cat, j.Partition, js.NodeCount, js.CPUs, mem)
+		js.CostUSD = round(p*float64(js.NodeCount)*share*float64(js.ElapsedS)/3600, 2)
 	}
 	return js
 }
@@ -171,7 +176,9 @@ func (s *Service) acctSummary(j slurm.AcctJob, cat *Catalog) JobSummary {
 		js.Reason = r
 	}
 	if p, ok := s.price(cat, j.Partition); ok && s.Cfg.ShowCost && js.ElapsedS > 0 {
-		js.CostUSD = round(p*float64(max(js.NodeCount, 1))*float64(js.ElapsedS)/3600, 2)
+		n := max(js.NodeCount, 1)
+		share := allocShare(cat, j.Partition, n, js.CPUs, j.TRES.Allocated.Get("mem"))
+		js.CostUSD = round(p*float64(n)*share*float64(js.ElapsedS)/3600, 2)
 	}
 	return js
 }

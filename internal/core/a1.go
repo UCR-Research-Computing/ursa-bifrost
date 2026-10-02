@@ -303,7 +303,7 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 	for _, is := range sc.Issues {
 		switch is.Severity {
 		case "error":
-			if strings.Contains(is.Message, "partition") && in.Partition != "" {
+			if in.Partition != "" && (strings.Contains(is.Message, "partition") || strings.Contains(is.Message, "shares nodes between jobs")) {
 				continue // re-checked below against the override
 			}
 			blocking = append(blocking, is.Message)
@@ -316,6 +316,10 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 	cp, ok := cat.Partition(part)
 	if !ok {
 		blocking = append(blocking, fmt.Sprintf("partition %q does not exist", part))
+	} else if s.partitionShared(ctx, part) && !coresAsked(req) {
+		// the same rule as script_check, against the partition the job will run on
+		// (an override can move a script onto a shared partition)
+		blocking = append(blocking, fmt.Sprintf("%s shares nodes between jobs and the script asks for no cores, so it would get 1 core; add #SBATCH --cpus-per-task=N (or --ntasks-per-node=N for MPI ranks), or --exclusive for the whole node", part))
 	}
 	if len(blocking) > 0 {
 		return nil, fmt.Errorf("script_check found errors; fix them first: %s", strings.Join(blocking, "; "))
@@ -336,9 +340,16 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 	if !priced {
 		return nil, fmt.Errorf("no price known for partition %s, so the cost cap cannot be checked; add it under usd_per_node_hour", part)
 	}
-	worst := round(price*float64(nodes)*float64(mins)/60, 2)
+	// shared partitions bill the share of each node the job holds (v0.8.0); the
+	// share is read from the script's #SBATCH lines against the partition chosen
+	// for the job (the override when one was given)
+	share := 1.0
+	if s.partitionShared(ctx, part) {
+		share = coreRequest(req, cp, true).NodeShare
+	}
+	worst := round(price*float64(nodes)*share*float64(mins)/60, 2)
 	if worst > caps.MaxCostPerJobUSD {
-		return nil, fmt.Errorf("%w: worst case $%.2f (%d node(s) x %d min x $%.2f/node-h) is over the $%.2f per-job cap", ErrCapExceeded, worst, nodes, mins, price, caps.MaxCostPerJobUSD)
+		return nil, fmt.Errorf("%w: worst case $%.2f (%d node(s) x %.0f%% of a node x %d min x $%.2f/node-h) is over the $%.2f per-job cap", ErrCapExceeded, worst, nodes, 100*share, mins, price, caps.MaxCostPerJobUSD)
 	}
 
 	inputs, err := s.resolveInputs(ctx, in.Inputs)
