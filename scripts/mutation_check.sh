@@ -80,6 +80,11 @@ mutate "srv stored token session" internal/server/oauth.go '	if found, _ := s.st
 		return accessRec{}, false
 	}
 	s.auth.mu.Lock()' '	s.auth.mu.Lock()'
+mutate "srv consent retry"     internal/server/oauth.go '		if !p.Consent {
+			http.Redirect(w, r, s.googleURL(p, true), http.StatusFound)
+			return
+		}' ''
+mutate "srv no forced consent" internal/server/oauth.go '	prompt := "select_account"' '	prompt := "consent"'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

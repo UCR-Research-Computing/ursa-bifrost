@@ -13,6 +13,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -43,11 +44,13 @@ type fakeGoogle struct {
 	seen    []string          // every Authorization header / token value Google received
 	noCloud bool              // user declines the cloud-platform scope
 	revoked map[string]bool
+	granted map[string]bool // emails that already consented (no refresh token without prompt=consent)
+	prompts []string        // prompt parameter of every /auth request
 }
 
 func newFakeGoogle(t *testing.T) *fakeGoogle {
 	k, _ := rsa.GenerateKey(rand.Reader, 2048)
-	f := &fakeGoogle{t: t, key: k, codes: map[string]string{}, refresh: map[string]string{}, revoked: map[string]bool{}}
+	f := &fakeGoogle{t: t, key: k, codes: map[string]string{}, refresh: map[string]string{}, revoked: map[string]bool{}, granted: map[string]bool{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -82,7 +85,12 @@ func (f *fakeGoogle) serve(w http.ResponseWriter, r *http.Request) {
 		// the browser lands here; the test follows the redirect itself
 		q := r.URL.Query()
 		code := "gcode-" + randToken("")
-		f.codes[code] = f.next.email + "|" + f.next.hd
+		f.prompts = append(f.prompts, q.Get("prompt"))
+		consent := "0"
+		if strings.Contains(q.Get("prompt"), "consent") {
+			consent = "1"
+		}
+		f.codes[code] = f.next.email + "|" + f.next.hd + "|" + consent
 		u, _ := url.Parse(q.Get("redirect_uri"))
 		v := url.Values{"code": {code}, "state": {q.Get("state")}}
 		u.RawQuery = v.Encode()
@@ -107,11 +115,17 @@ func (f *fakeGoogle) serve(w http.ResponseWriter, r *http.Request) {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant"})
 				return
 			}
-			parts := strings.SplitN(who, "|", 2)
-			rt := "grefresh-" + randToken("")
-			f.refresh[rt] = parts[0]
-			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "gaccess-" + parts[0], "expires_in": 3600,
-				"refresh_token": rt, "scope": scope, "id_token": f.idToken(parts[0], parts[1])})
+			parts := strings.SplitN(who, "|", 3)
+			resp := map[string]any{"access_token": "gaccess-" + parts[0], "expires_in": 3600,
+				"scope": scope, "id_token": f.idToken(parts[0], parts[1])}
+			// like Google: a refresh token on first grant or on a consent screen only
+			if !f.granted[parts[0]] || parts[2] == "1" {
+				rt := "grefresh-" + randToken("")
+				f.refresh[rt] = parts[0]
+				resp["refresh_token"] = rt
+				f.granted[parts[0]] = true
+			}
+			_ = json.NewEncoder(w).Encode(resp)
 		case "refresh_token":
 			email, ok := f.refresh[r.PostForm.Get("refresh_token")]
 			if !ok || f.revoked[email] {
@@ -136,11 +150,14 @@ type harness struct {
 	mu     sync.Mutex
 
 	stopAtCode bool // signIn returns the auth code instead of exchanging it
+	jar        http.CookieJar
+	sawPage    bool // the last signIn showed bifrost's explanation page
 }
 
 func newHarness(t *testing.T, usersYAML string) *harness {
 	t.Helper()
-	h := &harness{t: t, g: newFakeGoogle(t), tokens: map[string]string{}}
+	jar, _ := cookiejar.New(nil)
+	h := &harness{t: t, g: newFakeGoogle(t), tokens: map[string]string{}, jar: jar}
 	dir := t.TempDir()
 	h.users = filepath.Join(dir, "users.yaml")
 	_ = os.WriteFile(h.users, []byte(usersYAML), 0o600)
@@ -210,39 +227,47 @@ func (h *harness) signIn(email, hd string) (map[string]any, error) {
 	verifier := randToken("")
 	q := url.Values{"response_type": {"code"}, "client_id": {c["client_id"].(string)}, "redirect_uri": {"http://127.0.0.1:33418/callback"},
 		"code_challenge": {s256(verifier)}, "code_challenge_method": {"S256"}, "state": {"st123"}, "resource": {base + "/mcp"}}
-	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	// consent page -> Google link
+	noFollow := &http.Client{Jar: h.jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	// bifrost: explanation page (first time in this browser) or straight to Google
 	resp, err = noFollow.Get(base + "/authorize?" + q.Encode())
 	if err != nil {
 		return nil, err
 	}
 	page, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	i := strings.Index(string(page), `href="`)
-	if resp.StatusCode != 200 || i < 0 {
-		return nil, fmt.Errorf("authorize: %d %s", resp.StatusCode, page)
+	next := resp.Header.Get("Location")
+	h.sawPage = resp.StatusCode == 200
+	if h.sawPage {
+		i := strings.Index(string(page), `href="`)
+		if i < 0 {
+			return nil, fmt.Errorf("authorize: %d %s", resp.StatusCode, page)
+		}
+		next = html.UnescapeString(string(page[i+6 : i+6+strings.Index(string(page[i+6:]), `"`)]))
 	}
-	gURL := html.UnescapeString(string(page[i+6 : i+6+strings.Index(string(page[i+6:]), `"`)]))
-	// Google -> bifrost callback -> client redirect
-	resp, err = noFollow.Get(gURL)
-	if err != nil {
-		return nil, err
+	// follow Google <-> bifrost hops until the redirect back to the client
+	var final *url.URL
+	for hop := 0; hop < 6 && final == nil; hop++ {
+		if next == "" {
+			return nil, fmt.Errorf("sign-in stalled at hop %d (status %d)", hop, resp.StatusCode)
+		}
+		if strings.HasPrefix(next, "http://127.0.0.1:33418/") {
+			final, _ = url.Parse(next)
+			break
+		}
+		resp, err = noFollow.Get(next)
+		if err != nil {
+			return nil, err
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		next = resp.Header.Get("Location")
+		if next == "" {
+			return nil, fmt.Errorf("hop %d: %d %s", hop, resp.StatusCode, body)
+		}
 	}
-	cb := resp.Header.Get("Location")
-	resp.Body.Close()
-	if cb == "" {
-		return nil, fmt.Errorf("google step: %d (url %s)", resp.StatusCode, gURL)
+	if final == nil {
+		return nil, fmt.Errorf("too many redirects")
 	}
-	resp, err = noFollow.Get(cb)
-	if err != nil {
-		return nil, err
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.Header.Get("Location") == "" {
-		return nil, fmt.Errorf("callback: %d %s", resp.StatusCode, body)
-	}
-	final, _ := url.Parse(resp.Header.Get("Location"))
 	if e := final.Query().Get("error"); e != "" {
 		return nil, fmt.Errorf("%s: %s", e, final.Query().Get("error_description"))
 	}
@@ -653,5 +678,83 @@ func TestTokensSurviveRestart(t *testing.T) {
 	h.s.auth = newAuthState()
 	if _, err := h.mcp(tok); err == nil {
 		t.Error("token works after sign-out + restart")
+	}
+}
+
+// TestRepeatSignInIsOneClick: the first sign-in shows bifrost's page and
+// Google's consent; later ones go straight to Google's account picker, with no
+// consent screen, and the person stays signed in. After sign-out (session and
+// refresh token gone) bifrost goes back to Google once with consent to get a
+// new refresh token, automatically.
+func TestRepeatSignInIsOneClick(t *testing.T) {
+	h := newHarness(t, twoUsers)
+	if _, err := h.signIn("alice@ucr.edu", "ucr.edu"); err != nil {
+		t.Fatal(err)
+	}
+	if !h.sawPage {
+		t.Error("first sign-in skipped the explanation page")
+	}
+	a, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatalf("repeat sign-in: %v", err)
+	}
+	if h.sawPage {
+		t.Error("repeat sign-in showed the explanation page again")
+	}
+	for _, pr := range h.g.prompts {
+		if strings.Contains(pr, "consent") {
+			t.Errorf("consent screen forced while signed in: prompts %v", h.g.prompts)
+		}
+	}
+	// works for MCP
+	cs, err := h.mcp(a["access_token"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callJSON(t, cs, "jobs_list", nil)
+	// sign out: the next sign-in needs a new refresh token -> one consent hop
+	req, _ := http.NewRequest("POST", h.ts.URL+"/signout", nil)
+	req.Header.Set("Authorization", "Bearer "+a["access_token"].(string))
+	if r, _ := http.DefaultClient.Do(req); r.StatusCode != 200 {
+		t.Fatal("signout")
+	}
+	h.g.prompts = nil
+	b, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatalf("sign-in after sign-out: %v", err)
+	}
+	if len(h.g.prompts) != 2 || strings.Contains(h.g.prompts[0], "consent") || !strings.Contains(h.g.prompts[1], "consent") {
+		t.Errorf("expected account picker then one consent hop, got %v", h.g.prompts)
+	}
+	cs2, err := h.mcp(b["access_token"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callJSON(t, cs2, "jobs_list", nil)
+}
+
+// TestSignoutEndsEveryClientsTokens: alice signed in from two clients; signing
+// out from one ends the other's stored token too (before and after a restart).
+func TestSignoutEndsEveryClientsTokens(t *testing.T) {
+	h := newHarness(t, twoUsers)
+	a1, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a2, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("POST", h.ts.URL+"/signout", nil)
+	req.Header.Set("Authorization", "Bearer "+a1["access_token"].(string))
+	if r, _ := http.DefaultClient.Do(req); r.StatusCode != 200 {
+		t.Fatal("signout")
+	}
+	if _, err := h.mcp(a2["access_token"].(string)); err == nil {
+		t.Error("second client's token works after sign-out")
+	}
+	h.s.auth = newAuthState() // restart
+	if _, err := h.mcp(a2["access_token"].(string)); err == nil {
+		t.Error("second client's token works after sign-out + restart")
 	}
 }
