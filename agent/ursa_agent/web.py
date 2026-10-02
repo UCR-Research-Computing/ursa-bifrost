@@ -12,6 +12,7 @@ in again). The browser holds only a signed session-id cookie.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -34,8 +35,9 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 
-from . import __version__, approval
+from . import __version__, approval, panels
 from .agent import TOKEN_KEY, build_agent
 
 log = logging.getLogger("ursa_agent")
@@ -49,7 +51,7 @@ COOKIE = "ursa_sid"
 SECURE = BASE_URL.startswith("https://")
 signer = URLSafeTimedSerializer(os.environ["AGENT_SESSION_SECRET"], salt="ursa-agent-sid")
 
-# web sessions: sid -> {email, token, refresh, exp, adk_session, client_id}
+# web sessions: sid -> {email, tiers, token, refresh, exp, adk_session, client_id, cache, lock}
 WEB: dict[str, dict[str, Any]] = {}
 PENDING_LOGIN: dict[str, dict[str, Any]] = {}  # state -> {verifier, sid, created}
 CLIENT: dict[str, str] = {}  # bifrost OAuth client registration (memory; re-registered on cold start)
@@ -98,20 +100,33 @@ def _web(request: Request) -> dict[str, Any] | None:
 
 
 async def _fresh_token(w: dict[str, Any]) -> str:
-    """The person's bifrost access token, refreshed when near expiry."""
+    """The person's bifrost access token, refreshed when near expiry.
+
+    bifrost rotates refresh tokens (each one works once), and the dashboard
+    makes parallel calls, so the refresh runs under a per-session lock: the
+    first caller refreshes, the others wait and reuse the new token.
+    """
     if w["exp"] - time.time() > 120:
         return w["token"]
-    async with httpx.AsyncClient(timeout=30) as http:
-        r = await http.post(
-            f"{BIFROST_BASE}/token",
-            data={"grant_type": "refresh_token", "refresh_token": w["refresh"], "client_id": w["client_id"]},
-        )
-    if r.status_code != 200:
-        raise PermissionError("sign-in expired")
-    t = r.json()
-    w.update(token=t["access_token"], refresh=t["refresh_token"], exp=time.time() + t["expires_in"])
-    await _set_state(w, {TOKEN_KEY: w["token"]})
-    return w["token"]
+    lock = w.setdefault("lock", asyncio.Lock())
+    async with lock:
+        if w["exp"] - time.time() > 120:  # refreshed while we waited
+            return w["token"]
+        async with httpx.AsyncClient(timeout=30) as http:
+            r = await http.post(
+                f"{BIFROST_BASE}/token",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": w["refresh"],
+                    "client_id": w["client_id"],
+                },
+            )
+        if r.status_code != 200:
+            raise PermissionError("sign-in expired")
+        t = r.json()
+        w.update(token=t["access_token"], refresh=t["refresh_token"], exp=time.time() + t["expires_in"])
+        await _set_state(w, {TOKEN_KEY: w["token"]})
+        return w["token"]
 
 
 async def _set_state(w: dict[str, Any], delta: dict[str, Any]) -> None:
@@ -165,10 +180,11 @@ async def callback(request: Request) -> Response:
                 "Sign-in failed at the token step. <a href='/login'>Try again</a>.", status_code=400
             )
         tok = r.json()
-        email = await _whoami(tok["access_token"])
+        email, tiers = await _whoami_full(tok["access_token"])
     s = await sessions.create_session(app_name=APP, user_id=email, state={TOKEN_KEY: tok["access_token"]})
     WEB[p["sid"]] = {
         "email": email,
+        "tiers": tiers,
         "token": tok["access_token"],
         "refresh": tok["refresh_token"],
         "exp": time.time() + tok["expires_in"],
@@ -183,19 +199,26 @@ async def callback(request: Request) -> Response:
     return resp
 
 
-async def _whoami(token: str) -> str:
-    """Ask bifrost who this token belongs to (GET /whoami, bifrost v0.5.5+)."""
+async def _whoami_full(token: str) -> tuple[str, list[str]]:
+    """Ask bifrost who this token belongs to and its tiers (GET /whoami, bifrost v0.5.5+)."""
     async with httpx.AsyncClient(timeout=30) as http:
         r = await http.get(f"{BIFROST_BASE}/whoami", headers={"Authorization": f"Bearer {token}"})
     if r.status_code == 200:
-        return r.json()["email"]
+        j = r.json()
+        return j["email"], [str(t) for t in j.get("tiers") or []]
     raise PermissionError("bifrost did not accept the new token")
+
+
+async def _whoami(token: str) -> str:
+    return (await _whoami_full(token))[0]
 
 
 async def logout(request: Request) -> Response:
     sid = _sid(request)
     w = WEB.pop(sid, None) if sid else None
     if w:
+        if w.get("cache"):
+            w["cache"].clear()
         async with httpx.AsyncClient(timeout=10) as http:
             await http.post(f"{BIFROST_BASE}/revoke", data={"token": w["refresh"]})
             await http.post(f"{BIFROST_BASE}/revoke", data={"token": w["token"]})
@@ -289,8 +312,11 @@ async def decide(request: Request) -> Response:
 
 
 async def _call_bifrost(token: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
-    hc = httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"}, timeout=httpx.Timeout(120))
-    async with streamable_http_client(BIFROST, http_client=hc) as st, ClientSession(st[0], st[1]) as cs:
+    async with (
+        httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"}, timeout=httpx.Timeout(120)) as hc,
+        streamable_http_client(BIFROST, http_client=hc) as st,
+        ClientSession(st[0], st[1]) as cs,
+    ):
         await cs.initialize()
         r = await cs.call_tool(tool, args)
     text = getattr(r.content[0], "text", "") if r.content else ""
@@ -333,7 +359,67 @@ async def me(request: Request) -> Response:
     if not w:
         return JSONResponse({"signed_in": False})
     s = await sessions.get_session(app_name=APP, user_id=w["email"], session_id=w["adk_session"])
-    return JSONResponse({"signed_in": True, "email": w["email"], "pending": approval.list_pending(s.state)})
+    return JSONResponse(
+        {
+            "signed_in": True,
+            "email": w["email"],
+            "staff": "R2" in (w.get("tiers") or []),
+            "version": __version__,
+            "pending": approval.list_pending(s.state),
+        }
+    )
+
+
+async def panel(request: Request) -> Response:
+    """One dashboard panel: a read-only bifrost tool, cached per person (SPEC 20)."""
+    w = _web(request)
+    if not w:
+        return JSONResponse({"error": "sign in first", "login": "/login"}, status_code=401)
+    name = request.path_params["name"]
+    q = {k: v for k, v in request.query_params.items() if k != "refresh"}
+    try:
+        p, args, key = panels.resolve(name, q)
+    except KeyError:
+        return JSONResponse({"error": f"no panel {name!r}"}, status_code=404)
+    except panels.BadArgs as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    if p.staff and "R2" not in (w.get("tiers") or []):
+        return JSONResponse({"error": "staff panel (needs bifrost tier R2)"}, status_code=403)
+    cache: panels.PanelCache = w.setdefault("cache", panels.PanelCache())
+
+    async def call(tool: str, a: dict[str, Any]) -> dict[str, Any]:
+        token = await _fresh_token(w)
+        return await _call_bifrost(token, tool, a)
+
+    try:
+        out, meta = await cache.get(
+            key, p.ttl, call, p.tool, args, force=request.query_params.get("refresh") == "1"
+        )
+    except PermissionError:
+        WEB.pop(_sid(request) or "", None)
+        return JSONResponse({"error": "sign-in expired", "login": "/login"}, status_code=401)
+    except Exception as e:  # noqa: BLE001  bifrost unreachable or an MCP error: show it on this panel only
+        root = e
+        while isinstance(root, BaseExceptionGroup) and root.exceptions:  # anyio wraps the real error
+            root = root.exceptions[0]
+        log.warning("panel %s %s failed: %s: %s", w["email"], name, type(root).__name__, root)
+        e = root
+        return JSONResponse({"error": f"bifrost call failed: {type(e).__name__}"}, status_code=502)
+    res = out.get("result")
+    if out.get("is_error"):
+        msg = res if isinstance(res, str) else (res or {}).get("error", res)
+        return JSONResponse({"error": str(msg)[:600], "tool": p.tool}, status_code=422)
+    env = res if isinstance(res, dict) else {"data": res}
+    return JSONResponse(
+        {
+            "panel": name,
+            "tool": p.tool,
+            "data": env.get("data"),
+            "as_of": env.get("as_of"),
+            "truncated": bool(env.get("truncated")),
+            **meta,
+        }
+    )
 
 
 async def new_chat(request: Request) -> Response:
@@ -349,18 +435,33 @@ def _esc(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
-PAGE = (Path(__file__).parent / "static" / "index.html").read_text()
+STATIC = Path(__file__).parent / "static"
+PAGE = (STATIC / "index.html").read_text()
+# no inline script or style anywhere (SPEC 20.4): JS and CSS are files under /static
+CSP = (
+    "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; "
+    "connect-src 'self' https://storage.googleapis.com; frame-ancestors 'none'; base-uri 'none'; "
+    "form-action 'self'"
+)
+SEC_HEADERS = {
+    "Content-Security-Policy": CSP,
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
 
 
 async def index(request: Request) -> Response:
-    return HTMLResponse(
-        PAGE,
-        headers={
-            "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://storage.googleapis.com; frame-ancestors 'none'",
-            "X-Content-Type-Options": "nosniff",
-            "Referrer-Policy": "no-referrer",
-        },
-    )
+    return HTMLResponse(PAGE, headers={**SEC_HEADERS, "Cache-Control": "no-store"})
+
+
+class _Static(StaticFiles):
+    """Static files with the same security headers as the page."""
+
+    async def get_response(self, path: str, scope) -> Response:
+        r = await super().get_response(path, scope)
+        r.headers.update(SEC_HEADERS)
+        r.headers["Cache-Control"] = "no-cache"
+        return r
 
 
 async def health(request: Request) -> Response:
@@ -577,6 +678,8 @@ routes = [
     Route("/api/decide", decide, methods=["POST"]),
     Route("/api/new", new_chat, methods=["POST"]),
     Route("/api/upload", upload, methods=["POST"]),
+    Route("/api/panel/{name}", panel),
+    Mount("/static", app=_Static(directory=STATIC), name="static"),
     Route("/a2a/decide", a2a_decide, methods=["POST"]),
     Mount("/a2a", app=A2A_APP),
 ]

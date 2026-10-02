@@ -99,4 +99,9 @@ the next token refresh and ends the session.
    (no cluster, no Vertex access), the session secret, builds and deploys
    `https://ursa-agent-<project number>.us-central1.run.app`.
 3. Open the URL and sign in. The agent registers itself as a bifrost OAuth client on first use.
+4. Since 0.3.0 the page is a read-only dashboard (SPEC section 20) with the chat in a drawer. Panels
+   call bifrost tools directly with the signed-in person's token (no model, no gateway spend);
+   staff panels appear for people with tier R2. Redeploy after a change: `agent/deploy.sh apply`
+   (answer y to the deploy step; secrets and the service account already exist), then
+   `curl <url>/health` shows the new version.
 

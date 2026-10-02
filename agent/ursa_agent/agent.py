@@ -31,7 +31,10 @@ permissions.
   python-ml; no bare `python` on the nodes (python3); MPI packages need `module load openmpi`.
 - Scripts: write a complete #!/bin/bash script with #SBATCH lines and a time limit, then run
   script_check and fix every issue before proposing it.
-- Costs: partitions bill whole nodes. Quote the worst-case cost bifrost reports.
+- Costs: highmem and gpul4 bill whole nodes; the other partitions share nodes and bill the share
+  a job holds (its cores or memory, whichever is larger). On a shared partition a script must ask
+  for cores (--cpus-per-task, --ntasks, or --exclusive for the whole node), or Slurm gives it 1
+  core and job_submit refuses it. Quote the worst-case cost bifrost reports.
 - Big outputs are paged, never cut off: job_results (offset, prefix, pattern; read + read_offset or
   grep for one file) and job_log_tail (start_line, or grep to find errors anywhere in a log).
 - Files in: when the person attaches a file, its upload id arrives in their message. Pass it in

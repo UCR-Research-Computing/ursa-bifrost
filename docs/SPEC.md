@@ -75,7 +75,7 @@ Non-goals
 - N2 No Slurm administration (node states, reservations, accounts, QOS) through AI.
 - N3 No compute on the login node. The server issues scheduler queries only.
 - N4 No writes to Nexus. Nexus data is read through its CLI `--json` at most.
-- N5 Not a job portal or web UI (Open OnDemand already covers that).
+- N5 Not a job portal or web UI (Open OnDemand already covers that). Amended 2026-10-02: a read-only dashboard over the existing tools is in scope (section 20); no job editor, file manager or shell.
 
 ## 5. Facts verified on the cluster (2026-10-01)
 
@@ -780,6 +780,89 @@ before the blueprint is applied. `waste_report`'s CPU efficiency was already mea
 against the allocated cores. deep-research v0.52.1 writes an explicit core request (default
 2) on shared partitions, so its jobs pass the rule.
 
+## 20. Dashboard (ursa-agent 0.3.0)
+
+The ursa-agent web page becomes a personal, read-only view of the cluster: what is running,
+what my jobs did and cost, where my money and storage go, and (for staff) the whole cluster.
+Chat stays, as a drawer. Decided by Chuck, 2026-10-02: build it in ursa-agent, include the staff
+panels in v1, read-only first, show dollar figures.
+
+**N5 amended.** N5 ("not a job portal or web UI") stays true for job management: there is no
+file manager, no job editor and no shell. A read-only dashboard over the existing tools is now
+in scope; actions (cancel, hold) come later and only through the existing plan card and Approve
+button (`/api/decide`), never a direct confirm.
+
+### 20.1 Where it runs and how it reads
+
+- ursa-agent already signs the person in as an OAuth client of bifrost and holds their bifrost
+  token. The dashboard calls bifrost tools directly with that token (`_call_bifrost`), so every
+  number is what bifrost lets that person see, with their tiers, caps and audit log. No model is
+  involved and no AI gateway spend.
+- bifrost itself stays a bearer-token API with no browser session.
+- One read endpoint, `GET /api/panel/<name>`, maps a panel name to one tool and fixed or
+  validated arguments. Only these tools can be called through it: `cluster_status`,
+  `partitions`, `jobs_list`, `job_show`, `job_explain`, `my_usage`, `waste_report`,
+  `storage_usage`, `uploads_list`, `interactive_help`, `modules_search`, and for R2 `health`,
+  `jobs_list_all`, `usage_report`, `waste_report_all`. Never a submit/cancel/hold/release, a
+  confirm, a file read or anything that writes. Arguments are checked server-side (job ids
+  `^\d{1,10}(_\d{1,7})?$`, partition names from the catalog, ranges from a fixed list, text
+  length caps) before bifrost checks them again.
+- Staff panels are shown when `/whoami` lists tier R2. bifrost only registers the R2 tools for
+  R2 users, so a hidden panel is a convenience, not the guard.
+
+### 20.2 Panels
+
+| Panel | Tool(s) | Shows |
+|---|---|---|
+| Cluster pulse | `cluster_status` | nodes up, running and pending jobs, $/hour now, problem nodes, a row per partition (nodes up/total, jobs, price, shared or whole-node) |
+| My jobs | `jobs_list` | last 7 days, state chips, cores, elapsed, est. cost. A row opens `job_show`; a failed row also shows `job_explain` findings (rule, evidence, fix) |
+| My month | `my_usage` (by partition and by state) | jobs, failures, node- and core-hours, CPU efficiency, est. cost; 7 or 30 days |
+| Money left on the table | `waste_report` | wasted $ and node-hours, the top items with their suggested fix |
+| My storage | `storage_usage` | home/scratch use and filesystem gauges, largest folders |
+| Partitions and prices | `partitions`, `interactive_help` | the catalog table; pick partition, cores, time and get the exact srun line and its worst-case cost |
+| Software finder | `modules_search` | module search |
+| Staged files | `uploads_list` | uploads and when each is deleted |
+| Staff: cluster health | `health` | issues, 24 h failure rate |
+| Staff: all jobs | `jobs_list_all` | every user's recent jobs |
+| Staff: usage by user | `usage_report` | per-user cost, efficiency, failures |
+| Staff: waste, everyone | `waste_report_all` | top wasted $ across users |
+
+Dollar figures are list-price estimates from bifrost (section 19 for shared partitions) and are
+labelled "est.". Every panel shows its data's `as_of` time.
+
+### 20.3 Load and cache (spec goal G6: cheap on the scheduler)
+
+Measured on the hosted server: cold accounting tools take about 20 s each when several run at
+once (v0.7.1 allows 8 SSH sessions per person), `storage_usage` 100 s cold and 0.4 s warm;
+warm `cluster_status` about 6 s.
+
+- Panels fill in independently, each with its own loading state.
+- Per person, per panel: a server-side cache answers at once with the last result and refreshes
+  in the background when it is older than the panel's TTL (pulse 60 s, jobs 60 s, usage and
+  waste 10 min, storage 30 min, partitions 1 h). Concurrent requests for the same key share one
+  bifrost call. At most 4 bifrost calls run at once per person.
+- Storage, waste and the staff panels load when they are opened, not on page load.
+- The page refreshes pulse and jobs every 60 s only while the tab is visible.
+- The cache lives in memory (like sessions) and is dropped at sign-out.
+
+### 20.4 Safety
+
+- Read-only by construction: the panel endpoint's allow-list (20.1) plus a test that walks
+  every panel and asserts its tool is not a write or confirm tool.
+- Untrusted text (job names, users, log lines, paths) is put on the page with `textContent`
+  only; no `innerHTML` with data. Fields bifrost marks `untrusted` are shown as plain text in a
+  quoted block.
+- The page's JS and CSS move out of `index.html` into `/static/*.js|css`, so the CSP drops
+  `'unsafe-inline'` (`script-src 'self'; style-src 'self'`).
+- Errors from bifrost are shown per panel; one failing panel never blanks the page. An
+  expired sign-in sends the person to `/login`.
+
+### 20.5 Chat
+
+Chat moves into a drawer on the right (full screen on phones), unchanged in behaviour: same
+`/api/chat`, plan cards and Approve/Reject. Each panel has an "Ask" button that opens the drawer
+with a question about that panel (e.g. "Why did job 315 fail?").
+
 ## Change log
 
 | Date | Version | Change |
@@ -908,3 +991,11 @@ over on its own. Live checks found three wording and parsing bugs, fixed here:
 - The srun, pip, bare-python and `apptainer --nv` checks also read comments, so a
   commented-out GPU alternative warned "apptainer --nv on a partition without GPUs". They
   read code only now.
+
+### ursa-agent 0.3.0: dashboard
+Section 20. The chat page becomes a read-only dashboard over bifrost tools (12 panels, 4 of them
+staff-only), with the chat in a drawer. A per-person cache (stale-while-revalidate, at most 4
+bifrost calls at once) keeps it cheap on the scheduler; token refresh now runs under a lock,
+because bifrost rotates refresh tokens and parallel panel loads would otherwise sign the person
+out. The page's JS and CSS moved to files and the CSP dropped `'unsafe-inline'`. The agent's
+instructions no longer say every partition bills whole nodes. 46 tests; 11 guards mutation-checked.
