@@ -3,6 +3,13 @@
 All notable changes. Versions follow [semver](https://semver.org); every release is a git
 tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC.md).
 
+## v0.8.2 - 2026-10-02
+- Docs and packaging only, no code change: README rewrite, `docs/CLIENTS.md` (Hermes,
+  Claude Code, Codex, OpenCode, Gemini CLI, claude.ai, OpenAI API, scripts),
+  `examples/mcp_client.py`, community files.
+- Release binaries for Linux and macOS (amd64, arm64) with SHA256SUMS, and a one-line
+  installer `scripts/get.sh`.
+
 ## v0.8.1 - 2026-10-02
 - First day on shared nodes: the no-cores error reads as a sentence; `script_check`
   ignores module loads and run-time patterns inside comments. 116 mutation guards.
