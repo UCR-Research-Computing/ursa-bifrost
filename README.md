@@ -126,6 +126,16 @@ Staff tools (R2, only registered when `tiers` includes R2): `jobs_list_all`,
 Resources: `hpc://catalog`, `hpc://policies`. Prompts: `diagnose_job`,
 `write_batch_script`, `monthly_usage_summary`, `triage_ticket`.
 
+## Web dashboard (ursa-agent)
+
+`agent/` is a separate Cloud Run service: sign in with Google through bifrost and get a
+read-only view of the cluster as yourself: cluster pulse, your jobs (with `job_explain` for
+failures), usage and estimated cost, waste, storage, partitions with an interactive-session
+command builder, software search, staged files, and for staff (tier R2) health, all jobs, usage
+and waste by user. Panels call bifrost tools directly (no model). The assistant (Gemini through
+the UCR AI gateway) sits in a drawer and plans jobs that only run after you press Approve.
+Design: docs/SPEC.md section 20; deploy: docs/DEPLOY.md.
+
 ## Safety model
 
 - No shell passthrough, and no shell tool (docs/SPEC.md 18.5). Commands can only be built

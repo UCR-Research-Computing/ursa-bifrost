@@ -3,149 +3,79 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Ursa Major assistant</title>
-<style>
-:root{--bg:#f6f7f9;--fg:#1d2330;--mut:#5b6474;--card:#fff;--line:#dfe3ea;--acc:#1a73e8;--ok:#137333;--bad:#b3261e}
-*{box-sizing:border-box}
-body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg);display:flex;flex-direction:column;height:100vh}
-header{display:flex;align-items:center;gap:.8rem;padding:.6rem 1rem;background:var(--card);border-bottom:1px solid var(--line)}
-header h1{font-size:1rem;margin:0;font-weight:600}
-header .who{margin-left:auto;color:var(--mut);font-size:.9rem}
-header button,header a{font:inherit;font-size:.85rem}
-main{flex:1;overflow-y:auto;padding:1rem;max-width:52rem;width:100%;margin:0 auto}
-.msg{margin:.6rem 0;padding:.6rem .8rem;border-radius:10px;white-space:pre-wrap;word-wrap:break-word}
-.you{background:#e8f0fe;margin-left:15%}
-.bot{background:var(--card);border:1px solid var(--line);margin-right:8%}
-.tools{color:var(--mut);font-size:.8rem;margin-top:.3rem}
-.plan{border:2px solid var(--acc);background:#fff;border-radius:10px;padding:.7rem .9rem;margin:.6rem 8% .6rem 0}
-.plan h3{margin:0 0 .4rem;font-size:.95rem}
-.plan table{border-collapse:collapse;font-size:.88rem}
-.plan td{padding:.1rem .7rem .1rem 0;vertical-align:top}
-.plan td:first-child{color:var(--mut)}
-.plan .btns{margin-top:.6rem;display:flex;gap:.5rem}
-.plan button{font:inherit;padding:.35rem .9rem;border-radius:6px;border:1px solid var(--line);cursor:pointer}
-.approve{background:var(--ok);color:#fff;border-color:var(--ok)!important}
-.reject{background:#fff;color:var(--bad)}
-.done{color:var(--mut);font-size:.85rem;margin-top:.4rem}
-form{display:flex;gap:.5rem;padding:.7rem 1rem;background:var(--card);border-top:1px solid var(--line);max-width:52rem;width:100%;margin:0 auto}
-textarea{flex:1;font:inherit;padding:.5rem .6rem;border:1px solid var(--line);border-radius:8px;resize:none;height:3.2rem}
-form button{font:inherit;padding:0 1.1rem;border-radius:8px;border:0;background:var(--acc);color:#fff;cursor:pointer}
-form button:disabled{opacity:.5}
-.signin{max-width:34rem;margin:4rem auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1.5rem 1.8rem}
-.signin a.b{display:inline-block;background:var(--acc);color:#fff;padding:.55rem 1.2rem;border-radius:6px;text-decoration:none}
-.hint{color:var(--mut);font-size:.85rem}
-.attach{display:flex;align-items:center;padding:0 .8rem;border:1px solid var(--line);border-radius:8px;cursor:pointer;color:var(--acc);font-size:.9rem}
-.msg a{color:var(--acc);word-break:break-all}
-</style>
+<title>Ursa Major</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
 </head>
 <body>
-<header>
-  <h1>Ursa Major assistant</h1>
-  <span class="who" id="who"></span>
-  <button id="newchat" hidden>New chat</button>
-  <a id="logout" href="/logout" hidden>Sign out</a>
-</header>
-<main id="log">
-  <div class="signin" id="signin" hidden>
-    <h2>Ursa Major assistant</h2>
-    <p>Ask about the Ursa Major cluster: what is running, why a job failed, which partition or module
-      to use. It can also plan job submissions; nothing runs until you press Approve.</p>
-    <p>Sign in with your UCR Google account. The assistant works as you on the cluster, with your
-      permissions and limits.</p>
-    <p><a class="b" href="/login">Sign in</a></p>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="13"/><path d="M5 20 L11 12 L17 15 L23 8 L27 11"/>
+        <circle class="core" cx="23" cy="8" r="2.4"/>
+      </svg>
+      <div>
+        <div class="brand-name">URSA MAJOR</div>
+        <div class="brand-sub">UCR Research Computing</div>
+      </div>
+    </div>
+    <div class="telemetry" id="telemetry" aria-live="polite"></div>
+    <div class="top-actions" id="actions" hidden>
+      <span class="who mono" id="who"></span>
+      <span class="chip staff-chip" id="staffchip" hidden>staff</span>
+      <button class="btn" id="refreshall" title="Refresh every open panel">Refresh</button>
+      <button class="btn primary" id="chatbtn" title="Open the assistant (key: /)">Assistant</button>
+      <a class="btn ghost" href="/logout">Sign out</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="signin" id="signin" hidden>
+      <h1>Ursa Major</h1>
+      <p>Your view of the Ursa Major cluster: what is running, what your jobs did and cost,
+        where your storage goes, and an assistant that can explain failures and plan jobs.</p>
+      <p class="dim">Sign in with your UCR Google account. Everything here runs as you on the cluster,
+        with your permissions. The dashboard only reads; the assistant can plan a job, and nothing
+        runs until you press Approve.</p>
+      <p><a class="btn primary big" href="/login">Sign in</a></p>
+    </section>
+
+    <div class="grid" id="grid" hidden>
+      <!-- panels are built by app.js from the PANELS table -->
+    </div>
+  </main>
+
+  <footer class="statusbar">
+    <span id="status" class="dim">Ready</span>
+    <span class="dim mono" id="ver"></span>
+  </footer>
+</div>
+
+<aside class="drawer" id="drawer" hidden aria-label="Assistant">
+  <div class="drawer-head">
+    <strong>Assistant</strong>
+    <span class="dim">answers as you; plans need your Approve</span>
+    <button class="btn ghost" id="newchat" title="Start a new conversation">New chat</button>
+    <button class="btn ghost close" id="closechat" aria-label="Close the assistant">Close</button>
   </div>
-</main>
-<form id="f" hidden>
-  <label class="attach" title="Attach an input file for a job">Attach<input type="file" id="file" hidden></label>
-  <textarea id="q" placeholder="e.g. Why did my last job fail?  /  What's running on the cluster?" required></textarea>
-  <button id="send">Send</button>
-</form>
-<script>
-const log = document.getElementById('log'), q = document.getElementById('q'), send = document.getElementById('send');
-function el(tag, cls, text){const e=document.createElement(tag); if(cls) e.className=cls; if(text!==undefined) e.textContent=text; return e;}
-function scroll(){log.scrollTop = log.scrollHeight;}
-function linkify(m, text){
-  // links to Cloud Storage become clickable; everything else stays plain text
-  const re = /https:\/\/storage\.googleapis\.com\/[^\s"'<>)\]]+/g; let last = 0, x;
-  while ((x = re.exec(text)) !== null){
-    m.appendChild(document.createTextNode(text.slice(last, x.index)));
-    const a = el('a', null, x[0].length > 90 ? x[0].slice(0, 70) + '...' : x[0]); a.href = x[0]; a.target = '_blank'; a.rel = 'noopener noreferrer';
-    m.appendChild(a); last = x.index + x[0].length;
-  }
-  m.appendChild(document.createTextNode(text.slice(last)));
-}
-function say(cls, text, tools){
-  const m = el('div', 'msg '+cls); linkify(m, text || '');
-  if (tools && tools.length){ m.appendChild(el('div','tools','tools: '+tools.join(', '))); }
-  log.appendChild(m); scroll();
-}
-const shown = new Set();
-function plans(list){
-  for (const p of (list||[])){
-    if (shown.has(p.id)) continue; shown.add(p.id);
-    const s = p.summary || {}, box = el('div','plan');
-    box.appendChild(el('h3', null, 'Approve this ' + (s.action || p.tool) + '?'));
-    const t = el('table');
-    const rows = [['job', s.job_id || s.job_name], ['partition', s.partition], ['nodes', s.nodes],
-      ['time limit', s.time_limit], ['worst case', s.worst_case_usd !== undefined ? '$' + s.worst_case_usd : undefined],
-      ['spent today', s.committed_today_usd !== undefined ? '$' + s.committed_today_usd + ' of $' + s.day_cap_usd : undefined],
-      ['scheduler', s.scheduler_test], ['effect', s.effect], ['folder', s.remote_dir],
-      ['warnings', (s.warnings||[]).join('; ') || undefined], ['expires', p.expires_at]];
-    for (const [k,v] of rows){ if(v===undefined||v===null||v==='') continue; const r=el('tr'); r.appendChild(el('td',null,k)); r.appendChild(el('td',null,String(v))); t.appendChild(r); }
-    box.appendChild(t);
-    const btns = el('div','btns'), ok = el('button','approve','Approve'), no = el('button','reject','Reject');
-    btns.append(ok, no); box.appendChild(btns);
-    const decide = async (d) => {
-      ok.disabled = no.disabled = true;
-      const r = await fetch('/api/decide', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:p.id, decision:d})});
-      const j = await r.json();
-      btns.remove();
-      box.appendChild(el('div','done', d==='approve' ? (j.decision && j.decision.status==='done' ? 'Approved and done.' : 'Approved, but bifrost refused: see below.') : 'Rejected. Nothing was done.'));
-      if (j.reply) say('bot', j.reply, j.tools);
-      plans(j.pending);
-    };
-    ok.onclick = () => decide('approve'); no.onclick = () => decide('reject');
-    log.appendChild(box); scroll();
-  }
-}
-async function boot(){
-  const r = await fetch('/api/me'); const j = await r.json();
-  if (!j.signed_in){ document.getElementById('signin').hidden = false; return; }
-  document.getElementById('who').textContent = j.email;
-  document.getElementById('f').hidden = false; document.getElementById('logout').hidden = false; document.getElementById('newchat').hidden = false;
-  say('bot', 'Hi. Ask me about Ursa Major: running jobs, failures, partitions, modules, costs. I can plan a job submission for you; nothing runs until you press Approve.');
-  plans(j.pending);
-  q.focus();
-}
-document.getElementById('f').onsubmit = async (e) => {
-  e.preventDefault(); const text = q.value.trim(); if(!text) return;
-  say('you', text); q.value=''; send.disabled = true; send.textContent = '...';
-  try {
-    const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:text})});
-    const j = await r.json();
-    if (r.status === 401){ say('bot', 'Your sign-in expired. Reload the page to sign in again.'); return; }
-    if (j.error){ say('bot', 'Error: ' + j.error); return; }
-    say('bot', j.reply || '(no reply)', j.tools); plans(j.pending);
-  } catch(err){ say('bot', 'Network error: ' + err); }
-  finally { send.disabled = false; send.textContent = 'Send'; q.focus(); }
-};
-q.addEventListener('keydown', (e) => { if (e.key==='Enter' && !e.shiftKey){ e.preventDefault(); document.getElementById('f').requestSubmit(); }});
-document.getElementById('file').onchange = async (e) => {
-  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-  say('you', 'Attaching ' + f.name + ' (' + f.size + ' bytes)...');
-  try {
-    const r = await fetch('/api/upload', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({filename:f.name, bytes:f.size})});
-    const t = await r.json();
-    if (!r.ok || t.error){ say('bot', 'Upload refused: ' + (t.error || r.status)); return; }
-    const put = await fetch(t.upload_url, {method: t.method || 'PUT', headers: t.headers || {}, body: f});
-    if (!put.ok){ say('bot', 'Upload to storage failed: HTTP ' + put.status); return; }
-    q.value = (q.value ? q.value + '\n' : '') + 'I attached ' + t.filename + ' (upload id ' + t.upload_id + ') as an input for my job.';
-    say('bot', 'Uploaded ' + t.filename + '. Its upload id is in your message box; say what the job should do with it.');
-    q.focus();
-  } catch(err){ say('bot', 'Upload error: ' + err); }
-};
-document.getElementById('newchat').onclick = async () => { await fetch('/api/new',{method:'POST'}); location.reload(); };
-boot();
-</script>
+  <div class="chatlog" id="log"></div>
+  <form id="f" class="chatform">
+    <label class="btn ghost attach" title="Attach an input file for a job">Attach<input type="file" id="file" hidden></label>
+    <textarea id="q" placeholder="Why did my last job fail?  /  Which partition for a 4-hour GROMACS run?" required></textarea>
+    <button class="btn primary" id="send">Send</button>
+  </form>
+</aside>
+
+<div class="modal-back" id="modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-head">
+      <strong id="modal-title"></strong>
+      <button class="btn ghost" id="modal-close" aria-label="Close">Close</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
 </body>
 </html>

@@ -991,3 +991,11 @@ over on its own. Live checks found three wording and parsing bugs, fixed here:
 - The srun, pip, bare-python and `apptainer --nv` checks also read comments, so a
   commented-out GPU alternative warned "apptainer --nv on a partition without GPUs". They
   read code only now.
+
+### ursa-agent 0.3.0: dashboard
+Section 20. The chat page becomes a read-only dashboard over bifrost tools (12 panels, 4 of them
+staff-only), with the chat in a drawer. A per-person cache (stale-while-revalidate, at most 4
+bifrost calls at once) keeps it cheap on the scheduler; token refresh now runs under a lock,
+because bifrost rotates refresh tokens and parallel panel loads would otherwise sign the person
+out. The page's JS and CSS moved to files and the CSP dropped `'unsafe-inline'`. The agent's
+instructions no longer say every partition bills whole nodes. 46 tests; 11 guards mutation-checked.
