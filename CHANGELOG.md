@@ -5,6 +5,12 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.9.1 - 2026-10-02
+- Scaling phase 1 (docs/SCALING.md): output that is the same for everyone (node state,
+  the whole queue, partitions, the site catalog) is cached once on the hosted server
+  for all people instead of once per person, and identical commands in flight run once.
+  Per-person output and writes are never shared. 5 new mutation guards.
+
 ## v0.9.0 - 2026-10-02
 - Program clients: pre-registered OAuth clients in `users.yaml` (`clients:`) for programs
   such as Ultra. A program acts as the person who signed it in, with the person's tiers

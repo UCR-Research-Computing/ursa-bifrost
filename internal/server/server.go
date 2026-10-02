@@ -48,6 +48,8 @@ type Server struct {
 	newBackend func(email string) backend.Backend
 	// staging is the shared staging area (nil = file tools off).
 	staging staging.Client
+	// shared caches output that is the same for every user (core.SharedCache).
+	shared *core.SharedCache
 }
 
 type userConn struct {
@@ -83,7 +85,7 @@ func New(cfg config.Config, google *Google, secret string) (*Server, error) {
 	s := &Server{cfg: cfg, base: strings.TrimRight(sc.BaseURL, "/"), users: users, store: store, google: google,
 		auth: newAuthState(), tokens: &tokenCache{g: google, store: store, m: map[string]cachedTok{}},
 		audits: audit, logger: log.New(os.Stderr, "bifrost-serve ", log.LstdFlags), conns: map[string]*userConn{},
-		backends: map[string]backend.Backend{}}
+		backends: map[string]backend.Backend{}, shared: core.NewSharedCache()}
 	s.staging = core.NewStaging(cfg.Staging, os.Getenv("K_SERVICE") != "")
 	s.newBackend = func(email string) backend.Backend {
 		ic := cfg.IAP
@@ -171,6 +173,7 @@ func (s *Server) conn(u *User, p *ProgramClient) *userConn {
 	svc.Principal = u.Email
 	svc.Remote = true
 	svc.Staging = s.staging
+	svc.Shared = s.shared
 	if p != nil {
 		svc.Program = p.ID
 	}
@@ -346,6 +349,7 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 			case <-t.C:
 				s.auth.gc()
 				s.expireIdle(30 * time.Minute)
+				s.shared.Sweep(2 * time.Hour)
 			}
 		}
 	}()

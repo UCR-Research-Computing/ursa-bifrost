@@ -34,6 +34,9 @@ type Service struct {
 	Remote bool
 	// Staging is the private Cloud Storage staging area (nil = file tools off).
 	Staging staging.Client
+	// Shared is the cache for output that is the same for every user, shared
+	// by every person's Service on the hosted server (nil = per-service only).
+	Shared *SharedCache
 	// Program is the program client (users.yaml clients[].id) this service
 	// acts for, or empty for a person's own clients. Audit records then read
 	// "program:<id>/<mcp client>".
@@ -206,20 +209,45 @@ func (s *Service) run(ctx context.Context, c backend.Command) ([]byte, error) {
 		t.cmds = append(t.cmds, policy.Redact(key))
 		t.mu.Unlock()
 	}
+	markCached := func() {
+		if t != nil {
+			t.mu.Lock()
+			t.cached = true
+			t.mu.Unlock()
+		}
+	}
 	if ttl > 0 {
 		s.mu.Lock()
 		e, ok := s.cache[key]
 		s.mu.Unlock()
 		if ok && s.Now().Sub(e.at) < ttl {
-			if t != nil {
-				t.mu.Lock()
-				t.cached = true
-				t.mu.Unlock()
-			}
+			markCached()
 			return e.data, nil
 		}
 	}
-	b, err := s.Backend.Run(ctx, c)
+	public := c.Public() && !c.Write()
+	if s.Shared != nil && public {
+		if b, ok := s.Shared.get(key, ttl); ok {
+			markCached()
+			return b, nil
+		}
+	}
+	var b []byte
+	var err error
+	if s.Shared != nil && ttl > 0 && !c.Write() {
+		// Single-flight: identical commands in flight run once. Public output
+		// is keyed for everyone; anything else only for this person (their
+		// own identity runs it, so two people never share an answer).
+		fkey := key
+		if !public {
+			fkey = "u:" + s.Principal + ":" + s.Program + ":" + key
+		}
+		b, err = s.Shared.do(ctx, fkey, public, func(ctx context.Context) ([]byte, error) {
+			return s.Backend.Run(ctx, c)
+		})
+	} else {
+		b, err = s.Backend.Run(ctx, c)
+	}
 	if err != nil {
 		return nil, err
 	}
