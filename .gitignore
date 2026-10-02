@@ -12,3 +12,5 @@ agent/.venv/
 agent/**/__pycache__/
 agent/.pytest_cache/
 agent/.ruff_cache/
+__pycache__/
+*.pyc
