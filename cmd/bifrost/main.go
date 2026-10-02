@@ -21,10 +21,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -44,7 +46,7 @@ Usage:
   bifrost jobs [--state S] [--since T] [--all] [--user U]
   bifrost job show <id> [--script] [--any]
   bifrost job explain <id> [--lines N] [--any]
-  bifrost job log <id> [--stderr] [--lines N] [--any]
+  bifrost job log <id> [--stderr] [--lines N] [--start N] [--grep RE] [--any]
   bifrost modules [query]                  search software modules
   bifrost module <name>                    module show
   bifrost recipes [query]                  known-good recipes and site rules
@@ -53,8 +55,17 @@ Usage:
   bifrost waste [--since T] [--cpu PCT] [--all] [--user U]   avoidable spend
   bifrost health                           down/drained nodes, stockouts, stuck jobs (R2)
   bifrost ticket <id> [--text FILE|-]      draft a ticket reply (R2; never sent)
-  bifrost results <id> [--read FILE] [--download] [--files a,b]   job outputs (own jobs)
-  bifrost submit <script.sh|-> [--partition P] [--nodes N] [--time T] [--name J] [--yes]   (A1)
+  bifrost results <id> [--prefix DIR] [--pattern GLOB] [--offset N] [--limit N]
+                  [--read FILE [--read-offset N] [--bytes N] [--grep RE]] [--download] [--files a,b]
+  bifrost link <id> FILE [FILE...]         signed download links for job outputs (staging)
+  bifrost upload FILE                      stage an input file; then submit --input <id> (A1)
+  bifrost uploads                          your staged uploads (A1)
+  bifrost storage                          space used in your home and scratch folders
+  bifrost ls [PATH] [--pattern GLOB] [--offset N]   a folder under your home or scratch
+  bifrost cat PATH [--offset N] [--bytes N] [--grep RE]   a text file under home or scratch
+  bifrost env [--module M]... [CMD...]     what modules load and which tools you get
+  bifrost interactive [--partition P] [--nodes N] [--cpus N] [--gpus N] [--time T] [--mem M]
+  bifrost submit <script.sh|-> [--partition P] [--nodes N] [--time T] [--name J] [--input ID,...] [--yes]   (A1)
   bifrost cancel|hold|release <id> [--yes]                      (A1)
   bifrost confirm <token>                  confirm a prepared action (A1)
   bifrost serve                       hosted MCP server (HTTP + Google sign-in; see docs/CLOUD_PLAN.md)
@@ -301,19 +312,196 @@ func run(args []string, stdout, stderr io.Writer) int {
 		read := fs.String("read", "", "show one text file")
 		dl := fs.Bool("download", false, "copy the job folder to results_dir/<id>")
 		files := fs.String("files", "", "comma-separated files to download")
+		prefix := fs.String("prefix", "", "only files under this subfolder")
+		pattern := fs.String("pattern", "", "glob on the file name")
+		offset := fs.Int("offset", 0, "listing page start")
+		limit := fs.Int("limit", 0, "files per page")
+		roff := fs.Int64("read-offset", 0, "byte offset for --read")
+		rbytes := fs.Int("bytes", 0, "bytes for --read")
+		grep := fs.String("grep", "", "search --read file")
 		if err := fs.Parse(rest[1:]); err != nil {
 			return fail(stdout, stderr, g, err)
 		}
-		in := core.ResultsInput{JobID: id, Read: *read, Download: *dl || *files != ""}
+		in := core.ResultsInput{JobID: id, Read: *read, Download: *dl || *files != "", Prefix: *prefix, Pattern: *pattern,
+			Offset: *offset, Limit: *limit, ReadOffset: *roff, ReadBytes: *rbytes, Grep: *grep}
 		if *files != "" {
 			in.Files = strings.Split(*files, ",")
 		}
 		r, err := core.Call(ctx, svc, "cli", "job_results", "R1", map[string]any{"job_id": id, "read": *read, "download": in.Download}, false,
 			func(ctx context.Context) (*core.Results, error) { return svc.JobResults(ctx, in) })
 		return out(stdout, stderr, g, r, err, func(w io.Writer) { printResults(w, r.Data) })
+	case "link":
+		if len(rest) < 2 {
+			return fail(stdout, stderr, g, errors.New("usage: bifrost link <job id> FILE [FILE...]"))
+		}
+		id, files := rest[0], rest[1:]
+		r, err := core.Call(ctx, svc, "cli", "results_link", "R1", map[string]any{"job_id": id, "files": files}, false,
+			func(ctx context.Context) (*core.ResultLinks, error) { return svc.ResultsLink(ctx, id, files) })
+		return out(stdout, stderr, g, r, err, func(w io.Writer) {
+			for _, l := range r.Data.Links {
+				fmt.Fprintf(w, "%s (%d bytes, until %s)\n  %s\n", l.File, l.Bytes, l.ExpiresAt, l.URL)
+			}
+			for _, n := range r.Data.Notes {
+				fmt.Fprintln(w, "note:", n)
+			}
+		})
+	case "upload":
+		if len(rest) != 1 {
+			return fail(stdout, stderr, g, errors.New("usage: bifrost upload FILE"))
+		}
+		fi, err := os.Stat(rest[0])
+		if err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		name := filepathBase(rest[0])
+		r, err := core.Call(ctx, svc, "cli", "upload_prepare", "A1", map[string]any{"filename": name, "bytes": fi.Size()}, false,
+			func(ctx context.Context) (*core.UploadTicket, error) { return svc.UploadPrepare(ctx, name, fi.Size()) })
+		if err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		if err := putFile(ctx, rest[0], r.Data); err != nil {
+			return fail(stdout, stderr, g, fmt.Errorf("upload failed: %w", err))
+		}
+		return out(stdout, stderr, g, r, nil, func(w io.Writer) {
+			fmt.Fprintf(w, "Staged %s as %s. Submit with: bifrost submit job.sh --input %s\n", name, r.Data.UploadID, r.Data.UploadID)
+		})
+	case "uploads":
+		r, err := core.Call(ctx, svc, "cli", "uploads_list", "A1", nil, false, svc.UploadsList)
+		return out(stdout, stderr, g, r, err, func(w io.Writer) {
+			for _, u := range r.Data.Uploads {
+				fmt.Fprintf(w, "%s  %-30s %12d  deleted after %s\n", u.UploadID, u.Filename, u.Bytes, u.ExpiresAt)
+			}
+			fmt.Fprintf(w, "%d upload(s), %d of %d bytes\n", len(r.Data.Uploads), r.Data.TotalBytes, r.Data.LimitBytes)
+		})
+	case "storage":
+		r, err := core.Call(ctx, svc, "cli", "storage_usage", "R1", nil, false, svc.StorageUsage)
+		return out(stdout, stderr, g, r, err, func(w io.Writer) {
+			for _, f := range r.Data.Filesystems {
+				fmt.Fprintf(w, "%-10s %5.1f%% used, %.1f GB free (%s)\n", f.Mount, f.UsedPct, float64(f.FreeBytes)/(1<<30), f.SharedNote)
+			}
+			fmt.Fprintf(w, "home %.2f GB, scratch %.2f GB\n", float64(r.Data.HomeBytes)/(1<<30), float64(r.Data.ScratchByte)/(1<<30))
+			for _, f := range r.Data.Folders {
+				if f.Partial {
+					fmt.Fprintf(w, "  %10s  %s\n", "unknown", f.Path)
+				} else {
+					fmt.Fprintf(w, "  %8.2f GB  %s\n", float64(f.Bytes)/(1<<30), f.Path)
+				}
+			}
+			for _, n := range r.Data.Notes {
+				fmt.Fprintln(w, "note:", n)
+			}
+		})
+	case "ls":
+		p := ""
+		args := rest
+		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+			p, args = args[0], args[1:]
+		}
+		fs := newFlags("ls")
+		pattern := fs.String("pattern", "", "glob on the name")
+		offset := fs.Int("offset", 0, "page start")
+		limit := fs.Int("limit", 0, "entries per page")
+		if err := fs.Parse(args); err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		r, err := core.Call(ctx, svc, "cli", "files_list", "R1", map[string]any{"path": p, "pattern": *pattern, "offset": *offset}, false,
+			func(ctx context.Context) (*core.DirListing, error) {
+				return svc.FilesList(ctx, core.FilesListInput{Path: p, Pattern: *pattern, Offset: *offset, Limit: *limit})
+			})
+		return out(stdout, stderr, g, r, err, func(w io.Writer) {
+			fmt.Fprintf(w, "%s (%d entries)\n", r.Data.Path, r.Data.Total)
+			for _, e := range r.Data.Entries {
+				fmt.Fprintf(w, "  %-5s %12d  %s  %s\n", e.Type, e.Bytes, e.Modified, e.Name)
+			}
+			for _, n := range r.Data.Notes {
+				fmt.Fprintln(w, "note:", n)
+			}
+			if r.Data.NextOffset > 0 {
+				fmt.Fprintf(w, "more: --offset %d\n", r.Data.NextOffset)
+			}
+		})
+	case "cat":
+		if len(rest) < 1 {
+			return fail(stdout, stderr, g, errors.New("usage: bifrost cat PATH [--offset N] [--bytes N] [--grep RE]"))
+		}
+		p := rest[0]
+		fs := newFlags("cat")
+		offset := fs.Int64("offset", 0, "byte offset")
+		nb := fs.Int("bytes", 0, "bytes to read")
+		grep := fs.String("grep", "", "search instead of reading")
+		if err := fs.Parse(rest[1:]); err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		r, err := core.Call(ctx, svc, "cli", "files_read", "R1", map[string]any{"path": p, "offset": *offset, "grep": *grep}, false,
+			func(ctx context.Context) (*core.FileRead, error) {
+				return svc.FilesRead(ctx, core.FilesReadInput{Path: p, Offset: *offset, Bytes: *nb, Grep: *grep})
+			})
+		return out(stdout, stderr, g, r, err, func(w io.Writer) {
+			if r.Data.Grep != nil {
+				fmt.Fprintf(w, "# %s: %d match(es) in %d lines (redacted)\n%s", r.Data.Path, r.Data.Grep.Matches, r.Data.Grep.TotalLines, r.Data.Grep.Lines.Text)
+				return
+			}
+			fmt.Fprint(w, r.Data.Text.Text)
+			if !r.Data.Chunk.EOF {
+				fmt.Fprintf(w, "\n# more: --offset %d (of %d bytes)\n", r.Data.Chunk.NextOffset, r.Data.Chunk.FileBytes)
+			}
+		})
+	case "env":
+		fs := newFlags("env")
+		var mods multiFlag
+		fs.Var(&mods, "module", "module to load (repeatable)")
+		if err := fs.Parse(rest); err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		cmds := fs.Args()
+		r, err := core.Call(ctx, svc, "cli", "env_check", "R1", map[string]any{"modules": []string(mods), "commands": cmds}, false,
+			func(ctx context.Context) (*core.EnvCheck, error) { return svc.EnvCheck(ctx, mods, cmds) })
+		return out(stdout, stderr, g, r, err, func(w io.Writer) {
+			for _, m := range r.Data.Modules {
+				if m.Loaded {
+					fmt.Fprintf(w, "module %-24s loaded\n", m.Module)
+				} else {
+					fmt.Fprintf(w, "module %-24s FAILED: %s\n", m.Module, m.Error)
+				}
+			}
+			fmt.Fprintf(w, "loaded: %s\n", strings.Join(r.Data.Loaded, " "))
+			for _, c := range r.Data.Commands {
+				p := c.Path
+				if p == "" {
+					p = "not found"
+				}
+				fmt.Fprintf(w, "%-10s %s  %s\n", c.Command, p, c.Version)
+			}
+			for _, n := range r.Data.Notes {
+				fmt.Fprintln(w, "note:", n)
+			}
+		})
+	case "interactive":
+		fs := newFlags("interactive")
+		part := fs.String("partition", "", "partition")
+		nodes := fs.Int("nodes", 0, "nodes")
+		cpus := fs.Int("cpus", 0, "cpus")
+		gpus := fs.Int("gpus", 0, "gpus")
+		tl := fs.String("time", "", "time limit")
+		mem := fs.String("mem", "", "memory")
+		if err := fs.Parse(rest); err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		in := core.InteractiveInput{Partition: *part, Nodes: *nodes, CPUs: *cpus, GPUs: *gpus, Time: *tl, Memory: *mem}
+		r, err := core.Call(ctx, svc, "cli", "interactive_help", "R1", map[string]any{"partition": *part, "time": *tl}, false,
+			func(ctx context.Context) (*core.InteractiveHelp, error) { return svc.InteractiveHelp(ctx, in) })
+		return out(stdout, stderr, g, r, err, func(w io.Writer) {
+			fmt.Fprintf(w, "1. connect:  %s\n2. session:  %s\n   or:       %s\n", r.Data.Connect, r.Data.Command, r.Data.Alternative)
+			if r.Data.USDPerHour > 0 {
+				fmt.Fprintf(w, "cost: $%.2f/hour, up to $%.2f for %s\n", r.Data.USDPerHour, r.Data.WorstCaseUSD, r.Data.TimeLimit)
+			}
+			for _, x := range append(r.Data.Warnings, r.Data.Notes...) {
+				fmt.Fprintln(w, "-", x)
+			}
+		})
 	case "submit":
 		if len(rest) < 1 {
-			return fail(stdout, stderr, g, errors.New("usage: bifrost submit <script.sh|-> [--partition P] [--nodes N] [--time T] [--name J] [--yes]"))
+			return fail(stdout, stderr, g, errors.New("usage: bifrost submit <script.sh|-> [--partition P] [--nodes N] [--time T] [--name J] [--input ID,...] [--yes]"))
 		}
 		src := rest[0]
 		fs := newFlags("submit")
@@ -321,6 +509,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		nodes := fs.Int("nodes", 0, "nodes")
 		tl := fs.String("time", "", "time limit")
 		name := fs.String("name", "", "job name")
+		inputs := fs.String("input", "", "comma-separated staged upload ids (bifrost upload)")
 		yes := fs.Bool("yes", false, "confirm without asking (still within caps)")
 		if err := fs.Parse(rest[1:]); err != nil {
 			return fail(stdout, stderr, g, err)
@@ -336,7 +525,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		r, err := core.Call(ctx, svc, "cli", "job_submit", "A1", map[string]any{"file": src, "partition": *part, "nodes": *nodes, "time": *tl}, false,
 			func(ctx context.Context) (*core.SubmitPlan, error) {
-				return svc.PrepareSubmit(ctx, core.SubmitInput{Script: string(b), Partition: *part, Nodes: *nodes, Time: *tl, JobName: *name})
+				in := core.SubmitInput{Script: string(b), Partition: *part, Nodes: *nodes, Time: *tl, JobName: *name}
+				if *inputs != "" {
+					in.Inputs = strings.Split(*inputs, ",")
+				}
+				return svc.PrepareSubmit(ctx, in)
 			})
 		if err != nil {
 			return fail(stdout, stderr, g, err)
@@ -436,6 +629,8 @@ func jobCmd(ctx context.Context, svc *core.Service, args []string, stdout, stder
 	lines := fs.Int("lines", 0, "log lines")
 	script := fs.Bool("script", false, "include the batch script")
 	stderrStream := fs.Bool("stderr", false, "read stderr instead of stdout")
+	start := fs.Int("start", 0, "first log line (default: the end)")
+	grep := fs.String("grep", "", "search the whole log")
 	if err := fs.Parse(rest); err != nil {
 		return fail(stdout, stderr, g, err)
 	}
@@ -460,12 +655,19 @@ func jobCmd(ctx context.Context, svc *core.Service, args []string, stdout, stder
 		if *stderrStream {
 			stream = "stderr"
 		}
-		r, err := core.Call(ctx, svc, "cli", "job_log_tail"+suffix, tier, map[string]any{"job_id": id, "stream": stream}, false,
+		r, err := core.Call(ctx, svc, "cli", "job_log_tail"+suffix, tier, map[string]any{"job_id": id, "stream": stream, "start_line": *start, "grep": *grep}, false,
 			func(ctx context.Context) (*core.LogTail, error) {
-				return svc.JobLogTail(ctx, id, stream, *lines, *anyUser)
+				return svc.JobLog(ctx, core.LogInput{JobID: id, Stream: stream, Lines: *lines, StartLine: *start, Grep: *grep, AnyUser: *anyUser})
 			})
 		return out(stdout, stderr, g, r, err, func(w io.Writer) {
-			fmt.Fprintf(w, "# %s (%s, last %d lines, redacted)\n%s", r.Data.Path, r.Data.Stream, r.Data.Lines, r.Data.Tail.Text)
+			if r.Data.Grep != nil {
+				fmt.Fprintf(w, "# %s (%s): %d match(es) in %d lines, redacted\n%s", r.Data.Path, r.Data.Stream, r.Data.Grep.Matches, r.Data.TotalLines, r.Data.Grep.Lines.Text)
+				return
+			}
+			fmt.Fprintf(w, "# %s (%s, lines %d-%d of %d, redacted)\n%s", r.Data.Path, r.Data.Stream, r.Data.FirstLine, r.Data.LastLine, r.Data.TotalLines, r.Data.Tail.Text)
+			if r.Data.Next != "" {
+				fmt.Fprintln(w, "#", r.Data.Next)
+			}
 		})
 	}
 	return fail(stdout, stderr, g, fmt.Errorf("unknown job subcommand %q (show, explain, log)", sub))
@@ -593,4 +795,43 @@ func firstNonEmptyStr(v ...string) string {
 		}
 	}
 	return ""
+}
+
+type multiFlag []string
+
+func (m *multiFlag) String() string     { return strings.Join(*m, ",") }
+func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
+
+func filepathBase(p string) string {
+	if i := strings.LastIndexAny(p, "/\\"); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}
+
+// putFile sends a local file to a signed upload link (bifrost upload).
+func putFile(ctx context.Context, p string, t *core.UploadTicket) error {
+	f, err := os.Open(p)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	req, err := http.NewRequestWithContext(ctx, t.Method, t.URL, f)
+	if err != nil {
+		return err
+	}
+	req.ContentLength = t.MaxBytes
+	for k, v := range t.Headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := (&http.Client{Timeout: 2 * time.Hour}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2000))
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
 }

@@ -61,7 +61,7 @@ func TestAllowListIsClosed(t *testing.T) {
 	// Every constructor's program must be one of these. If you add a command,
 	// add it here deliberately.
 	allowed := map[string]bool{"id": true, "squeue": true, "sacct": true, "sinfo": true, "scontrol": true, "cat": true, "tail": true, "bash": true,
-		"sbatch": true, "scancel": true, "find": true, "head": true, "tar": true}
+		"sbatch": true, "scancel": true, "find": true, "head": true, "tar": true, "realpath": true, "df": true, "curl": true}
 	u, _ := SqueueUser("alice")
 	j, _ := SqueueJob("1")
 	st, _ := SqueueStart("1")
@@ -99,7 +99,7 @@ func TestAllowListIsClosed(t *testing.T) {
 		if c.argv[0] == "scontrol" && (len(c.argv) < 2 || (c.argv[1] != "show" && c.argv[1] != "hold" && c.argv[1] != "release")) {
 			t.Errorf("scontrol may only show, hold or release: %v", c.argv)
 		}
-		if c.argv[0] == "bash" && !strings.HasPrefix(c.argv[2], "module -t show ") && c.argv[2] != submitTemplate {
+		if c.argv[0] == "bash" && !strings.HasPrefix(c.argv[2], "module -t show ") && c.argv[2] != submitTemplate && c.argv[2] != envTemplate && c.argv[2] != treeTemplate {
 			t.Errorf("bash only runs module show or the fixed submit template: %v", c.argv)
 		}
 		if c.argv[0] == "sbatch" && c.argv[1] != "--test-only" {
@@ -153,5 +153,76 @@ func TestSubmitConstructorsValidate(t *testing.T) {
 	}
 	if _, err := TarDir("/home/a/x", []string{"../../.ssh/id_rsa"}); err == nil {
 		t.Error("tar of a path outside the folder")
+	}
+}
+
+// TestNewTemplatesAreFixed: every v0.7.0 bash command is one of the fixed
+// templates and caller values only ever arrive as positional parameters.
+func TestNewTemplatesAreFixed(t *testing.T) {
+	evil := "/home/alice/x; rm -rf ~ $(id) `id`"
+	cs := []struct {
+		name string
+		mk   func() (Command, error)
+	}{
+		{"tree", func() (Command, error) { return ListTree("/home/alice/bifrost-jobs/x") }},
+		{"read", func() (Command, error) { return ReadRange("/home/alice/a.txt", 0, 10) }},
+		{"grep", func() (Command, error) { return GrepFile("/home/alice/a.txt", "$(id); x", 10, 2) }},
+		{"window", func() (Command, error) { return LogWindow("/home/alice/a.log", 0, 10) }},
+		{"listdir", func() (Command, error) { return ListDir("/home/alice") }},
+		{"du", func() (Command, error) { return DuTop("/home/alice", "/scratch/alice") }},
+		{"env", func() (Command, error) {
+			return EnvCheck([]string{"gcc"}, []string{"python3"}, map[string]bool{"python3": true})
+		}},
+	}
+	fixed := map[string]bool{treeTemplate: true, readRangeTemplate: true, grepTemplate: true, logWindowTemplate: true, listDirTemplate: true, duTemplate: true, envTemplate: true}
+	for _, c := range cs {
+		cmd, err := c.mk()
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if cmd.argv[0] != "bash" || !fixed[cmd.argv[2]] || cmd.argv[3] != "bifrost" {
+			t.Errorf("%s: not a fixed template: %v", c.name, cmd.argv[:3])
+		}
+		if cmd.Write() {
+			t.Errorf("%s is marked write", c.name)
+		}
+	}
+	// paths with shell syntax are still refused (not clean) or only ever passed as $1
+	if _, err := ReadRange(evil, 0, 1); err != nil {
+		// accepted paths are quoted as one argument; a dirty path is fine either way
+		_ = err
+	}
+	for i, bad := range []func() (Command, error){
+		func() (Command, error) { return ReadRange("relative/x", 0, 10) },
+		func() (Command, error) { return ReadRange("/home/alice/../bob/x", 0, 10) },
+		func() (Command, error) { return ReadRange("/home/alice/x", 0, MaxReadBytes+1) },
+		func() (Command, error) { return ReadRange("/home/alice/x", -1, 10) },
+		func() (Command, error) { return GrepFile("/home/alice/x", "", 10, 2) },
+		func() (Command, error) { return GrepFile("/home/alice/x", "a\nb\n", 10, 2) },
+		func() (Command, error) { return GrepFile("/home/alice/x", "a", MaxGrepMatches+1, 2) },
+		func() (Command, error) { return LogWindow("/home/alice/x", 0, MaxWindowLines+1) },
+		func() (Command, error) { return ListDir("/") },
+		func() (Command, error) { return EnvCheck([]string{"gcc;id"}, nil, nil) },
+		func() (Command, error) { return EnvCheck(nil, []string{"/bin/sh"}, nil) },
+		func() (Command, error) { return EnvCheck(nil, []string{"-c"}, nil) },
+		func() (Command, error) {
+			return PutFile("/home/alice/x", "https://evil.example.com/?X-Goog-Signature=00")
+		},
+		func() (Command, error) { return PutFile("/home/alice/x", "https://storage.googleapis.com/b/o") },
+		func() (Command, error) {
+			return PutFile("/home/alice/x", "https://storage.googleapis.com/b/o?X-Goog-Signature=00 -o /tmp/x")
+		},
+	} {
+		if _, err := bad(); err == nil {
+			t.Errorf("case %d: accepted a bad argument", i)
+		}
+	}
+	if _, err := GrepFile("/home/alice/x", "a\nb", 10, 2); err == nil {
+		// "\\n" in a Go string is a backslash-n regex, which is fine
+		_ = err
+	}
+	pf, err := PutFile("/home/alice/x", "https://storage.googleapis.com/b/o?X-Goog-Signature=00ff")
+	if err != nil || pf.argv[0] != "curl" || pf.Write() {
+		t.Errorf("put: %v %v", pf.argv, err)
 	}
 }

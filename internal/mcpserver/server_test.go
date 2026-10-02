@@ -60,7 +60,8 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) map[string]*mcp.Tool {
 func TestToolsR1(t *testing.T) {
 	cs := connect(t)
 	tools := toolNames(t, cs)
-	for _, want := range []string{"cluster_status", "partitions", "jobs_list", "job_show", "job_explain", "job_log_tail", "modules_search", "module_show", "recipes", "script_check", "my_usage", "waste_report", "job_results"} {
+	for _, want := range []string{"cluster_status", "partitions", "jobs_list", "job_show", "job_explain", "job_log_tail", "modules_search", "module_show", "recipes", "script_check", "my_usage", "waste_report", "job_results",
+		"storage_usage", "files_list", "files_read", "env_check", "interactive_help"} {
 		tl, ok := tools[want]
 		if !ok {
 			t.Errorf("missing tool %s", want)
@@ -74,7 +75,7 @@ func TestToolsR1(t *testing.T) {
 		if strings.HasSuffix(name, "_any") || strings.HasSuffix(name, "_all") || name == "usage_report" || name == "health" || name == "ticket_draft" {
 			t.Errorf("staff tool %s exposed at R1", name)
 		}
-		for _, banned := range []string{"submit", "cancel", "exec", "shell", "run_command", "hold", "release", "confirm"} {
+		for _, banned := range []string{"submit", "cancel", "exec", "shell", "run_command", "hold", "release", "confirm", "upload", "write", "delete", "rm", "chmod", "mv", "cp"} {
 			if strings.Contains(name, banned) {
 				t.Errorf("tool %s must not exist yet", name)
 			}
@@ -315,5 +316,54 @@ func TestSubmitOverMCP(t *testing.T) {
 	_, res = call(t, cs, "job_submit_confirm", map[string]any{"confirm_token": tok})
 	if !res.IsError {
 		t.Error("token reused over MCP")
+	}
+}
+
+// TestNoShellTool pins the decision in SPEC 18.5: no tool takes a command line.
+func TestNoShellTool(t *testing.T) {
+	tools := toolNames(t, connect(t, "R1", "R2", "A1"))
+	for name, tl := range tools {
+		for _, banned := range []string{"shell", "exec", "run_command", "bash", "terminal", "ssh"} {
+			if strings.Contains(name, banned) {
+				t.Errorf("tool %s looks like a shell", name)
+			}
+		}
+		b, _ := json.Marshal(tl.InputSchema)
+		for _, field := range []string{`"command":`, `"cmd":`, `"argv":`, `"shell":`} {
+			if strings.Contains(string(b), field) {
+				t.Errorf("tool %s takes a %s field: %s", name, field, b)
+			}
+		}
+	}
+	// staging tools appear only when staging is configured
+	if _, ok := tools["results_link"]; ok {
+		t.Error("results_link registered without staging")
+	}
+	if _, ok := tools["upload_prepare"]; ok {
+		t.Error("upload_prepare registered without staging")
+	}
+}
+
+func TestNewToolsOverMCP(t *testing.T) {
+	cs := connect(t, "R1")
+	m, res := call(t, cs, "interactive_help", map[string]any{"partition": "computehigh", "time": "30"})
+	if res.IsError {
+		t.Fatal(res.Content)
+	}
+	d := m["data"].(map[string]any)
+	if !strings.HasPrefix(d["command"].(string), "srun -p computehigh -N 1 -t 0:30:00") {
+		t.Errorf("interactive_help: %v", d)
+	}
+	_, res = call(t, cs, "files_read", map[string]any{"path": "/etc/passwd"})
+	if !res.IsError {
+		t.Error("files_read /etc/passwd allowed")
+	}
+	m, res = call(t, cs, "job_log_tail", map[string]any{"job_id": "236", "lines": 5})
+	if res.IsError {
+		t.Fatal(res.Content)
+	}
+	d = m["data"].(map[string]any)
+	if d["total_lines"].(float64) < 5 || d["lines"].(float64) != 5 {
+		t.Errorf("log window: %v", d)
 	}
 }

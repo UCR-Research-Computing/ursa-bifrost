@@ -82,6 +82,12 @@ the next token refresh and ends the session.
 - Hermes: `hermes mcp add ursa --url <service url>/mcp --auth oauth`, then
   `trust: untrusted` so destructive tools ask for approval.
 - Health check: `GET /health`. Google's front end answers `/healthz` itself on run.app.
+- Staging (v0.7.0): `gs://ucr-ursa-major-hpc-cluster-bifrost-staging`, private (uniform access,
+  public access prevention), 7-day delete rule, no soft delete, CORS `PUT` from the ursa-agent
+  origin only. The service account has `storage.objectAdmin` on that bucket and
+  `iam.serviceAccountTokenCreator` on itself (signs links through `signBlob`; no key file).
+  Verified live: a signed upload works, a body over the signed size is refused (400), a changed
+  size header breaks the signature (403), unsigned and bad-signature reads are refused (403).
 
 ## ursa-agent (C4)
 

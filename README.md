@@ -32,7 +32,7 @@ bifrost partitions                partitions, cores, memory, GPUs, prices, what 
 bifrost jobs [--state FAILED]     your jobs (queue + recent accounting)
 bifrost job show 236              merged squeue + sacct record, efficiency, steps
 bifrost job explain 236           deterministic diagnosis with evidence and a fix
-bifrost job log 236 [--stderr]    redacted log tail
+bifrost job log 236 [--stderr]    redacted log window (--start N to page, --grep RE to search)
 bifrost modules lammps            module search (versions, MPI prerequisite, GPU builds)
 bifrost recipes pytorch           known-good recipes from the cluster catalog
 bifrost check job.sbatch          static check of a batch script + worst-case cost
@@ -40,7 +40,14 @@ bifrost usage --since now-30days  node-hours, core-hours, efficiency, estimated 
 bifrost waste --since now-30days  avoidable spend: idle cores, idle nodes, repeat failures
 bifrost health                    down/drained nodes, slow boots, long-pending jobs (R2)
 bifrost ticket 236 [--text f.txt] reply draft for a "my job failed" ticket (R2; never sent)
-bifrost results 265 [--download]  list / read / download a job's output folder
+bifrost results 265 [--download]  paged listing / chunked read / grep / download of a job folder
+bifrost link 265 out.csv          signed download links for job outputs (staging bucket)
+bifrost upload data.csv           stage an input file; then submit --input <upload id>
+bifrost storage                   space used in your home and scratch folders
+bifrost ls ~/project              a folder under your home or scratch (hidden files excluded)
+bifrost cat ~/project/notes.txt   a text file (--offset to page, --grep RE to search)
+bifrost env --module gcc python3  whether modules load and which tools you get
+bifrost interactive -p gpul4 ...  the exact srun/salloc command for an interactive session
 bifrost submit job.sh             plan, show worst-case cost, ask, submit (A1)
 bifrost cancel|hold|release 265   two-step, own jobs only (A1)
 ```
@@ -105,8 +112,11 @@ Claude Code: `claude mcp add ursa -- bifrost mcp`
 Tools (R1): `cluster_status`, `partitions`, `jobs_list`, `job_show`, `job_explain`,
 `job_log_tail`, `modules_search`, `module_show`, `recipes`, `script_check`, `my_usage`,
 `waste_report`.
-`job_results` (R1). Act tools (A1, only registered when `tiers` includes A1):
-`job_submit` + `job_submit_confirm`, `job_cancel`/`job_hold`/`job_release` + `_confirm`.
+`job_results`, `storage_usage`, `files_list`, `files_read`, `env_check`, `interactive_help`,
+and `results_link` when staging is configured (R1). Act tools (A1, only registered when
+`tiers` includes A1): `job_submit` (optional `inputs`) + `job_submit_confirm`,
+`job_cancel`/`job_hold`/`job_release` + `_confirm`, and `upload_prepare` / `uploads_list`
+when staging is configured.
 The prepare tool returns a plan and a single-use `confirm_token`; the assistant must show
 the plan and confirm only after you approve.
 Staff tools (R2, only registered when `tiers` includes R2): `jobs_list_all`,
@@ -117,10 +127,15 @@ Resources: `hpc://catalog`, `hpc://policies`. Prompts: `diagnose_job`,
 
 ## Safety model
 
-- No shell passthrough. Commands can only be built by constructors in
-  `internal/backend/command.go`, each validating its arguments; every argument is quoted.
-  A test pins the allow-list (`squeue`, `sacct`, `sinfo`, `scontrol show`, `cat` of the
-  catalog, `tail` of a job log, `module show`, `id -un`).
+- No shell passthrough, and no shell tool (docs/SPEC.md 18.5). Commands can only be built
+  by constructors in `internal/backend/command.go` and `files.go`, each validating its
+  arguments; shell templates are fixed text and caller values arrive only as positional
+  parameters. A test pins the allow-list.
+- Files: reads are limited to the caller's own home, scratch and job folders; hidden and
+  credential-like files are refused and left out of listings; symlinks are resolved and
+  checked again. Uploads and downloads go through short-lived signed Cloud Storage links in a
+  private 7-day staging bucket, under a folder derived from the signed-in identity; the job
+  fetches its own inputs when it starts, so compute nodes hold no credentials.
 - Read-only by default. State changes exist only in tier A1, always two-step: a prepare
   call stores the exact action under a random single-use token (10-minute expiry, bound to
   the plan hash); the confirm call accepts nothing but the token. Caps are checked at

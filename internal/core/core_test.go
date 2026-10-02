@@ -138,8 +138,8 @@ func TestLogPathOutsideRootsIsDenied(t *testing.T) {
 		t.Fatalf("want denied, got %v", err)
 	}
 	for _, c := range fx.Calls {
-		if strings.HasPrefix(c, "tail") {
-			t.Fatalf("tail ran despite the denial: %v", c)
+		if strings.HasPrefix(c, "tail") || strings.Contains(c, "job.log") {
+			t.Fatalf("the log was read despite the denial: %v", c)
 		}
 	}
 	if err := s.checkLogPath("/home/alice_ucr_edu/../bob/x.log", "alice_ucr_edu"); err == nil {
@@ -156,8 +156,8 @@ func TestLogLinesCapped(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := fx.Calls[len(fx.Calls)-1]
-	if !strings.HasPrefix(last, "tail -n 200 ") {
-		t.Errorf("lines not capped: %s", last)
+	if !strings.HasSuffix(last, " 0 1000") {
+		t.Errorf("lines not capped at limits.log_lines (1000): %s", last)
 	}
 }
 

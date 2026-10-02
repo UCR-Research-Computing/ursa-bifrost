@@ -32,6 +32,8 @@ var redactRules = []redactRule{
 	{regexp.MustCompile(`\bya29\.[A-Za-z0-9_-]{20,}`), "[REDACTED oauth token]"},
 	{regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`), "[REDACTED jwt]"},
 	{regexp.MustCompile(`"private_key"\s*:\s*"[^"]*"`), `"private_key": "[REDACTED]"`},
+	// Cloud Storage signed URL signatures (staging links, SPEC 18)
+	{regexp.MustCompile(`(?i)(X-Goog-Signature=)[0-9a-f]{16,}`), "${1}[REDACTED]"},
 	// URLs with embedded credentials
 	{regexp.MustCompile(`(https?://)[^/\s:@]+:[^/\s@]+@`), "${1}[REDACTED]@"},
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/config"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/policy"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/slurm"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/staging"
 )
 
 // Service is the core: one per process.
@@ -31,6 +32,8 @@ type Service struct {
 	// Remote is set by the HTTP server: results cannot be downloaded to the
 	// server's own disk.
 	Remote bool
+	// Staging is the private Cloud Storage staging area (nil = file tools off).
+	Staging staging.Client
 
 	mu    sync.Mutex
 	cache map[string]cacheEntry
@@ -83,7 +86,30 @@ func New(cfg config.Config) (*Service, error) {
 		Cfg: cfg, Backend: be, Audit: audit,
 		Limiter: policy.NewLimiter(cfg.Limits.CallsPerMin),
 		Now:     time.Now, cache: map[string]cacheEntry{},
+		Staging: NewStaging(cfg.Staging, false),
 	}, nil
+}
+
+// NewStaging builds the staging client from config (nil when no bucket).
+// onCloud selects the metadata-server token (Cloud Run) unless the config says.
+func NewStaging(sc config.Staging, onCloud bool) staging.Client {
+	if sc.Bucket == "" {
+		return nil
+	}
+	tok := sc.Token
+	if tok == "" {
+		tok = "gcloud"
+		if onCloud {
+			tok = "metadata"
+		}
+	}
+	g := &staging.GCS{BucketName: sc.Bucket, SignAs: sc.SignAs}
+	if tok == "metadata" {
+		g.Token = staging.MetadataToken()
+	} else {
+		g.Token = staging.CommandToken([]string{"gcloud", "auth", "print-access-token"})
+	}
+	return g
 }
 
 // Close releases backend resources (the IAP backend deletes its OS Login key).
@@ -171,7 +197,9 @@ func (s *Service) run(ctx context.Context, c backend.Command) ([]byte, error) {
 	t := traceOf(ctx)
 	if t != nil {
 		t.mu.Lock()
-		t.cmds = append(t.cmds, key)
+		// commands can carry signed URLs; the trace feeds the audit log and the
+		// answer's source, so it is redacted (the cache key is not)
+		t.cmds = append(t.cmds, policy.Redact(key))
 		t.mu.Unlock()
 	}
 	if ttl > 0 {
@@ -211,6 +239,8 @@ func (s *Service) ttl(k backend.Kind) time.Duration {
 		return s.Cfg.TTL.Catalog.Duration
 	case backend.KindModules:
 		return s.Cfg.TTL.Modules.Duration
+	case backend.KindStorage:
+		return 5 * time.Minute
 	}
 	return 0
 }

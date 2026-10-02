@@ -1,7 +1,7 @@
 // Package backend runs scheduler commands on the cluster.
 //
 // The allow-list is enforced by construction: a Command can only be made by the
-// constructors in this file, each of which validates its arguments. There is no
+// constructors in this file and files.go, each of which validates its arguments. There is no
 // way to build an arbitrary command, and arguments are quoted individually before
 // they reach the remote shell.
 package backend
@@ -28,6 +28,7 @@ const (
 	KindCatalog
 	KindModules
 	KindNoCache
+	KindStorage // storage_usage: df/du are slow, cached 5 minutes
 )
 
 // Command is one allow-listed command. Fields are unexported on purpose.
@@ -44,6 +45,8 @@ type Command struct {
 	write bool
 	// big raises the timeout for bulk transfers (results download).
 	big bool
+	// timeout overrides the default per-command timeout when set.
+	timeout time.Duration
 }
 
 // Stdin is the data sent to the command, if any.
@@ -255,6 +258,8 @@ func okExit(c Command, code int) bool {
 // Timeout picks a per-command timeout.
 func Timeout(c Command) time.Duration {
 	switch {
+	case c.timeout > 0:
+		return c.timeout
 	case c.big:
 		return 15 * time.Minute
 	case c.kind == KindAcct, c.write:
