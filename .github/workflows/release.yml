@@ -30,7 +30,7 @@ jobs:
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
               -ldflags "-s -w -X github.com/UCR-Research-Computing/ursa-bifrost/internal/version.Version=${V}" \
               -o "dist/$name/bifrost" ./cmd/bifrost
-            cp README.md docs/CLIENTS.md "dist/$name/"
+            cp LICENSE README.md docs/CLIENTS.md "dist/$name/"
             tar -C dist -czf "dist/$name.tar.gz" "$name"
           done
           (cd dist && sha256sum *.tar.gz > SHA256SUMS)
