@@ -47,7 +47,16 @@ type Command struct {
 	big bool
 	// timeout overrides the default per-command timeout when set.
 	timeout time.Duration
+	// public marks output that is the same for every user (node state, the
+	// whole queue, the partition list, the site catalog). The hosted server
+	// may cache it once for everyone instead of once per person. Never set it
+	// on a command whose output depends on who runs it (their jobs, files,
+	// accounting, modules seen through their environment).
+	public bool
 }
+
+// Public reports whether the output is the same for every caller.
+func (c Command) Public() bool { return c.public }
 
 // Stdin is the data sent to the command, if any.
 func (c Command) Stdin() []byte { return c.stdin }
@@ -127,7 +136,9 @@ func SqueueUser(user string) (Command, error) {
 }
 
 // SqueueAll lists every job in the queue.
-func SqueueAll() Command { return Command{argv: []string{"squeue", "--json"}, kind: KindQueue} }
+func SqueueAll() Command {
+	return Command{argv: []string{"squeue", "--json"}, kind: KindQueue, public: true}
+}
 
 // SqueueJob shows one queued or running job. squeue exits 1 for a job that
 // already left the queue; that is reported as an empty list, not an error.
@@ -196,19 +207,21 @@ func SacctStates(user, since, states string) (Command, error) {
 }
 
 // Sinfo is `sinfo --json`.
-func Sinfo() Command { return Command{argv: []string{"sinfo", "--json"}, kind: KindNodes} }
+func Sinfo() Command {
+	return Command{argv: []string{"sinfo", "--json"}, kind: KindNodes, public: true}
+}
 
 // PartitionSharing is `sinfo -h -o %R|%h`: each partition's OverSubscribe setting
 // (EXCLUSIVE, NO, YES, FORCE...), which says whether jobs share nodes. The JSON
 // output of Slurm 25.11 carries no such field (its oversubscribe flags stay empty
 // for EXCLUSIVE partitions), so the format string is the reliable source.
 func PartitionSharing() Command {
-	return Command{argv: []string{"sinfo", "-h", "-o", "%R|%h"}, kind: KindNodes}
+	return Command{argv: []string{"sinfo", "-h", "-o", "%R|%h"}, kind: KindNodes, public: true}
 }
 
 // Nodes is `scontrol show nodes --json`.
 func Nodes() Command {
-	return Command{argv: []string{"scontrol", "show", "nodes", "--json"}, kind: KindNodes}
+	return Command{argv: []string{"scontrol", "show", "nodes", "--json"}, kind: KindNodes, public: true}
 }
 
 // Catalog reads the cluster's published catalog (fixed path from config).
@@ -216,7 +229,7 @@ func Catalog(p string) (Command, error) {
 	if !path.IsAbs(p) || path.Clean(p) != p || !strings.HasSuffix(p, ".json") {
 		return Command{}, fmt.Errorf("catalog path %q must be an absolute, clean .json path", p)
 	}
-	return Command{argv: []string{"cat", "--", p}, kind: KindCatalog}, nil
+	return Command{argv: []string{"cat", "--", p}, kind: KindCatalog, public: true}, nil
 }
 
 // Tail reads the last n lines of a file. The caller must have checked the path

@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (Draft 7; built through bifrost v0.9.0 and ursa-agent 0.3.0) |
-| Status | bifrost v0.9.0, ursa-agent 0.3.0, 2026-10-02 (spec Draft 7). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
+| Document | Specification and design (Draft 7; built through bifrost v0.9.1 and ursa-agent 0.3.0) |
+| Status | bifrost v0.9.1, ursa-agent 0.3.0, 2026-10-02 (spec Draft 7). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -361,7 +361,10 @@ Retention per Q12. A weekly summary is cheap to produce from the file.
 ### 9.7 Load and cost safety
 
 - Cache and rate limits keep scheduler load low; no polling unless a watch is explicitly
-  requested.
+  requested. On the hosted server, output that is the same for everyone (node state, the
+  whole queue, partitions, catalog) is cached once for all people, and identical
+  commands in flight run once (v0.9.1; docs/SCALING.md). Per-person output and writes
+  are never shared.
 - A1 caps: max nodes, max wall time, max estimated cost per job and per day per user. On a
   shared partition the estimate is the share of the node the job holds (section 19).
 - `waste_report` treats powered-down cloud nodes as free (slurm-gcp), so it does not
@@ -937,6 +940,7 @@ new mutation guards (128 in all, every one caught).
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-02 | v0.9.1 | Scaling phase 1 (docs/SCALING.md): shared cache for public output and single-flight; 5 mutation guards |
 | 2026-10-02 | v0.9.0 | Section 21, program clients: pre-registered clients in users.yaml with a tier ceiling and their own call budget, audited as `program:<id>`; one SSH connection per person shared by their clients and programs. 13 new mutation guards (128). Draft 7 |
 | 2026-10-02 | Draft 6 (docs) | Status brought up to date: cluster shared since 2026-10-02 (19.3 as applied), Q14 decided, dashboard in the header |
 | 2026-10-02 | ursa-agent 0.3.0 | Section 20: read-only dashboard (12 panels, 4 staff-only) with the chat in a drawer; per-person cache; token-refresh lock; strict CSP. Tag `agent-v0.3.0`, Cloud Run `ursa-agent` revision 00003. N5 amended |
