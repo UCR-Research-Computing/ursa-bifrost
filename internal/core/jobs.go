@@ -383,6 +383,9 @@ func (s *Service) JobExplain(ctx context.Context, jobID string, anyUser bool, li
 	if lines <= 0 {
 		lines = 80
 	}
+	if lines > 200 { // the rules only need the end of the log
+		lines = 200
+	}
 	f := rules.Facts{State: d.State, Reason: d.Reason, ExitCode: d.ExitCode, Partition: d.Partition,
 		ElapsedSec: d.ElapsedS, LimitMin: d.TimeLimitMin, CPUsAlloc: d.CPUs, RestartCnt: d.RestartCount,
 		KilledBy: d.KilledBy}
@@ -421,23 +424,46 @@ func (s *Service) JobExplain(ctx context.Context, jobID string, anyUser bool, li
 
 // ---- logs -------------------------------------------------------------------------
 
-// LogTail is job_log_tail's answer.
+// LogTail is job_log_tail's answer: a window of the log, or a search.
 type LogTail struct {
-	JobID  string            `json:"job_id"`
-	Stream string            `json:"stream"`
-	Path   string            `json:"path"`
-	Lines  int               `json:"lines"`
-	Tail   *policy.Untrusted `json:"untrusted"`
+	JobID      string            `json:"job_id"`
+	Stream     string            `json:"stream"`
+	Path       string            `json:"path"`
+	Lines      int               `json:"lines"`                // lines returned
+	TotalLines int               `json:"total_lines"`          // lines in the log
+	FirstLine  int               `json:"first_line,omitempty"` // 1-based number of the first line returned
+	LastLine   int               `json:"last_line,omitempty"`  // number of the last line returned
+	Tail       *policy.Untrusted `json:"untrusted,omitempty"`  // the window
+	Grep       *GrepResult       `json:"grep,omitempty"`       // matches with line numbers
+	Next       string            `json:"next,omitempty"`       // how to page
+}
+
+// LogInput selects a log window or search.
+type LogInput struct {
+	JobID     string
+	Stream    string
+	Lines     int    // window size (default 100, cap limits.log_lines)
+	StartLine int    // 0 = the last Lines lines; otherwise from this line
+	Grep      string // extended regex: matching lines anywhere in the log
+	AnyUser   bool
 }
 
 // JobLogTail returns the redacted tail of a job's stdout or stderr.
 func (s *Service) JobLogTail(ctx context.Context, jobID, stream string, lines int, anyUser bool) (*LogTail, error) {
+	return s.JobLog(ctx, LogInput{JobID: jobID, Stream: stream, Lines: lines, AnyUser: anyUser})
+}
+
+// JobLog returns a window of a job's log (the tail, or from a line) or the
+// lines matching a pattern, with line numbers for paging (SPEC 18.3).
+func (s *Service) JobLog(ctx context.Context, in LogInput) (*LogTail, error) {
+	stream := in.Stream
 	if stream == "" {
 		stream = "stdout"
 	}
 	if stream != "stdout" && stream != "stderr" {
 		return nil, fmt.Errorf("stream must be stdout or stderr")
 	}
+	lines := in.Lines
 	if lines <= 0 {
 		lines = 100
 	}
@@ -445,29 +471,89 @@ func (s *Service) JobLogTail(ctx context.Context, jobID, stream string, lines in
 		lines = s.Cfg.Limits.LogLines
 		markTruncated(ctx)
 	}
-	d, err := s.JobShow(ctx, JobShowInput{JobID: jobID, AnyUser: anyUser})
+	if in.StartLine < 0 {
+		return nil, fmt.Errorf("start_line must be 1 or more")
+	}
+	if in.Grep != "" {
+		if err := backend.ValidPattern(in.Grep); err != nil {
+			return nil, err
+		}
+	}
+	d, err := s.JobShow(ctx, JobShowInput{JobID: in.JobID, AnyUser: in.AnyUser})
 	if err != nil {
 		return nil, err
 	}
-	text, p, err := s.readLog(ctx, d, stream, lines)
+	p, err := s.logPath(d, stream)
 	if err != nil {
 		return nil, err
 	}
+	lt := &LogTail{JobID: in.JobID, Stream: stream, Path: p}
 	markUntrusted(ctx)
-	return &LogTail{JobID: jobID, Stream: stream, Path: p, Lines: lines, Tail: policy.Wrap(text, s.Cfg.Limits.UntrustedCh)}, nil
+	if in.Grep != "" {
+		g, err := s.grepFile(ctx, p, in.Grep)
+		if err != nil {
+			return nil, fmt.Errorf("searching %s: %w", p, err)
+		}
+		lt.Grep, lt.TotalLines = g, g.TotalLines
+		return lt, nil
+	}
+	c, err := backend.LogWindow(p, in.StartLine, lines)
+	if err != nil {
+		return nil, err
+	}
+	out, err := s.run(ctx, c)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", p, err)
+	}
+	head, body, _ := strings.Cut(string(out), "\n")
+	var total, first int
+	if _, err := fmt.Sscanf(head, "%d %d", &total, &first); err != nil {
+		return nil, fmt.Errorf("unexpected answer reading %s", p)
+	}
+	if len(body) > pageChars { // keep whole lines from the end of the window
+		cut := strings.IndexByte(body[len(body)-pageChars:], '\n')
+		dropped := body[:len(body)-pageChars+cut+1]
+		first += strings.Count(dropped, "\n")
+		body = body[len(dropped):]
+		markTruncated(ctx)
+	}
+	n := strings.Count(body, "\n")
+	if body != "" && !strings.HasSuffix(body, "\n") {
+		n++
+	}
+	lt.TotalLines, lt.Lines, lt.Tail = total, n, policy.Wrap(body, 0)
+	if n > 0 {
+		lt.FirstLine, lt.LastLine = first, first+n-1
+	}
+	switch {
+	case lt.FirstLine > 1:
+		lt.Next = fmt.Sprintf("Lines %d-%d of %d. Earlier: start_line=%d. Search the whole log with grep.", lt.FirstLine, lt.LastLine, total, max(1, lt.FirstLine-lines))
+	case lt.LastLine < total:
+		lt.Next = fmt.Sprintf("Lines %d-%d of %d. Later: start_line=%d.", lt.FirstLine, lt.LastLine, total, lt.LastLine+1)
+	}
+	return lt, nil
 }
 
-// readLog resolves the log path from the job record (never from the caller) and
-// checks it against the allowed roots for the job's owner.
-func (s *Service) readLog(ctx context.Context, d *JobDetail, stream string, lines int) (string, string, error) {
+// logPath picks the job's log path from its record and checks the roots.
+func (s *Service) logPath(d *JobDetail, stream string) (string, error) {
 	p := d.Stdout
 	if stream == "stderr" {
 		p = firstNonEmpty(d.Stderr, d.Stdout)
 	}
 	if p == "" {
-		return "", "", fmt.Errorf("the job record has no %s path (interactive job?)", stream)
+		return "", fmt.Errorf("the job record has no %s path (interactive job?)", stream)
 	}
 	if err := s.checkLogPath(p, d.User); err != nil {
+		return p, err
+	}
+	return p, nil
+}
+
+// readLog resolves the log path from the job record (never from the caller) and
+// checks it against the allowed roots for the job's owner.
+func (s *Service) readLog(ctx context.Context, d *JobDetail, stream string, lines int) (string, string, error) {
+	p, err := s.logPath(d, stream)
+	if err != nil {
 		return "", p, err
 	}
 	c, err := backend.Tail(p, lines)

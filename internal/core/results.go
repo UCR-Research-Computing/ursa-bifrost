@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/backend"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/config"
@@ -35,57 +34,70 @@ type Results struct {
 	State      string            `json:"state"`
 	Folder     string            `json:"folder"`
 	Files      []ResultFile      `json:"files"`
-	TotalBytes int64             `json:"total_bytes"`
+	TotalFiles int               `json:"total_files"` // matching prefix/pattern
+	TotalBytes int64             `json:"total_bytes"` // of the matching files
+	Offset     int               `json:"offset"`
+	NextOffset int               `json:"next_offset,omitempty"` // 0 = last page
 	Downloaded string            `json:"downloaded_to,omitempty"`
 	Saved      []string          `json:"saved,omitempty"`
 	Preview    *policy.Untrusted `json:"preview_untrusted,omitempty"`
 	PreviewOf  string            `json:"preview_of,omitempty"`
+	Chunk      *ChunkInfo        `json:"chunk,omitempty"`
+	Grep       *GrepResult       `json:"grep,omitempty"`
 	Notes      []string          `json:"notes"`
 }
 
 // ResultsInput selects a results action.
 type ResultsInput struct {
-	JobID    string
-	Read     string // relative path of one text file to show (optional)
-	Download bool   // copy the folder (or Files) to results_dir/<job_id>
-	Files    []string
+	JobID string
+	// listing page (SPEC 18.3)
+	Prefix  string // only files under this subfolder
+	Pattern string // glob on the relative path (or the base name when it has no "/")
+	Offset  int
+	Limit   int
+	// one file: a chunk from ReadOffset, or a search
+	Read       string
+	ReadOffset int64
+	ReadBytes  int
+	Grep       string
+	Download   bool // copy the folder (or Files) to results_dir/<job_id>
+	Files      []string
 }
 
 // maxDownload bounds one download (a guard against pulling a dataset by accident).
 const maxDownload = 2 << 30 // 2 GiB
 
-// JobResults lists a job's output folder, shows one small text file, or
-// downloads the folder to the laptop. Only the caller's own jobs; the folder
-// is the job's working directory from the accounting record and must sit
-// under the caller's allowed roots.
-func (s *Service) JobResults(ctx context.Context, in ResultsInput) (*Results, error) {
-	if in.Download && s.Remote {
-		return nil, errors.New("download writes to the machine running bifrost; on the hosted server use list or read (or the bifrost CLI on your own computer)")
-	}
-	d, err := s.JobShow(ctx, JobShowInput{JobID: in.JobID})
+// jobFolder resolves and checks one of the caller's job folders.
+func (s *Service) jobFolder(ctx context.Context, jobID string) (*JobDetail, string, error) {
+	d, err := s.JobShow(ctx, JobShowInput{JobID: jobID})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	dir := d.WorkDir
 	if dir == "" {
-		return nil, fmt.Errorf("job %s has no working directory on record", in.JobID)
+		return nil, "", fmt.Errorf("job %s has no working directory on record", jobID)
 	}
 	if err := s.checkLogPath(dir+"/x", d.User); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	home := "/home/" + d.User
 	if dir == home || dir == home+"/" {
-		return nil, fmt.Errorf("job %s ran in your home folder itself (%s); listing it would show everything you own. Submit jobs with bifrost (they run in ~/bifrost-jobs/...) or give it a folder", in.JobID, dir)
+		return nil, "", fmt.Errorf("job %s ran in your home folder itself (%s); listing it would show everything you own. Submit jobs with bifrost (they run in ~/bifrost-jobs/...) or give it a folder", jobID, dir)
 	}
-	r := &Results{JobID: in.JobID, State: d.State, Folder: dir, Notes: []string{}}
-	lc, err := backend.ListFiles(dir)
+	return d, dir, nil
+}
+
+// listJob returns every regular file in a job folder (up to MaxTreeFiles).
+func (s *Service) listJob(ctx context.Context, dir string) ([]ResultFile, bool, error) {
+	lc, err := backend.ListTree(dir)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	out, err := s.run(ctx, lc)
 	if err != nil {
-		return nil, fmt.Errorf("listing %s: %w", dir, err)
+		return nil, false, fmt.Errorf("listing %s: %w", dir, err)
 	}
+	var files []ResultFile
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		parts := strings.SplitN(line, "\t", 3)
 		if len(parts) != 3 {
@@ -93,16 +105,79 @@ func (s *Service) JobResults(ctx context.Context, in ResultsInput) (*Results, er
 		}
 		n, _ := strconv.ParseInt(parts[0], 10, 64)
 		mt, _ := strconv.ParseFloat(parts[1], 64)
-		r.Files = append(r.Files, ResultFile{Path: parts[2], Bytes: n, Modified: time.Unix(int64(mt), 0).Format(time.RFC3339)})
-		r.TotalBytes += n
+		files = append(files, ResultFile{Path: parts[2], Bytes: n, Modified: time.Unix(int64(mt), 0).Format(time.RFC3339)})
 	}
-	sort.Slice(r.Files, func(i, j int) bool { return r.Files[i].Path < r.Files[j].Path })
-	if len(r.Files) > 500 {
-		r.Files = r.Files[:500]
+	cut := false
+	if len(files) > backend.MaxTreeFiles {
+		files, cut = files[:backend.MaxTreeFiles], true
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return files, cut, nil
+}
+
+func matchResult(f ResultFile, prefix, pattern string) bool {
+	if prefix != "" && !strings.HasPrefix(f.Path, prefix+"/") {
+		return false
+	}
+	if pattern == "" {
+		return true
+	}
+	target := f.Path
+	if !strings.Contains(pattern, "/") {
+		target = path.Base(f.Path)
+	}
+	ok, _ := path.Match(pattern, target)
+	return ok
+}
+
+// JobResults lists a job's output folder (paged), reads one text file in
+// chunks or searches it, or downloads the folder to the laptop. Only the
+// caller's own jobs; the folder is the job's working directory from the
+// accounting record and must sit under the caller's allowed roots.
+func (s *Service) JobResults(ctx context.Context, in ResultsInput) (*Results, error) {
+	if in.Download && s.Remote {
+		return nil, errors.New("download writes to the machine running bifrost; on the hosted server use results_link (signed download links) or read")
+	}
+	if in.Prefix != "" {
+		in.Prefix = strings.TrimSuffix(in.Prefix, "/")
+		if err := backend.ValidRelPath(in.Prefix); err != nil {
+			return nil, err
+		}
+	}
+	if err := validGlob(in.Pattern); err != nil {
+		return nil, err
+	}
+	if in.Grep != "" && in.Read == "" {
+		return nil, errors.New("grep searches one file: give read=<file> too")
+	}
+	d, dir, err := s.jobFolder(ctx, in.JobID)
+	if err != nil {
+		return nil, err
+	}
+	r := &Results{JobID: in.JobID, State: d.State, Folder: dir, Files: []ResultFile{}, Notes: []string{}}
+	all, cut, err := s.listJob(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+	if cut {
+		r.Notes = append(r.Notes, fmt.Sprintf("The folder has more than %d files; only the first %d were listed.", backend.MaxTreeFiles, backend.MaxTreeFiles))
 		markTruncated(ctx)
 	}
-	if r.Files == nil {
-		r.Files = []ResultFile{}
+	var match []ResultFile
+	for _, f := range all {
+		if matchResult(f, in.Prefix, in.Pattern) {
+			match = append(match, f)
+			r.TotalBytes += f.Bytes
+		}
+	}
+	r.TotalFiles = len(match)
+	page, off, next := pageOf(match, in.Offset, in.Limit, 500, 1000)
+	if page != nil {
+		r.Files = page
+	}
+	r.Offset, r.NextOffset = off, next
+	if next > 0 {
+		r.Notes = append(r.Notes, fmt.Sprintf("Showing files %d-%d of %d; ask again with offset=%d for more, or narrow with prefix/pattern.", off+1, off+len(page), len(match), next))
 	}
 	if d.State == "RUNNING" || d.State == "PENDING" {
 		r.Notes = append(r.Notes, "The job is still "+strings.ToLower(d.State)+"; files may be incomplete.")
@@ -112,23 +187,26 @@ func (s *Service) JobResults(ctx context.Context, in ResultsInput) (*Results, er
 		if err := backend.ValidRelPath(in.Read); err != nil {
 			return nil, err
 		}
-		if !hasFile(r.Files, in.Read) {
+		if !hasFile(all, in.Read) {
 			return nil, fmt.Errorf("%s is not a file in the job folder (see files)", in.Read)
 		}
-		hc, err := backend.Head(dir+"/"+in.Read, 64*1024)
-		if err != nil {
-			return nil, err
+		if in.Grep != "" {
+			g, err := s.grepFile(ctx, dir+"/"+in.Read, in.Grep)
+			if err != nil {
+				return nil, err
+			}
+			r.Grep, r.PreviewOf = g, in.Read
+		} else {
+			info, text, err := s.readChunk(ctx, dir+"/"+in.Read, in.ReadOffset, in.ReadBytes)
+			if errors.Is(err, errBinary) {
+				return nil, fmt.Errorf("%s is binary; use results_link (or download on the laptop)", in.Read)
+			}
+			if err != nil {
+				return nil, err
+			}
+			r.Preview, r.PreviewOf, r.Chunk = policy.Wrap(text, 0), in.Read, info
+			markUntrusted(ctx)
 		}
-		b, err := s.run(ctx, hc)
-		if err != nil {
-			return nil, err
-		}
-		if !utf8.Valid(b) || bytes.IndexByte(b, 0) >= 0 {
-			return nil, fmt.Errorf("%s is binary; download it instead", in.Read)
-		}
-		r.Preview = policy.Wrap(string(b), s.Cfg.Limits.UntrustedCh)
-		r.PreviewOf = in.Read
-		markUntrusted(ctx)
 	}
 
 	if in.Download {
@@ -139,10 +217,10 @@ func (s *Service) JobResults(ctx context.Context, in ResultsInput) (*Results, er
 				if err := backend.ValidRelPath(f); err != nil {
 					return nil, err
 				}
-				if !hasFile(r.Files, f) {
+				if !hasFile(all, f) {
 					return nil, fmt.Errorf("%s is not a file in the job folder", f)
 				}
-				want += sizeOf(r.Files, f)
+				want += sizeOf(all, f)
 			}
 		}
 		if want > maxDownload {

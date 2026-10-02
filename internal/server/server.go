@@ -22,6 +22,7 @@ import (
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/core"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/mcpserver"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/policy"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/staging"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/version"
 )
 
@@ -42,6 +43,8 @@ type Server struct {
 
 	// newBackend builds a user's backend (tests replace it with fixtures).
 	newBackend func(email string) backend.Backend
+	// staging is the shared staging area (nil = file tools off).
+	staging staging.Client
 }
 
 type userConn struct {
@@ -77,6 +80,7 @@ func New(cfg config.Config, google *Google, secret string) (*Server, error) {
 	s := &Server{cfg: cfg, base: strings.TrimRight(sc.BaseURL, "/"), users: users, store: store, google: google,
 		auth: newAuthState(), tokens: &tokenCache{g: google, store: store, m: map[string]cachedTok{}},
 		audits: audit, logger: log.New(os.Stderr, "bifrost-serve ", log.LstdFlags), conns: map[string]*userConn{}}
+	s.staging = core.NewStaging(cfg.Staging, os.Getenv("K_SERVICE") != "")
 	s.newBackend = func(email string) backend.Backend {
 		ic := cfg.IAP
 		return &backend.IAP{Project: ic.Project, Zone: ic.Zone, Instance: ic.Instance, Email: email,
@@ -87,6 +91,9 @@ func New(cfg config.Config, google *Google, secret string) (*Server, error) {
 }
 
 func (s *Server) logf(format string, a ...any) { s.logger.Printf(format, a...) }
+
+// SetStaging replaces the staging client (tests).
+func (s *Server) SetStaging(c staging.Client) { s.staging = c }
 
 func (s *Server) audit(tool, email, decision, reason string) {
 	_ = s.audits.Write(policy.Record{Time: time.Now(), Caller: email, Client: "http", Tool: tool, Decision: decision, Reason: reason})
@@ -128,6 +135,7 @@ func (s *Server) conn(u *User) *userConn {
 	svc := core.NewService(cfg, s.newBackend(u.Email), s.audits)
 	svc.Principal = u.Email
 	svc.Remote = true
+	svc.Staging = s.staging
 	c := &userConn{svc: svc, srv: mcpserver.New(svc), sig: sig, last: time.Now()}
 	s.conns[u.Email] = c
 	return c

@@ -27,6 +27,7 @@ import (
 
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/backend"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/config"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/staging"
 )
 
 // fakeGoogle is a fake Google OAuth server: it "signs in" whichever email the
@@ -777,5 +778,68 @@ func TestWhoami(t *testing.T) {
 	req2.Header.Set("Authorization", "Bearer bfx_madeup")
 	if r2, _ := http.DefaultClient.Do(req2); r2.StatusCode != 401 {
 		t.Errorf("made-up token: %d", r2.StatusCode)
+	}
+}
+
+// fakeStage is a minimal staging client that signs nothing real.
+type fakeStage struct {
+	mu    sync.Mutex
+	signs []string
+}
+
+func (f *fakeStage) Bucket() string { return "b" }
+func (f *fakeStage) SignURL(_ context.Context, method, object string, _ time.Duration, _ map[string]string) (string, error) {
+	f.mu.Lock()
+	f.signs = append(f.signs, method+" "+object)
+	f.mu.Unlock()
+	return "https://storage.googleapis.com/b/" + object + "?X-Goog-Signature=00ff00ff00ff00ff00ff", nil
+}
+func (f *fakeStage) List(context.Context, string) ([]staging.Object, error) { return nil, nil }
+func (f *fakeStage) Stat(context.Context, string) (staging.Object, bool, error) {
+	return staging.Object{}, false, nil
+}
+
+// TestStagingIsPerPerson: each signed-in person stages under their own owner
+// key (derived from the verified email), and bob without A1 cannot upload.
+func TestStagingIsPerPerson(t *testing.T) {
+	h := newHarness(t, `domain: ucr.edu
+users:
+  - email: alice@ucr.edu
+    tiers: [R1, A1]
+  - email: carol@ucr.edu
+    tiers: [R1, A1]
+  - email: bob@ucr.edu
+    tiers: [R1]
+`)
+	fs := &fakeStage{}
+	h.s.SetStaging(fs)
+	h.s.cfg.Staging.Bucket = "b"
+	sess := map[string]*mcp.ClientSession{}
+	for _, who := range []string{"alice@ucr.edu", "carol@ucr.edu", "bob@ucr.edu"} {
+		tok, err := h.signIn(who, "ucr.edu")
+		if err != nil {
+			t.Fatal(err)
+		}
+		cs, err := h.mcp(tok["access_token"].(string))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sess[who] = cs
+	}
+	if ts := toolSet(t, sess["bob@ucr.edu"]); ts["upload_prepare"] || !ts["results_link"] || !ts["files_read"] {
+		t.Errorf("bob tools: %v", ts)
+	}
+	if ts := toolSet(t, sess["alice@ucr.edu"]); !ts["upload_prepare"] || !ts["uploads_list"] {
+		t.Errorf("alice tools: %v", ts)
+	}
+	callJSON(t, sess["alice@ucr.edu"], "upload_prepare", map[string]any{"filename": "a.csv", "bytes": 10})
+	callJSON(t, sess["carol@ucr.edu"], "upload_prepare", map[string]any{"filename": "a.csv", "bytes": 10})
+	if len(fs.signs) != 2 {
+		t.Fatalf("signs: %v", fs.signs)
+	}
+	oa := strings.Split(fs.signs[0], "/")[1]
+	oc := strings.Split(fs.signs[1], "/")[1]
+	if oa == oc || len(oa) != 20 {
+		t.Fatalf("owner keys: %q %q", oa, oc)
 	}
 }

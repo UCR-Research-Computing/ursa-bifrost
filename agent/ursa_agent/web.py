@@ -246,19 +246,7 @@ async def chat(request: Request) -> Response:
 
 
 async def _confirm_with_bifrost(token: str, tool: str, confirm_token: str) -> dict[str, Any]:
-    hc = httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"}, timeout=httpx.Timeout(120))
-    async with streamable_http_client(BIFROST, http_client=hc) as st, ClientSession(st[0], st[1]) as cs:
-        await cs.initialize()
-        r = await cs.call_tool(tool, {"confirm_token": confirm_token})
-    text = getattr(r.content[0], "text", "") if r.content else ""
-    try:
-        env = json.loads(text)
-    except ValueError:
-        env = {"error": text}
-    is_err = getattr(r, "is_error", None)
-    if is_err is None:
-        is_err = getattr(r, "isError", False)
-    return {"is_error": bool(is_err), "result": env}
+    return await _call_bifrost(token, tool, {"confirm_token": confirm_token})
 
 
 async def decide(request: Request) -> Response:
@@ -300,6 +288,46 @@ async def decide(request: Request) -> Response:
     return JSONResponse(out)
 
 
+async def _call_bifrost(token: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+    hc = httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"}, timeout=httpx.Timeout(120))
+    async with streamable_http_client(BIFROST, http_client=hc) as st, ClientSession(st[0], st[1]) as cs:
+        await cs.initialize()
+        r = await cs.call_tool(tool, args)
+    text = getattr(r.content[0], "text", "") if r.content else ""
+    try:
+        env = json.loads(text)
+    except ValueError:
+        env = {"error": text}
+    is_err = bool(getattr(r, "is_error", None) or getattr(r, "isError", False))
+    return {"is_error": is_err, "result": env}
+
+
+async def upload(request: Request) -> Response:
+    """Ask bifrost for a signed upload link; the browser then PUTs the file
+    straight to Cloud Storage (the bytes never pass through the agent)."""
+    w = _web(request)
+    if not w:
+        return JSONResponse({"error": "sign in first", "login": "/login"}, status_code=401)
+    body = await request.json()
+    name = str(body.get("filename", ""))[:200]
+    try:
+        size = int(body.get("bytes", 0))
+    except (TypeError, ValueError):
+        size = 0
+    try:
+        await _fresh_token(w)
+        out = await _call_bifrost(w["token"], "upload_prepare", {"filename": name, "bytes": size})
+    except PermissionError:
+        WEB.pop(_sid(request) or "", None)
+        return JSONResponse({"error": "sign-in expired", "login": "/login"}, status_code=401)
+    if out["is_error"]:
+        return JSONResponse({"error": str(out["result"].get("error", out["result"]))[:500]}, status_code=400)
+    d = out["result"].get("data", {})
+    return JSONResponse(
+        {k: d.get(k) for k in ("upload_id", "filename", "upload_url", "headers", "method", "expires_at")}
+    )
+
+
 async def me(request: Request) -> Response:
     w = _web(request)
     if not w:
@@ -328,7 +356,7 @@ async def index(request: Request) -> Response:
     return HTMLResponse(
         PAGE,
         headers={
-            "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+            "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://storage.googleapis.com; frame-ancestors 'none'",
             "X-Content-Type-Options": "nosniff",
             "Referrer-Policy": "no-referrer",
         },
@@ -548,6 +576,7 @@ routes = [
     Route("/api/chat", chat, methods=["POST"]),
     Route("/api/decide", decide, methods=["POST"]),
     Route("/api/new", new_chat, methods=["POST"]),
+    Route("/api/upload", upload, methods=["POST"]),
     Route("/a2a/decide", a2a_decide, methods=["POST"]),
     Mount("/a2a", app=A2A_APP),
 ]

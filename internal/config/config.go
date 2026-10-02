@@ -84,6 +84,20 @@ type Caps struct {
 	ConfirmTTLMinutes int     `yaml:"confirm_ttl_minutes"`
 }
 
+// Staging is the private Cloud Storage staging area for file uploads and
+// download links (SPEC section 18). Empty Bucket = the file tools are off.
+type Staging struct {
+	Bucket         string `yaml:"bucket"`
+	SignAs         string `yaml:"sign_as,omitempty"` // service account that signs links (Cloud Run: discovered)
+	Token          string `yaml:"token,omitempty"`   // metadata | gcloud (default: metadata on Cloud Run, else gcloud)
+	UploadMinutes  int    `yaml:"upload_minutes"`
+	LinkMinutes    int    `yaml:"link_minutes"`
+	MaxUploadBytes int64  `yaml:"max_upload_bytes"`
+	MaxUserBytes   int64  `yaml:"max_user_bytes"`
+	MaxLinkBytes   int64  `yaml:"max_link_bytes"`
+	RetainDays     int    `yaml:"retain_days"` // must match the bucket's delete rule
+}
+
 // Config is the whole file.
 type Config struct {
 	Cluster     string             `yaml:"cluster"`
@@ -105,6 +119,7 @@ type Config struct {
 	StatePath   string             `yaml:"state_path"`  // A1 plans, tokens and spend ledger
 	ResultsDir  string             `yaml:"results_dir"` // local folder for downloaded results
 	JobsRoot    string             `yaml:"jobs_root"`   // remote folder under $HOME for submitted jobs
+	Staging     Staging            `yaml:"staging"`
 	Path        string             `yaml:"-"`
 }
 
@@ -142,7 +157,7 @@ func Default() Config {
 			Modules: Duration{time.Hour},
 		},
 		Limits: Limits{
-			LogLines:    200,
+			LogLines:    1000,
 			ListRows:    200,
 			ScriptBytes: 64 * 1024,
 			UntrustedCh: 16000,
@@ -154,6 +169,8 @@ func Default() Config {
 		JobsRoot:   "bifrost-jobs",
 		Caps: Caps{MaxNodes: 4, MaxHours: 24, MaxCostPerJobUSD: 25, MaxCostPerDayUSD: 50,
 			MaxSubmitsPerDay: 20, ConfirmTTLMinutes: 10},
+		Staging: Staging{UploadMinutes: 15, LinkMinutes: 60, MaxUploadBytes: 5 << 30,
+			MaxUserBytes: 20 << 30, MaxLinkBytes: 2 << 30, RetainDays: 7},
 	}
 }
 

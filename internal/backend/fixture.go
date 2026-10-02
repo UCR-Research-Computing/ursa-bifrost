@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -36,6 +38,15 @@ type Fixture struct {
 	TestOnly string
 	// Fail makes a program fail ("scancel": "Invalid job id").
 	Fail map[string]string
+	// Paths are fake files outside job folders (files_list/files_read): absolute
+	// path -> content. A path ending in "/" is a folder. Links maps a path to
+	// the path realpath resolves it to.
+	Paths map[string]string
+	Links map[string]string
+	// Puts records signed-URL uploads (results_link): URL -> local file path.
+	Puts map[string]string
+	// Out answers a bash template exactly (env_check, du ...): template -> output.
+	Out map[string]string
 }
 
 // Name is the backend label.
@@ -96,6 +107,44 @@ func (f *Fixture) Run(_ context.Context, c Command) ([]byte, error) {
 		if strings.Contains(a[2], "module -t show") {
 			return read("module_show.txt")
 		}
+		switch a[2] {
+		case treeTemplate:
+			files := f.Files[a[4]]
+			var b strings.Builder
+			for _, k := range sortedKeys(files) {
+				fmt.Fprintf(&b, "%d\t1790875000.0\t%s\n", len(files[k]), k)
+			}
+			return []byte(b.String()), nil
+		case readRangeTemplate:
+			v, err := f.content(a[4])
+			if err != nil {
+				return nil, err
+			}
+			off, _ := strconv.ParseInt(a[5], 10, 64)
+			n, _ := strconv.Atoi(a[6])
+			if off > int64(len(v)) {
+				off = int64(len(v))
+			}
+			end := min(off+int64(n), int64(len(v)))
+			return []byte(fmt.Sprintf("%d\n%s", len(v), v[off:end])), nil
+		case grepTemplate:
+			v, err := f.content(a[4])
+			if err != nil {
+				return nil, err
+			}
+			return fakeGrep(v, a[5], a[6], a[7])
+		case logWindowTemplate:
+			v, err := f.logContent(a[4])
+			if err != nil {
+				return nil, err
+			}
+			return fakeWindow(v, a[5], a[6]), nil
+		case listDirTemplate:
+			return f.listDir(a[4])
+		}
+		if out, ok := f.Out[a[2]]; ok {
+			return []byte(out), nil
+		}
 		if a[2] == submitTemplate {
 			if f.NextJobID == 0 {
 				f.NextJobID = 9001
@@ -121,6 +170,34 @@ func (f *Fixture) Run(_ context.Context, c Command) ([]byte, error) {
 			fmt.Fprintf(&b, "%d\t1790875000.0\t%s\n", len(files[k]), k)
 		}
 		return []byte(b.String()), nil
+	case "realpath":
+		p := a[len(a)-1]
+		if r, ok := f.Links[p]; ok {
+			return []byte(r + "\n"), nil
+		}
+		for l, r := range f.Links { // a path through a linked folder
+			if strings.HasPrefix(p, l+"/") {
+				q := r + strings.TrimPrefix(p, l)
+				if f.exists(q) {
+					return []byte(q + "\n"), nil
+				}
+			}
+		}
+		if f.exists(p) {
+			return []byte(p + "\n"), nil
+		}
+		return nil, fmt.Errorf("realpath exited 1: %s: No such file or directory", p)
+	case "df":
+		if out, ok := f.Out["df"]; ok {
+			return []byte(out), nil
+		}
+		return nil, fmt.Errorf("fixture backend: no df recording")
+	case "curl":
+		if f.Puts == nil {
+			f.Puts = map[string]string{}
+		}
+		f.Puts[a[len(a)-1]] = a[len(a)-2]
+		return nil, nil
 	case "head":
 		p := a[len(a)-1]
 		for dir, files := range f.Files {
@@ -225,4 +302,164 @@ func fakeTar(files map[string]string, argv []string) ([]byte, error) {
 	_ = tw.Close()
 	_ = gz.Close()
 	return buf.Bytes(), nil
+}
+
+// content finds a fake file in Files (job folders) or Paths.
+func (f *Fixture) content(p string) (string, error) {
+	if v, ok := f.Paths[p]; ok && !strings.HasSuffix(p, "/") {
+		return v, nil
+	}
+	for dir, files := range f.Files {
+		if strings.HasPrefix(p, dir+"/") {
+			if v, ok := files[strings.TrimPrefix(p, dir+"/")]; ok {
+				return v, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("bash exited 4: %s: not a regular file", p)
+}
+
+// logContent reads a recorded job log (logs/index.json) or a fake file.
+func (f *Fixture) logContent(p string) (string, error) {
+	if len(f.Logs) == 0 {
+		if b, err := os.ReadFile(filepath.Join(f.Dir, "logs", "index.json")); err == nil {
+			_ = json.Unmarshal(b, &f.Logs)
+		}
+	}
+	if v, err := f.content(p); err == nil { // a test's own file wins
+		return v, nil
+	}
+	if name, ok := f.Logs[p]; ok {
+		b, err := os.ReadFile(filepath.Join(f.Dir, "logs", name))
+		return string(b), err
+	}
+	return f.content(p)
+}
+
+func (f *Fixture) exists(p string) bool {
+	if _, ok := f.Paths[p]; ok {
+		return true
+	}
+	if _, ok := f.Paths[p+"/"]; ok {
+		return true
+	}
+	if _, err := f.content(p); err == nil {
+		return true
+	}
+	for k := range f.Paths {
+		if strings.HasPrefix(k, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *Fixture) listDir(dir string) ([]byte, error) {
+	if !f.exists(dir) {
+		return nil, fmt.Errorf("bash exited 4: %s: not a folder", dir)
+	}
+	seen := map[string]string{}
+	for k, v := range f.Paths {
+		if !strings.HasPrefix(k, dir+"/") {
+			continue
+		}
+		rest := strings.TrimPrefix(k, dir+"/")
+		if rest == "" {
+			continue
+		}
+		name, sub, deeper := strings.Cut(rest, "/")
+		if deeper || sub != "" {
+			seen[name] = "d\t4096"
+		} else if _, isDir := seen[name]; !isDir {
+			seen[name] = fmt.Sprintf("f\t%d", len(v))
+		}
+		if strings.HasSuffix(k, "/") && !strings.Contains(strings.TrimSuffix(rest, "/"), "/") {
+			seen[strings.TrimSuffix(rest, "/")] = "d\t4096"
+		}
+	}
+	var b strings.Builder
+	keys := make([]string, 0, len(seen))
+	for k := range seen {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		ts := strings.SplitN(seen[k], "\t", 2)
+		fmt.Fprintf(&b, "%s\t%s\t1790875000.0\t%s\n", ts[0], ts[1], k)
+	}
+	return []byte(b.String()), nil
+}
+
+// fakeGrep mimics `grep -c ”` then `grep -n -E -m max -C ctx` (GNU format).
+func fakeGrep(v, pattern, maxS, ctxS string) ([]byte, error) {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("bash exited 2: grep: invalid pattern")
+	}
+	maxN, _ := strconv.Atoi(maxS)
+	c, _ := strconv.Atoi(ctxS)
+	lines := strings.SplitAfter(v, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	var hits []int
+	for i, l := range lines {
+		if re.MatchString(strings.TrimRight(l, "\n")) {
+			hits = append(hits, i)
+			if len(hits) == maxN {
+				break
+			}
+		}
+	}
+	show := map[int]bool{}
+	isHit := map[int]bool{}
+	for _, h := range hits {
+		isHit[h] = true
+		for j := max(0, h-c); j <= min(len(lines)-1, h+c); j++ {
+			show[j] = true
+		}
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d\n", len(lines))
+	prev := -2
+	for i := range lines {
+		if !show[i] {
+			continue
+		}
+		if prev >= 0 && i != prev+1 {
+			b.WriteString("--\n")
+		}
+		sep := "-"
+		if isHit[i] {
+			sep = ":"
+		}
+		fmt.Fprintf(&b, "%d%s%s", i+1, sep, strings.TrimRight(lines[i], "\n")+"\n")
+		prev = i
+	}
+	return []byte(b.String()), nil
+}
+
+// fakeWindow mimics logWindowTemplate.
+func fakeWindow(v, startS, nS string) []byte {
+	start, _ := strconv.Atoi(startS)
+	n, _ := strconv.Atoi(nS)
+	lines := strings.SplitAfter(v, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	total := len(lines)
+	s := start
+	if start <= 0 {
+		s = total - n + 1
+	}
+	if s < 1 {
+		s = 1
+	}
+	e := min(s+n-1, total)
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d %d\n", total, s)
+	for i := s; i <= e; i++ {
+		b.WriteString(lines[i-1])
+	}
+	return []byte(b.String())
 }

@@ -49,6 +49,20 @@ else ask "create gs://$BUCKET?" && { run gcloud storage buckets create "gs://$BU
   run gcloud storage buckets update "gs://$BUCKET" --versioning; }; fi
 run gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member "serviceAccount:$SA" --role roles/storage.objectUser
 
+say "4b. Staging bucket (file uploads and download links, SPEC 18; private, 7-day delete, no versioning)"
+STAGING=${PROJECT}-bifrost-staging
+AGENT_ORIGIN="https://ursa-agent-$(gcloud projects describe "$PROJECT" --format='value(projectNumber)' 2>/dev/null)-${REGION}.run.app"
+if have gcloud storage buckets describe "gs://$STAGING"; then echo "ok   gs://$STAGING"
+else ask "create gs://$STAGING?" && run gcloud storage buckets create "gs://$STAGING" --project "$PROJECT" --location "$REGION" --uniform-bucket-level-access --public-access-prevention --soft-delete-duration=0; fi
+if [ "$MODE" = apply ]; then
+  printf '{"rule":[{"action":{"type":"Delete"},"condition":{"age":7}}]}' > /tmp/bifrost-staging-lifecycle.json
+  printf '[{"origin":["%s"],"method":["PUT"],"responseHeader":["Content-Type","x-goog-content-length-range"],"maxAgeSeconds":3600}]' "$AGENT_ORIGIN" > /tmp/bifrost-staging-cors.json
+  run gcloud storage buckets update "gs://$STAGING" --lifecycle-file=/tmp/bifrost-staging-lifecycle.json --cors-file=/tmp/bifrost-staging-cors.json
+fi
+run gcloud storage buckets add-iam-policy-binding "gs://$STAGING" --member "serviceAccount:$SA" --role roles/storage.objectAdmin
+# signs download/upload links as itself through IAM signBlob (no key file)
+run gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT" --member "serviceAccount:$SA" --role roles/iam.serviceAccountTokenCreator
+
 say "5. Secrets (values never printed)"
 for s in bifrost-secret-key bifrost-google-client-secret bifrost-config bifrost-users; do
   if have gcloud secrets describe "$s" --project "$PROJECT"; then echo "ok   $s"

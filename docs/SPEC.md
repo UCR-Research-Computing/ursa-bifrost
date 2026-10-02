@@ -671,6 +671,17 @@ Returns the email and tiers behind a bifrost access token (401 otherwise), so an
 OAuth client such as ursa-agent can show who is signed in and key its sessions.
 Reveals nothing the token holder cannot already learn by calling tools.
 
+### v0.7.0: files in and out, paging, helper tools
+Section 18, as built: `upload_prepare`/`uploads_list`, `job_submit inputs=[...]`,
+`results_link`, paged `job_results` and `job_log_tail` (windows and grep), and
+`storage_usage`, `files_list`, `files_read`, `env_check`, `interactive_help`. ursa-agent
+0.2.0 adds an Attach button (browser to bucket directly) and clickable download links.
+Live findings while building: whole-home `du` took over four minutes, so `storage_usage`
+sizes each top-level folder within a time budget and reports slow ones as unknown;
+Lmod prints a long help text for an unknown module, so `env_check` keeps only its error
+lines; the bucket refuses an upload larger than the signed size (400) and a changed size
+header (403).
+
 ### v0.6.0 (C4): ursa-agent
 Gemini agent (agent/, ADK) with a chat page and A2A, acting as the signed-in person through
 bifrost; approvals enforced in code. Model calls through the AI gateway with key

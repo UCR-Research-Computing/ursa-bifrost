@@ -22,6 +22,16 @@ caps:
   max_cost_usd_per_day: 50
   max_submits_per_day: 20
   confirm_ttl_minutes: 10
+staging:                          # file uploads and download links (SPEC 18); omit to turn off
+  bucket: <project>-bifrost-staging
+  upload_minutes: 15
+  link_minutes: 60
+  max_upload_bytes: 5368709120     # 5 GiB per file
+  max_user_bytes: 21474836480      # 20 GiB staged per person
+  max_link_bytes: 2147483648       # 2 GiB per results_link call
+  retain_days: 7                   # must match the bucket's delete rule
+limits:
+  log_lines: 1000
 server:
   base_url: https://bifrost-mcp-XXXX.us-central1.run.app
   data_dir: /data                 # Cloud Storage volume (sealed records only)

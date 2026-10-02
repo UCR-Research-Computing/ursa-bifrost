@@ -34,6 +34,8 @@ form button:disabled{opacity:.5}
 .signin{max-width:34rem;margin:4rem auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1.5rem 1.8rem}
 .signin a.b{display:inline-block;background:var(--acc);color:#fff;padding:.55rem 1.2rem;border-radius:6px;text-decoration:none}
 .hint{color:var(--mut);font-size:.85rem}
+.attach{display:flex;align-items:center;padding:0 .8rem;border:1px solid var(--line);border-radius:8px;cursor:pointer;color:var(--acc);font-size:.9rem}
+.msg a{color:var(--acc);word-break:break-all}
 </style>
 </head>
 <body>
@@ -54,6 +56,7 @@ form button:disabled{opacity:.5}
   </div>
 </main>
 <form id="f" hidden>
+  <label class="attach" title="Attach an input file for a job">Attach<input type="file" id="file" hidden></label>
   <textarea id="q" placeholder="e.g. Why did my last job fail?  /  What's running on the cluster?" required></textarea>
   <button id="send">Send</button>
 </form>
@@ -61,8 +64,18 @@ form button:disabled{opacity:.5}
 const log = document.getElementById('log'), q = document.getElementById('q'), send = document.getElementById('send');
 function el(tag, cls, text){const e=document.createElement(tag); if(cls) e.className=cls; if(text!==undefined) e.textContent=text; return e;}
 function scroll(){log.scrollTop = log.scrollHeight;}
+function linkify(m, text){
+  // links to Cloud Storage become clickable; everything else stays plain text
+  const re = /https:\/\/storage\.googleapis\.com\/[^\s"'<>)\]]+/g; let last = 0, x;
+  while ((x = re.exec(text)) !== null){
+    m.appendChild(document.createTextNode(text.slice(last, x.index)));
+    const a = el('a', null, x[0].length > 90 ? x[0].slice(0, 70) + '...' : x[0]); a.href = x[0]; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    m.appendChild(a); last = x.index + x[0].length;
+  }
+  m.appendChild(document.createTextNode(text.slice(last)));
+}
 function say(cls, text, tools){
-  const m = el('div', 'msg '+cls, text);
+  const m = el('div', 'msg '+cls); linkify(m, text || '');
   if (tools && tools.length){ m.appendChild(el('div','tools','tools: '+tools.join(', '))); }
   log.appendChild(m); scroll();
 }
@@ -117,6 +130,20 @@ document.getElementById('f').onsubmit = async (e) => {
   finally { send.disabled = false; send.textContent = 'Send'; q.focus(); }
 };
 q.addEventListener('keydown', (e) => { if (e.key==='Enter' && !e.shiftKey){ e.preventDefault(); document.getElementById('f').requestSubmit(); }});
+document.getElementById('file').onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  say('you', 'Attaching ' + f.name + ' (' + f.size + ' bytes)...');
+  try {
+    const r = await fetch('/api/upload', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({filename:f.name, bytes:f.size})});
+    const t = await r.json();
+    if (!r.ok || t.error){ say('bot', 'Upload refused: ' + (t.error || r.status)); return; }
+    const put = await fetch(t.upload_url, {method: t.method || 'PUT', headers: t.headers || {}, body: f});
+    if (!put.ok){ say('bot', 'Upload to storage failed: HTTP ' + put.status); return; }
+    q.value = (q.value ? q.value + '\n' : '') + 'I attached ' + t.filename + ' (upload id ' + t.upload_id + ') as an input for my job.';
+    say('bot', 'Uploaded ' + t.filename + '. Its upload id is in your message box; say what the job should do with it.');
+    q.focus();
+  } catch(err){ say('bot', 'Upload error: ' + err); }
+};
 document.getElementById('newchat').onclick = async () => { await fetch('/api/new',{method:'POST'}); location.reload(); };
 boot();
 </script>
