@@ -59,6 +59,9 @@ const maxDownload = 2 << 30 // 2 GiB
 // is the job's working directory from the accounting record and must sit
 // under the caller's allowed roots.
 func (s *Service) JobResults(ctx context.Context, in ResultsInput) (*Results, error) {
+	if in.Download && s.Remote {
+		return nil, errors.New("download writes to the machine running bifrost; on the hosted server use list or read (or the bifrost CLI on your own computer)")
+	}
 	d, err := s.JobShow(ctx, JobShowInput{JobID: in.JobID})
 	if err != nil {
 		return nil, err

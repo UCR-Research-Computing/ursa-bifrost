@@ -24,7 +24,8 @@ type Record struct {
 	DurationMS int64          `json:"duration_ms"`
 }
 
-// Audit appends JSON lines to a file. A nil *Audit is a no-op.
+// Audit appends JSON lines to a file, or to stdout when the path is "-"
+// (Cloud Run: stdout goes to Cloud Logging). A nil *Audit is a no-op.
 type Audit struct {
 	mu   sync.Mutex
 	path string
@@ -34,6 +35,9 @@ type Audit struct {
 func NewAudit(path string) (*Audit, error) {
 	if path == "" {
 		return nil, nil
+	}
+	if path == "-" {
+		return &Audit{path: "-"}, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
@@ -65,6 +69,10 @@ func (a *Audit) Write(r Record) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.path == "-" {
+		_, err = os.Stdout.Write(append(b, '\n'))
+		return err
+	}
 	f, err := os.OpenFile(a.path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err

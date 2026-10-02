@@ -1,0 +1,21 @@
+# Who may use the hosted ursa-bifrost, and with which tiers.
+#
+# Being listed here is necessary but not sufficient: each person must ALSO be
+# allowed onto the cluster by Google (IAP tunnel + OS Login on the login node,
+# the slurm-login group), exactly as for `gcloud compute ssh`. Remove someone
+# here and their next request is refused; their stored keys are removed when
+# they sign out (or expire on their own).
+#
+# Tiers: R1 = own jobs and read tools, R2 = staff (all users' jobs, health,
+# ticket drafts), A1 = submit/cancel/hold/release with confirm tokens and caps.
+# Optional per-user caps override the global ones in config.yaml.
+domain: ucr.edu
+users:
+  - email: someone@ucr.edu
+    tiers: [R1, R2, A1]
+  # - email: researcher@ucr.edu
+  #   tiers: [R1, A1]
+  #   max_cost_usd_per_day: 20
+  # - email: former@ucr.edu
+  #   tiers: [R1]
+  #   disabled: true

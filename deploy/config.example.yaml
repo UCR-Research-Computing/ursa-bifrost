@@ -1,0 +1,32 @@
+# Example config for the hosted server (`bifrost serve`). Mounted on Cloud Run
+# at /config/config.yaml from Secret Manager (it holds no secrets itself; the
+# secrets come from environment variables named below).
+cluster: ursa-major
+backend: iap
+iap:
+  project: ucr-ursa-major-hpc-cluster
+  zone: us-central1-a
+  instance: ucrslurmcl-slurm-login-001
+  host_keys:
+    # from /etc/ssh/ssh_host_*_key.pub on the login node
+    - "ssh-ed25519 AAAA..."
+catalog_path: /apps/docs/catalog.json
+log_roots: ["/home/{user}/", "/scratch/{user}/"]
+show_cost: true
+audit_path: "-"            # stdout -> Cloud Logging
+jobs_root: bifrost-jobs
+caps:
+  max_nodes: 4
+  max_hours: 24
+  max_cost_usd_per_job: 25
+  max_cost_usd_per_day: 50
+  max_submits_per_day: 20
+  confirm_ttl_minutes: 10
+server:
+  base_url: https://bifrost-mcp-XXXX.us-central1.run.app
+  data_dir: /data                 # Cloud Storage volume (sealed records only)
+  users_file: /users/users.yaml   # Secret Manager volume
+  google_client_id: XXXX.apps.googleusercontent.com
+  google_client_secret_env: BIFROST_GOOGLE_CLIENT_SECRET
+  secret_key_env: BIFROST_SECRET_KEY
+  access_token_minutes: 60

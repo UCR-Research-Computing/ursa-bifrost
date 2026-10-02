@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go"
+FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
@@ -61,6 +61,21 @@ mutate "iap reuse margin"     internal/backend/iap.go 'time.Until(k.Expires) > 1
 mutate "iap no write retry"   internal/backend/iap.go '		if c.write {
 			// never re-run' '		if false {
 			// never re-run'
+mutate "srv user list"        internal/server/oauth.go 'if s.users.Lookup(id.Email) == nil {' 'if false {'
+mutate "srv domain check"     internal/server/oauth.go 'if !id.EmailVerified || id.HD != s.users.Domain() {' 'if false {'
+mutate "srv pkce"             internal/server/oauth.go 'case f.Get("code_verifier") == "" || s256(f.Get("code_verifier")) != c.CodeChallenge:' 'case false:'
+mutate "srv code single use"  internal/server/oauth.go 'delete(s.auth.codes, hashTok(f.Get("code"))) // single use' '_ = 0'
+mutate "srv refresh client"   internal/server/oauth.go 'if rec.ClientID != f.Get("client_id") {' 'if false {'
+mutate "srv refresh rotate"   internal/server/oauth.go '_ = s.store.Delete("refresh", hashTok(rt)) // rotate' '_ = 0'
+mutate "srv redirect check"   internal/server/oauth.go 'if !okRU {' 'if false {'
+mutate "srv per-request user" internal/server/oauth.go '	u := s.users.Lookup(a.Email)
+	if u == nil {' '	u := &User{Email: a.Email, Tiers: []string{"R1", "R2", "A1"}}
+	if u == nil {'
+mutate "srv per-user tiers"   internal/server/server.go 'c.Tiers = append([]string(nil), u.Tiers...)' 'c.Tiers = []string{"R1", "R2", "A1"}'
+mutate "srv remote download"  internal/core/results.go 'if in.Download && s.Remote {' 'if false {'
+mutate "srv seal label"       internal/server/store.go 'pt, err := s.aead.Open(nil, b[:n], b[n:], []byte(label))' 'pt, err := s.aead.Open(nil, b[:n], b[n:], nil)'
+mutate "srv cloud scope"      internal/server/oauth.go 'if !strings.Contains(tok.Scope, "https://www.googleapis.com/auth/cloud-platform") {' 'if false {'
+mutate "srv id audience"      internal/server/google.go 'case c.Aud != g.ClientID:' 'case false:'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

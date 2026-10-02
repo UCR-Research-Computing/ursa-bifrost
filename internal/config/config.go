@@ -32,6 +32,22 @@ type IAPConfig struct {
 	IdleMinutes  int      `yaml:"idle_minutes,omitempty"`
 }
 
+// ServerConfig is used only by `bifrost serve` (the hosted MCP server).
+type ServerConfig struct {
+	Listen    string `yaml:"listen"`     // default :8080 (PORT env wins on Cloud Run)
+	BaseURL   string `yaml:"base_url"`   // public https URL, e.g. https://bifrost-xyz.run.app
+	DataDir   string `yaml:"data_dir"`   // sessions, keys, per-user ledgers
+	UsersFile string `yaml:"users_file"` // who may sign in and with which tiers
+	// Google OAuth client (Web application) used for sign-in.
+	GoogleClientID        string `yaml:"google_client_id"`
+	GoogleClientSecretEnv string `yaml:"google_client_secret_env"` // env var holding the secret
+	// SecretKeyEnv names an env var with 32 random bytes (base64) used to
+	// encrypt stored Google refresh tokens and SSH keys at rest.
+	SecretKeyEnv string `yaml:"secret_key_env"`
+	// AccessTokenMinutes is the lifetime of bifrost access tokens (default 60).
+	AccessTokenMinutes int `yaml:"access_token_minutes"`
+}
+
 // SSH says how to reach the login node. Exactly one of GCloud or Host is used.
 type SSH struct {
 	GCloud         *GCloud `yaml:"gcloud,omitempty"`
@@ -76,6 +92,7 @@ type Config struct {
 	FixturesDir string             `yaml:"fixtures_dir,omitempty"`
 	SSH         SSH                `yaml:"ssh"`
 	IAP         IAPConfig          `yaml:"iap"`
+	Server      ServerConfig       `yaml:"server"`
 	CatalogPath string             `yaml:"catalog_path"`
 	LogRoots    []string           `yaml:"log_roots"` // allowed log prefixes; {user} expands
 	Costs       map[string]float64 `yaml:"usd_per_node_hour,omitempty"`

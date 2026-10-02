@@ -530,3 +530,8 @@ backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, 
 | 2026-10-01 | v0.2.2 | modules_search also returns matching prebuilt containers and recipes (AlphaFold is a container, not a module) |
 | 2026-10-01 | v0.2.1 | python-error rule (NameError/TypeError/... in the script's own code; found on live job 237); no false srun warning when --ntasks-per-node is set |
 | 2026-10-01 | Draft 3 / v0.2.0 | P2: waste_report(_all), health, ticket_draft, triage_ticket prompt; public repo in the UCR-Research-Computing org; Hermes connected |
+
+### v0.5.0 (C2): hosted server
+`bifrost serve`: MCP over HTTP with OAuth through Google sign-in. Each person
+reaches the cluster with their own identity, tiers, caps and ledger; see
+docs/CLOUD_PLAN.md section 2.5 and docs/DEPLOY.md. Not yet deployed.
