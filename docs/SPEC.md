@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (Draft 6; built through bifrost v0.8.1 and ursa-agent 0.3.0) |
-| Status | bifrost v0.8.1, ursa-agent 0.3.0, 2026-10-02 (spec Draft 6). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-20 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
+| Document | Specification and design (Draft 6; built through bifrost v0.8.2 and ursa-agent 0.3.0) |
+| Status | bifrost v0.8.2, ursa-agent 0.3.0, 2026-10-02 (spec Draft 6). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-20 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -890,6 +890,7 @@ with a question about that panel (e.g. "Why did job 315 fail?").
 | 2026-10-02 | Draft 6 (docs) | Status brought up to date: cluster shared since 2026-10-02 (19.3 as applied), Q14 decided, dashboard in the header |
 | 2026-10-02 | ursa-agent 0.3.0 | Section 20: read-only dashboard (12 panels, 4 staff-only) with the chat in a drawer; per-person cache; token-refresh lock; strict CSP. Tag `agent-v0.3.0`, Cloud Run `ursa-agent` revision 00003. N5 amended |
 | 2026-10-02 | v0.8.1 | First day on shared nodes: no-core error reads as a sentence; script_check ignores `module load` and run-time patterns in comments. 116 mutation guards |
+| 2026-10-02 | v0.8.2 | Docs and packaging: README rewrite, docs/CLIENTS.md for every client, examples/mcp_client.py, community files; release binaries (Linux/macOS) with SHA256SUMS and the scripts/get.sh installer. No code change |
 | 2026-10-02 | v0.8.0 | Section 19, shared partitions: sharing read live from Slurm (`sinfo -h -o %R\|%h`); on a shared partition `script_check`/`job_submit` refuse a script with no core request, and every cost (worst case, caps, estimates, spent cost, interactive sessions) is the share of the node held; `cluster_status` names shared and whole-node partitions. No change until the cluster's partitions are shared. 18 new mutation guards (113); jobs_list cap guard now tested. Spec fixes: `my_usage` groups by partition, state or user (not job name) |
 | 2026-10-02 | Draft 5 (docs) | Spec brought in line with v0.7.2: header, tool catalog from the live `tools/list` (36 tools), resources, diagnosis rules as built, configuration, identity (IAP + OS Login, not slurmrestd), integration, testing, phases C1-C6, decided questions marked |
 | 2026-10-02 | v0.7.2 | Fixes from the 2026-10-01 tool sweep: `module_show` loads the package's MPI first (hierarchical Lmod; hdf5/fftw failed with "bash exited 1: no error text") and reports a real "not found"; `ticket_draft` calls a COMPLETED, exit-0 job a success instead of "could not match the failure" (job 307); `jobs_list` defaults to 50 rows (200-row default answers were ~70 KB). Six new mutation guards |
