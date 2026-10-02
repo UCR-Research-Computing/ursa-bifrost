@@ -1,0 +1,489 @@
+package backend
+
+import (
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/coder/websocket"
+	"golang.org/x/crypto/ssh"
+)
+
+// fakeGoogle is a fake OS Login API plus a fake IAP relay in front of a real
+// in-process SSH server. The relay speaks the same frames as
+// tunnel.cloudproxy.app; the SSH server accepts only keys currently on the
+// fake OS Login profile and runs nothing: it echoes the command line.
+type fakeGoogle struct {
+	t        *testing.T
+	mu       sync.Mutex
+	token    string            // the only accepted bearer token
+	email    string            // the only user with a POSIX account
+	posix    string            // their POSIX name
+	keys     map[string]string // key id -> authorized_keys line
+	imports  int
+	deletes  int
+	commands []string
+	hostKey  ssh.Signer
+	osl      *httptest.Server
+	relay    *httptest.Server
+	denyIAP  bool
+	// renameKeys simulates Google changing how keys are named (key id != sha256(line))
+	renameKeys bool
+}
+
+func newFakeGoogle(t *testing.T) *fakeGoogle {
+	t.Helper()
+	_, hpriv, _ := ed25519.GenerateKey(rand.Reader)
+	hs, _ := ssh.NewSignerFromKey(hpriv)
+	f := &fakeGoogle{t: t, token: "tok-alice", email: "alice@ucr.edu", posix: "alice_ucr_edu", keys: map[string]string{}, hostKey: hs}
+	f.osl = httptest.NewServer(http.HandlerFunc(f.serveOSLogin))
+	f.relay = httptest.NewServer(http.HandlerFunc(f.serveRelay))
+	t.Cleanup(func() { f.osl.Close(); f.relay.Close() })
+	return f
+}
+
+func (f *fakeGoogle) authOK(r *http.Request) bool {
+	return r.Header.Get("Authorization") == "Bearer "+f.token
+}
+
+func (f *fakeGoogle) serveOSLogin(w http.ResponseWriter, r *http.Request) {
+	if !f.authOK(r) {
+		http.Error(w, `{"error":{"code":401}}`, 401)
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch {
+	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, ":importSshPublicKey"):
+		if !strings.Contains(r.URL.Path, "/v1/users/"+f.email+":") {
+			http.Error(w, `{"error":{"code":403,"message":"not your profile"}}`, 403)
+			return
+		}
+		var body struct{ Key string }
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		id := keyID(body.Key)
+		if f.renameKeys {
+			id = "other-" + id[:16]
+		}
+		f.keys[id] = body.Key
+		f.imports++
+		prof := map[string]any{"posixAccounts": []map[string]any{{"username": f.posix, "primary": true}}, "sshPublicKeys": map[string]any{}}
+		for id, k := range f.keys {
+			prof["sshPublicKeys"].(map[string]any)[id] = map[string]any{"key": k, "fingerprint": id}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"loginProfile": prof})
+	case r.Method == "DELETE":
+		id := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		delete(f.keys, id)
+		f.deletes++
+		_, _ = w.Write([]byte("{}"))
+	default:
+		http.Error(w, "nope", 404)
+	}
+}
+
+func (f *fakeGoogle) keyAllowed(key ssh.PublicKey) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, line := range f.keys {
+		pk, _, _, _, err := ssh.ParseAuthorizedKey([]byte(line))
+		if err == nil && string(pk.Marshal()) == string(key.Marshal()) {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *fakeGoogle) serveRelay(w http.ResponseWriter, r *http.Request) {
+	if f.denyIAP || !f.authOK(r) || r.Header.Get("Origin") != "bot:iap-tunneler" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+	q := r.URL.Query()
+	if q.Get("port") != "22" || q.Get("instance") == "" {
+		http.Error(w, "bad target", 400)
+		return
+	}
+	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{"relay.tunnel.cloudproxy.app"}, InsecureSkipVerify: true}) // IAP uses the non-URL Origin "bot:iap-tunneler"
+	if err != nil {
+		return
+	}
+	ctx := r.Context()
+	sid := []byte{0, 1, 0, 0, 0, 3, 's', 'i', 'd'}
+	_ = ws.Write(ctx, websocket.MessageBinary, sid)
+	// pipe frames <-> an in-process SSH server
+	srvSide, cliSide := net.Pipe()
+	go f.serveSSH(srvSide)
+	go func() { // relay -> ssh
+		for {
+			_, msg, err := ws.Read(ctx)
+			if err != nil {
+				_ = cliSide.Close()
+				return
+			}
+			if binary.BigEndian.Uint16(msg) == iapTagData {
+				n := binary.BigEndian.Uint32(msg[2:6])
+				if _, err := cliSide.Write(msg[6 : 6+n]); err != nil {
+					return
+				}
+			}
+		}
+	}()
+	buf := make([]byte, 8192) // ssh -> relay, deliberately small frames
+	for {
+		n, err := cliSide.Read(buf)
+		if err != nil {
+			_ = ws.Close(websocket.StatusNormalClosure, "")
+			return
+		}
+		fr := make([]byte, 6+n)
+		binary.BigEndian.PutUint16(fr, iapTagData)
+		binary.BigEndian.PutUint32(fr[2:], uint32(n))
+		copy(fr[6:], buf[:n])
+		if ws.Write(ctx, websocket.MessageBinary, fr) != nil {
+			return
+		}
+	}
+}
+
+func (f *fakeGoogle) serveSSH(c net.Conn) {
+	cfg := &ssh.ServerConfig{PublicKeyCallback: func(meta ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+		if meta.User() != f.posix || !f.keyAllowed(key) {
+			return nil, fmt.Errorf("denied")
+		}
+		return nil, nil
+	}}
+	cfg.AddHostKey(f.hostKey)
+	_, chans, reqs, err := ssh.NewServerConn(c, cfg)
+	if err != nil {
+		return
+	}
+	go ssh.DiscardRequests(reqs)
+	for nc := range chans {
+		ch, creqs, err := nc.Accept()
+		if err != nil {
+			continue
+		}
+		go func() {
+			defer ch.Close()
+			for req := range creqs {
+				if req.Type != "exec" {
+					_ = req.Reply(false, nil)
+					continue
+				}
+				cmd := string(req.Payload[4:])
+				f.mu.Lock()
+				f.commands = append(f.commands, cmd)
+				f.mu.Unlock()
+				_ = req.Reply(true, nil)
+				in, _ := io.ReadAll(io.LimitReader(ch, 1<<20))
+				code := 0
+				out := "ran: " + cmd
+				switch {
+				case cmd == "id -un":
+					out = f.posix
+				case strings.HasPrefix(cmd, "squeue"):
+					code = 2
+					_, _ = ch.Stderr().Write([]byte("squeue: error: Invalid user\n"))
+					out = ""
+				case strings.HasPrefix(cmd, "sbatch"):
+					out = fmt.Sprintf("stdin=%d", len(in))
+				case strings.HasPrefix(cmd, "scancel"):
+					// drop the connection with no exit status: outcome unknown
+					_ = c.Close()
+					return
+				}
+				_, _ = ch.Write([]byte(out))
+				_, _ = ch.SendRequest("exit-status", false, binary.BigEndian.AppendUint32(nil, uint32(code)))
+				return
+			}
+		}()
+	}
+}
+
+func (f *fakeGoogle) backend() *IAP {
+	return &IAP{
+		Project: "p", Zone: "z", Instance: "login-001", Email: f.email,
+		Token:       func(context.Context) (string, error) { return f.token, nil },
+		osloginBase: f.osl.URL,
+		dial: func(ctx context.Context, tok string) (net.Conn, error) {
+			return dialIAPRelay(ctx, "ws"+strings.TrimPrefix(f.relay.URL, "http")+"/v4/connect?port=22&instance=login-001", tok)
+		},
+	}
+}
+
+func TestIAPRunsAsTheUser(t *testing.T) {
+	f := newFakeGoogle(t)
+	b := f.backend()
+	ctx := context.Background()
+	out, err := b.Run(ctx, Whoami())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != "alice_ucr_edu" || b.PosixUser() != "alice_ucr_edu" {
+		t.Fatalf("whoami %q, posix %q", out, b.PosixUser())
+	}
+	// second call reuses the connection: no new key
+	if _, err := b.Run(ctx, Sinfo()); err != nil {
+		t.Fatal(err)
+	}
+	if f.imports != 1 {
+		t.Errorf("imports = %d, want 1 (connection reuse)", f.imports)
+	}
+	// non-zero exit is reported with stderr, like the ssh backend
+	c, _ := SqueueUser("alice_ucr_edu")
+	if _, err := b.Run(ctx, c); err == nil || !strings.Contains(err.Error(), "Invalid user") {
+		t.Errorf("exit error: %v", err)
+	}
+	// stdin reaches the remote command
+	s, err := SbatchTestOnly(SubmitOpts{Partition: "standard", Nodes: 1, TimeMin: 10, Comment: "bifrost:0123456789ab"}, []byte("#!/bin/bash\necho hi\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err = b.Run(ctx, s)
+	if err != nil || string(out) != "stdin=20" {
+		t.Errorf("stdin: %q %v (cmd %q)", out, err, s.String())
+	}
+	// the exact allow-listed command line arrives, nothing else
+	for _, cmd := range f.commands {
+		if !strings.HasPrefix(cmd, "id ") && !strings.HasPrefix(cmd, "sinfo ") && !strings.HasPrefix(cmd, "squeue ") && !strings.HasPrefix(cmd, "sbatch ") {
+			t.Errorf("unexpected remote command %q", cmd)
+		}
+	}
+	// Close keeps the key for reuse; Revoke deletes it
+	if err := b.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.keys) != 1 {
+		t.Errorf("after Close: %d keys, want 1 kept for reuse", len(f.keys))
+	}
+	if err := b.Revoke(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.keys) != 0 || f.deletes != 1 {
+		t.Errorf("after Revoke: %d keys left, %d deletes", len(f.keys), f.deletes)
+	}
+}
+
+func TestIAPReusesStoredKeyAcrossProcesses(t *testing.T) {
+	f := newFakeGoogle(t)
+	store := FileKeyStore{Dir: t.TempDir()}
+	ctx := context.Background()
+	for i := 0; i < 3; i++ { // three "processes", one store on disk
+		b := f.backend()
+		b.Keys = store
+		if _, err := b.Run(ctx, Whoami()); err != nil {
+			t.Fatal(err)
+		}
+		_ = b.Close()
+	}
+	if f.imports != 1 {
+		t.Errorf("imports = %d over 3 processes, want 1 (key reuse)", f.imports)
+	}
+	// the stored file is private
+	ents, _ := os.ReadDir(store.Dir)
+	if len(ents) != 1 {
+		t.Fatalf("store files: %d", len(ents))
+	}
+	st, _ := os.Stat(filepath.Join(store.Dir, ents[0].Name()))
+	if st.Mode().Perm() != 0o600 {
+		t.Errorf("key file mode %v", st.Mode().Perm())
+	}
+	// a key removed from the profile behind our back is replaced, and the store updated
+	f.mu.Lock()
+	f.keys = map[string]string{}
+	f.mu.Unlock()
+	b := f.backend()
+	b.Keys = store
+	if _, err := b.Run(ctx, Whoami()); err != nil {
+		t.Fatal(err)
+	}
+	if f.imports != 2 {
+		t.Errorf("imports = %d after revocation, want 2", f.imports)
+	}
+	// Revoke removes it everywhere
+	if err := b.Revoke(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if k, _ := store.Get(f.email); k != nil || len(f.keys) != 0 {
+		t.Errorf("after Revoke: store=%v profile keys=%d", k != nil, len(f.keys))
+	}
+}
+
+func TestIAPExpiringKeyIsReplaced(t *testing.T) {
+	f := newFakeGoogle(t)
+	store := NewMemKeyStore()
+	b := f.backend()
+	b.Keys = store
+	b.KeyTTL = 5 * time.Minute // under the 10-minute reuse margin
+	ctx := context.Background()
+	if _, err := b.Run(ctx, Whoami()); err != nil {
+		t.Fatal(err)
+	}
+	_ = b.Close()
+	if _, err := b.Run(ctx, Whoami()); err != nil {
+		t.Fatal(err)
+	}
+	if f.imports != 2 {
+		t.Errorf("imports %d, want 2 (near-expiry key replaced)", f.imports)
+	}
+	if len(f.keys) != 1 {
+		t.Errorf("old key not removed when replaced: %d keys", len(f.keys))
+	}
+	_ = b.Revoke(ctx)
+}
+
+func TestIAPUsersAreSeparate(t *testing.T) {
+	f := newFakeGoogle(t)
+	bob := f.backend()
+	bob.Email = "bob@ucr.edu" // has no OS Login profile in the fake
+	bob.Token = func(context.Context) (string, error) { return "tok-bob", nil }
+	if _, err := bob.Run(context.Background(), Whoami()); err == nil {
+		t.Fatal("a user without access got in")
+	}
+	// alice's token cannot import a key onto bob's profile
+	evil := f.backend()
+	evil.Email = "bob@ucr.edu"
+	if _, err := evil.Run(context.Background(), Whoami()); err == nil || !strings.Contains(err.Error(), "refused") {
+		t.Fatalf("cross-user import: %v", err)
+	}
+	if f.imports != 0 {
+		t.Errorf("keys imported: %d", f.imports)
+	}
+}
+
+func TestIAPDeniedTunnel(t *testing.T) {
+	f := newFakeGoogle(t)
+	f.denyIAP = true
+	b := f.backend()
+	_, err := b.Run(context.Background(), Whoami())
+	if err == nil || !strings.Contains(err.Error(), "tunnelResourceAccessor") {
+		t.Fatalf("denied tunnel: %v", err)
+	}
+	if len(f.keys) != 0 {
+		t.Errorf("key left behind after a failed connect: %d", len(f.keys))
+	}
+}
+
+func TestIAPHostKeyPinning(t *testing.T) {
+	f := newFakeGoogle(t)
+	b := f.backend()
+	_, other, _ := ed25519.GenerateKey(rand.Reader)
+	os, _ := ssh.NewSignerFromKey(other)
+	b.HostKeys = []string{string(ssh.MarshalAuthorizedKey(os.PublicKey()))}
+	_, err := b.Run(context.Background(), Whoami())
+	if err == nil || !strings.Contains(err.Error(), "host key") {
+		t.Fatalf("wrong host key accepted: %v", err)
+	}
+	if len(f.keys) != 0 {
+		t.Errorf("key left behind after host key failure")
+	}
+	b.HostKeys = []string{string(ssh.MarshalAuthorizedKey(f.hostKey.PublicKey()))}
+	if _, err := b.Run(context.Background(), Whoami()); err != nil {
+		t.Fatalf("pinned key refused: %v", err)
+	}
+	_ = b.Revoke(context.Background())
+}
+
+func TestIAPIdleCloseReconnectsWithSameKey(t *testing.T) {
+	f := newFakeGoogle(t)
+	b := f.backend()
+	b.Idle = 200 * time.Millisecond
+	if _, err := b.Run(context.Background(), Whoami()); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(600 * time.Millisecond)
+	b.mu.Lock()
+	open := b.client != nil
+	b.mu.Unlock()
+	if open {
+		t.Error("idle connection not closed")
+	}
+	if _, err := b.Run(context.Background(), Whoami()); err != nil {
+		t.Fatal(err)
+	}
+	if f.imports != 1 {
+		t.Errorf("imports %d, want 1 (reconnect reuses the key)", f.imports)
+	}
+	_ = b.Revoke(context.Background())
+}
+
+func TestKeyIDIsHashOfImportedLine(t *testing.T) {
+	// regression for the live finding: the id is sha256(line), not sha256(blob)
+	line := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample ursa-bifrost"
+	if got := keyID(line); len(got) != 64 || got == keyID("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample") {
+		t.Errorf("keyID must cover the comment: %s", got)
+	}
+}
+
+func TestIAPParallelCallsMakeOneKey(t *testing.T) {
+	f := newFakeGoogle(t)
+	b := f.backend()
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := b.Run(context.Background(), Sinfo()); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if f.imports != 1 {
+		t.Errorf("%d OS Login keys registered for 8 parallel calls, want 1", f.imports)
+	}
+	_ = b.Close()
+	_ = b.Revoke(context.Background())
+	if len(f.keys) != 0 {
+		t.Errorf("%d keys left after Revoke", len(f.keys))
+	}
+}
+
+func TestIAPNeverRetriesAWriteWithUnknownOutcome(t *testing.T) {
+	f := newFakeGoogle(t)
+	b := f.backend()
+	c, _ := Scancel("123")
+	_, err := b.Run(context.Background(), c)
+	if err == nil || !strings.Contains(err.Error(), "check its state") {
+		t.Fatalf("lost write: %v", err)
+	}
+	n := 0
+	for _, cmd := range f.commands {
+		if strings.HasPrefix(cmd, "scancel") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("scancel sent %d times, want exactly 1", n)
+	}
+	_ = b.Revoke(context.Background())
+}
+
+func TestIAPRefusesUnknownKeyIDScheme(t *testing.T) {
+	// if OS Login stops naming keys sha256(line), bifrost could no longer delete
+	// them; it must refuse and not leave a key it cannot clean up
+	f := newFakeGoogle(t)
+	f.renameKeys = true
+	b := f.backend()
+	_, err := b.Run(context.Background(), Whoami())
+	if err == nil || !strings.Contains(err.Error(), "expected id") {
+		t.Fatalf("unknown key id scheme accepted: %v", err)
+	}
+	if len(f.commands) != 0 {
+		t.Errorf("connected anyway: %v", f.commands)
+	}
+}

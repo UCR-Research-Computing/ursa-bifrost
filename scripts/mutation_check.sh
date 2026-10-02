@@ -5,13 +5,14 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go"
+FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
 
 mutate() { # name file python-replace(old,new)
   local name=$1 file=$2 old=$3 new=$4
+  case " $FILES " in *" $file "*) ;; *) echo "ERROR $name: $file is not in FILES (would not be restored)"; exit 2;; esac
   python3 - "$file" "$old" "$new" <<'EOF'
 import sys
 p, old, new = sys.argv[1:]
@@ -52,6 +53,14 @@ mutate "A1 cross-process lock" internal/core/a1.go 'if err := syscall.Flock(int(
 mutate "redact whole assignment" internal/policy/redact.go 'for _, r := range redactRules {' 'for _, r := range append(append([]redactRule{}, redactRules[1:]...), redactRules[0]) {'
 mutate "booting is not broken" internal/slurm/types.go 'return n.HasState("NOT_RESPONDING") && !n.Booting()' 'return n.HasState("NOT_RESPONDING")'
 mutate "release only never-ran" internal/core/a1.go 'neverRan := d.State == "PENDING" && d.Started == ""' 'neverRan := true'
+mutate "iap host key pin"     internal/backend/iap.go 'if err == nil && bytes.Equal(pk.Marshal(), key.Marshal()) {' 'if true {'
+mutate "iap key id check"     internal/backend/iap.go 'if _, ok := r.LoginProfile.SSHPublicKeys[keyID(line)]; !ok {' 'if false {'
+mutate "iap single flight"    internal/backend/iap.go '	b.connMu.Lock()
+	defer b.connMu.Unlock()' '	// no lock'
+mutate "iap reuse margin"     internal/backend/iap.go 'time.Until(k.Expires) > 10*time.Minute' 'true'
+mutate "iap no write retry"   internal/backend/iap.go '		if c.write {
+			// never re-run' '		if false {
+			// never re-run'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

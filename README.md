@@ -45,6 +45,24 @@ bifrost submit job.sh             plan, show worst-case cost, ask, submit (A1)
 bifrost cancel|hold|release 265   two-step, own jobs only (A1)
 ```
 
+### Backend: per-user IAP (`backend: iap`)
+
+bifrost can reach the login node itself, as the Google user, with no gcloud call per
+connection: it registers one OS Login key on your profile (8 h expiry, reused, stored 0600
+under `~/.local/share/ursa-bifrost/iap-keys/`), opens an IAP TCP tunnel and logs in over SSH
+with the login node's host keys pinned. Access is whatever Google already allows you
+(IAP tunnel + OS Login). This is the same path the Cloud Run server uses for each signed-in
+user (docs/CLOUD_PLAN.md).
+
+```yaml
+backend: iap
+iap:
+  project: ucr-ursa-major-hpc-cluster
+  zone: us-central1-a
+  instance: ucrslurmcl-slurm-login-001
+  host_keys: ["ssh-ed25519 AAAA...", "ecdsa-sha2-nistp256 AAAA..."]
+```
+
 ### Submitting and getting results (A1)
 
 Add `A1` to `tiers` in the config. Then:
