@@ -13,6 +13,7 @@ modules, batch-script checks, results, and (opt-in, two-step) submit and cancel.
 [![Release](https://img.shields.io/github/v/release/UCR-Research-Computing/ursa-bifrost?sort=semver)](https://github.com/UCR-Research-Computing/ursa-bifrost/releases)
 [![Go version](https://img.shields.io/github/go-mod/go-version/UCR-Research-Computing/ursa-bifrost)](go.mod)
 [![MCP](https://img.shields.io/badge/MCP-Streamable%20HTTP%20%2B%20stdio-blue)](https://modelcontextprotocol.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 [Quick start](#quick-start) ·
 [All clients](docs/CLIENTS.md) ·
@@ -312,5 +313,5 @@ Changes: [CHANGELOG.md](CHANGELOG.md) · Design, phases and open questions:
 ## About
 
 Built by [UCR Research Computing](https://github.com/UCR-Research-Computing) for the
-Ursa Major cluster on Google Cloud. The name: a bridge between two worlds, the assistant
+Ursa Major cluster on Google Cloud. Released under the [MIT License](LICENSE). The name: a bridge between two worlds, the assistant
 on one side and the scheduler on the other, with a narrow, well-guarded crossing between.

@@ -3,6 +3,9 @@
 All notable changes. Versions follow [semver](https://semver.org); every release is a git
 tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC.md).
 
+## Unreleased
+- MIT License.
+
 ## v0.8.2 - 2026-10-02
 - Docs and packaging only, no code change: README rewrite, `docs/CLIENTS.md` (Hermes,
   Claude Code, Codex, OpenCode, Gemini CLI, claude.ai, OpenAI API, scripts),
