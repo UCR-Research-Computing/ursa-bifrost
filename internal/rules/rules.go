@@ -139,7 +139,7 @@ var logRules = []logRule{
 	},
 	{
 		id: "command-not-found", severity: Error, title: "A command was not found",
-		re:         regexp.MustCompile(`(?m)(\S+): command not found$`),
+		re:         regexp.MustCompile(`(?mi)(\S+): command not found\s*$`),
 		suggestion: "Load the module that provides it (modules_search) or fix PATH in the job script.",
 	},
 	{
@@ -220,6 +220,11 @@ func Explain(f Facts) []Finding {
 				ev = append(ev, fmt.Sprintf("%d matching lines", len(locs)))
 			}
 			sug := r.suggestion
+			if r.id == "command-not-found" {
+				if m := r.re.FindStringSubmatch(tail[last[0]:]); len(m) > 1 {
+					sug = commandNotFoundAdvice(strings.TrimSuffix(m[1], ":"))
+				}
+			}
 			if r.id == "python-import" {
 				if m := r.re.FindStringSubmatch(tail[last[0]:]); len(m) > 1 {
 					pkg := firstNonEmpty(m[1:]...)
@@ -254,6 +259,13 @@ func Explain(f Facts) []Finding {
 				Evidence:   []string{fmt.Sprintf("CPU efficiency %.0f%% (%d cores x %s)", eff*100, f.CPUsAlloc, dur(f.ElapsedSec))},
 				Suggestion: "The program used few cores: enable its threading/MPI options (-ntomp, OMP_NUM_THREADS, srun) or choose a smaller partition. Partitions are whole-node, so idle cores still bill."})
 		}
+	}
+
+	// Exit 127 is the shell's "command not found", even when the log is gone.
+	if st == "FAILED" && f.ExitCode == "127" && !hasRule(out, "command-not-found") {
+		add(Finding{Rule: "command-not-found", Severity: Error, Title: "A command was not found",
+			Evidence:   []string{"exit code 127 = the shell could not find a command"},
+			Suggestion: "Check the first \"command not found\" line in the log (job_log_tail). Load the module that provides the program, or use its full path. There is no bare `python` on the nodes: use python3, or load python-sci / python-ml."})
 	}
 
 	if st == "FAILED" && len(out) == 0 {
@@ -436,4 +448,25 @@ func dur(sec int64) string {
 		return fmt.Sprintf("%dm%02ds", m, s)
 	}
 	return fmt.Sprintf("%ds", s)
+}
+
+// commandNotFoundAdvice tailors the fix to the missing command. Ursa Major
+// nodes have python3 but no bare python, which breaks many Makefiles and
+// build scripts (GADGET-4's build calls `python`).
+func commandNotFoundAdvice(cmd string) string {
+	base := cmd
+	if i := strings.LastIndex(base, ":"); i >= 0 {
+		base = strings.TrimSpace(base[i+1:])
+	}
+	switch base {
+	case "python", "pip":
+		return fmt.Sprintf("%q does not exist on the nodes (only python3, and pip inside an environment). Load python-sci or python-ml first, call python3, or for a Makefile pass PYTHON=python3 (make PYTHON=python3).", base)
+	case "module":
+		return "The `module` command is missing in this shell: start the script with #!/bin/bash -l, or source /apps/docs/templates/job-header.sh."
+	case "mpirun", "mpiexec", "mpicc", "mpicxx", "mpif90":
+		return fmt.Sprintf("%q comes from an MPI module: add `module load openmpi` before it (or use srun to launch).", base)
+	case "nvcc", "nvidia-smi":
+		return fmt.Sprintf("%q is only on the GPU nodes (partition gpul4, --gres=gpu:1); nvcc also needs `module load cuda`.", base)
+	}
+	return fmt.Sprintf("%q is not on PATH in the job: load the module that provides it (modules_search %s) or use its full path.", base, base)
 }
