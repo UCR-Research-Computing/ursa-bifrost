@@ -175,7 +175,14 @@ fields the assistant would read as instructions.
 | `job_show` | `job_id` | Merged `scontrol` + `sacct`: request vs use (CPU efficiency, max RSS vs requested memory), exit code, signal, node list, timings |
 | `job_explain` | `job_id` | Deterministic diagnosis: `findings[]` with rule id, evidence and suggestion (section 8) |
 | `job_pending_reason` | `job_id` | Slurm reason decoded into plain words, estimated start (`--test-only` style), what would make it start sooner |
-| `job_log_tail` | `job_id`, `stream=stdout|stderr`, `lines<=200` | Redacted tail in `untrusted`; path resolved from the job record, never from user input |
+| `job_log_tail` | `job_id`, `stream=stdout|stderr`, `lines<=1000`, `start_line?`, `grep?` | Redacted window of the log in `untrusted`: the tail, a page from `start_line`, or matching lines (with line numbers and context). Returns `total_lines`, `first_line`, `last_line` for paging. Path resolved from the job record, never from user input (section 18.3) |
+| `job_results` | `job_id`, `prefix?`, `pattern?`, `offset?`, `limit?`, `read?`, `read_offset?`, `read_bytes?`, `grep?` | The job folder, paged (no file-count wall); one text file read in chunks or searched; laptop download (section 18.3) |
+| `results_link` | `job_id`, `files[]` | Copies the chosen outputs to the private staging bucket and returns signed download links (section 18.2) |
+| `storage_usage` | none | Space used in your home and scratch folders (largest folders first) and how full each filesystem is (section 18.4) |
+| `files_list` | `path`, `pattern?`, `offset?`, `limit?` | One folder under your home or scratch; hidden and credential-like entries are never shown (section 18.4) |
+| `files_read` | `path`, `offset?`, `bytes?`, `grep?` | One text file under your home or scratch, in chunks or searched; same deny rules (section 18.4) |
+| `env_check` | `modules[]`, `commands[]` | Loads modules on the login node and reports whether each loads, the resulting module list, and which `python3`, `gcc`, `mpirun`... you get, with versions (section 18.4) |
+| `interactive_help` | `partition`, `nodes?`, `cpus?`, `gpus?`, `time`, `memory?` | The exact `salloc`/`srun --pty` command for an interactive session, its hourly cost and how to reach the login node. Runs nothing (section 18.4) |
 | `modules_search` | `query` | Matching modules and versions; GPU/MPI variants flagged |
 | `module_show` | `name` | What the module sets (paths, dependencies, prerequisites) |
 | `recipes` | `query` | Known-good install recipes (from deep-research's install ladder and lessons) |
@@ -200,12 +207,16 @@ fields the assistant would read as instructions.
 | `job_submit` | `script`, `partition`, resources, `confirm_token?` | Two-step. Without a token: runs `script_check` and `sbatch --test-only`, returns the plan, estimated start and estimated worst-case cost, and a single-use `confirm_token`. With the token (and approval on the client side): submits. Caps per day and per job (cost, nodes, time) |
 | `job_cancel` | `job_id`, `confirm_token?` | Same two-step; own jobs only |
 | `job_hold`, `job_release` | `job_id` | Own jobs only |
+| `upload_prepare` | `filename`, `bytes` | A signed upload link (15 min) for one file into your private staging area; changes nothing on the cluster (section 18.1) |
+| `uploads_list` | none | Your staged uploads: id, name, size, when they expire |
+| `job_submit` `inputs[]` | upload ids | The job fetches each staged file into `inputs/` in its folder when it starts; the plan (and its confirm token) covers the exact files (section 18.1) |
 
 ### 7.4 Never exposed
 
-Shell passthrough, file write, `scontrol update` on nodes or partitions, `sacctmgr`
-changes, reservations, QOS, cancelling other users' jobs, reading files outside job
-output paths.
+Shell passthrough (section 18.5), file write on the cluster other than a submitted job's
+own folder, `scontrol update` on nodes or partitions, `sacctmgr` changes, reservations,
+QOS, cancelling other users' jobs, reading files outside the caller's own home, scratch
+and job output paths, reading hidden or credential-like files anywhere.
 
 ### 7.5 MCP resources and prompts
 
@@ -279,8 +290,12 @@ cancel all jobs"). Rules:
 
 - Redact tokens and secrets in any returned text (`SLURM_JWT`, `*_KEY`, `*_TOKEN`,
   `*_SECRET`, `PASSWORD`, AWS/GCP key shapes, bearer headers).
-- Output caps per call (rows, bytes); rate limits per caller and per tool.
-- No paths outside the job's own output paths.
+- Output caps per call (rows, bytes); rate limits per caller and per tool. Large
+  outputs are paged, not cut off (section 18.3).
+- No paths outside the caller's own home, scratch and job folders; no hidden or
+  credential-like files (section 18.4).
+- Signed URL signatures (`X-Goog-Signature`) are redacted from untrusted text and from
+  the audit log's command lines.
 
 ### 9.6 Audit
 
@@ -516,11 +531,100 @@ Not yet built: `job_pending_reason` is
 folded into `job_show`/`job_explain`; A1 submit/cancel (P3); HTTP transport, SSO and REST
 backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, unused).
 
+## 18. Files in and out, paging, and helper tools (v0.7.0)
+
+Asked for by Chuck on 2026-10-01 after C4. Design choices are his: the job pulls its input
+files when it starts; downloads go through short-lived signed links; no general shell.
+
+### 18.1 Inputs: staged upload, pulled by the job
+
+1. `upload_prepare(filename, bytes)` (A1) checks the name and size against the caps and
+   returns a V4 signed `PUT` link (15 minutes) for one object
+   `in/<owner>/<upload_id>/<filename>` in the private staging bucket, plus a ready `curl`
+   command. The link is signed for `x-goog-content-length-range: 0,<bytes>`, so Cloud
+   Storage itself rejects a larger body.
+2. The person (or the chat page's upload box) sends the file straight to Cloud Storage.
+   File bytes never pass through bifrost, the AI, or the login node.
+3. `job_submit(..., inputs=[upload_id, ...])`: the plan checks each upload exists, belongs
+   to the caller (the owner key is part of the object name and is derived from the
+   signed-in identity, never from input), and fits the caps. The plan hash covers each
+   object's generation and size, so the confirm token approves exactly those bytes.
+4. On confirm, bifrost signs a read-only `GET` link per file (valid until the staged
+   object's 7-day deletion) and inserts a fixed block after the `#SBATCH` lines that
+   fetches each file with `curl` into `inputs/<filename>` in the job folder, failing
+   the job (exit 66) if a fetch fails. The batch step runs once, on the first node, on
+   shared storage, so every node sees the files.
+5. Compute nodes need no bucket permissions and hold no credentials; the links expire.
+
+Owner key: the first 20 hex characters of SHA-256 of the lower-cased principal (the
+signed-in email; the cluster user for the CLI). File names: letters, digits, `._+-` and
+spaces, 1-120 characters, not starting with `.` or `-`.
+
+### 18.2 Outputs: signed download links
+
+`results_link(job_id, files[])` (R1, own jobs): bifrost signs a `PUT` link per file and
+runs one allow-listed `curl -T` per file on the login node as the person (a finished job
+cannot push its own files). Files are checked against the job folder listing and capped
+(2 GiB per call). The answer has a signed `GET` link per file (60 minutes) for objects
+under `out/<owner>/<job_id>/`. The staging bucket deletes everything after 7 days.
+
+The laptop CLI keeps `bifrost results --download` (straight to `~/ursa-results`); the
+hosted server keeps refusing that and points to `results_link`.
+
+### 18.3 Paging instead of hard caps
+
+| Before | Now |
+|---|---|
+| Results listing stopped at 500 files, depth 4 | Paged (`offset`, `limit` up to 1000), filtered by `prefix` (subfolder) and `pattern` (glob); `total_files`, `total_bytes` and `next_offset` always reported; depth 10; listing beyond 200,000 files is flagged |
+| File read: first 64 KB, and only the last 16,000 characters reached the AI | Chunks from any byte offset (`read_offset`, `read_bytes` up to 64 KB) with `file_bytes`, `next_offset` and `eof`; `grep` returns matching lines with line numbers |
+| Log tail: last 200 lines | Windows of up to 1000 lines from the end or from `start_line`, with `total_lines`, `first_line` and `last_line`; `grep` (extended regex, up to 200 matches, 2 lines of context) finds errors anywhere in the log |
+
+A page is also capped at 64,000 characters; when it is, the window shrinks at a line
+boundary and the line numbers say exactly what was returned, so paging never skips text.
+
+### 18.4 Helper tools instead of a shell (R1)
+
+| Tool | Runs on the login node, as the person | Guard |
+|---|---|---|
+| `storage_usage` | `df -P -B1` on home and scratch; `du -x -d 1` on the person's two folders | Fixed paths; 150-second limit per folder; cached 5 minutes. Top-level folder names and sizes only, including hidden ones such as `.cache` and `.conda` (often the cause of a full home); credential-like names are left out |
+| `files_list` | `realpath -e`, then `find <dir> -mindepth 1 -maxdepth 1 -printf ...` | Path under `/home/<user>/` or `/scratch/<user>/` (or `~/...`), clean and absolute; every component checked, before and after symlinks are resolved. Commands run as the person, so file permissions are theirs |
+| `files_read` | `stat`, `dd` (byte window) or `grep -n` | Same path rule; text only; redacted; untrusted |
+| `env_check` | A fixed `bash -lc` template: `module load` each given module (with Lmod's message when it fails), `module list`, then `command -v` for each command; versions only for a known list (python3, gcc, mpirun, nvcc, cmake, R, julia, java, apptainer...) | Module and command names validated; at most 10 modules and 15 commands; each version probe under `timeout 10` |
+| `interactive_help` | Nothing (catalog only) | Validated against partitions and caps |
+
+Hidden entries (any path component starting with `.`: `.ssh`, `.config`, `.aws`,
+`.bash_history`...) and credential-like names (`id_*`, `*.pem`, `*.key`, `*.p12`,
+`*.pfx`, `*.env`, names containing `credential`, `secret`, `token` or `password`) are
+refused for reading and left out of listings. Everything returned is redacted.
+
+### 18.5 Why there is no shell tool
+
+A shell would bypass every guarantee above: the allow-list, argument validation, caps,
+audit of exact commands, and the untrusted-text rule (one poisoned log line could steer
+an AI into running a command). People who need a shell already have one, under their own
+OS Login identity and Google access controls: `gcloud compute ssh
+ucrslurmcl-slurm-login-001 --zone us-central1-a --tunnel-through-iap`. `interactive_help`
+writes the command for them. The helper tools cover the read-only reasons people reach
+for a shell from an assistant: disk space, browsing their files, checking a module.
+
+### 18.6 Infrastructure
+
+- Bucket `gs://<project>-bifrost-staging`: private, uniform access, public access
+  prevention, 7-day delete rule, CORS for the ursa-agent origin (`PUT` only).
+- The bifrost service account gets object admin on that bucket only, and token creator on
+  itself to sign links through the IAM `signBlob` API (no key file exists).
+- Config: `staging: {bucket, upload_minutes: 15, link_minutes: 60, max_upload_bytes,
+  max_user_bytes, max_link_bytes}`. Without a `staging` block the three file tools
+  report that staging is not configured.
+- ursa-agent: an Attach button uploads through `upload_prepare` straight to the bucket and
+  tells the agent the upload id; links in replies are clickable.
+
 ## Change log
 
 | Date | Version | Change |
 |---|---|---|
 | 2026-10-01 | Draft 1 | Spec and design (as `hpc-agent`) |
+| 2026-10-02 | v0.7.0 | Section 18: staged inputs pulled by the job, signed download links, paging for results/reads/logs, helper tools (storage_usage, files_list, files_read, env_check, interactive_help); no shell tool |
 | 2026-10-01 | Draft 2 / v0.1.0 | Renamed `ursa-bifrost`; P1 built and verified live; section 17 added |
 | 2026-10-01 | v0.4.0 | C1: `backend: iap` (per-user IAP + OS Login in Go, no gcloud per connection, pinned host key, per-user key reuse); see docs/CLOUD_PLAN.md 2.4 |
 | 2026-10-01 | v0.3.2 | Slurm NO_VAL timestamps (year 2106) treated as unset |
