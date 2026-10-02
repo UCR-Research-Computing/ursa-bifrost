@@ -60,6 +60,12 @@ type IAP struct {
 	osloginBase string // default https://oslogin.googleapis.com
 	dial        func(ctx context.Context, token string) (net.Conn, error)
 
+	// slots bounds concurrent sessions on the one SSH connection. OpenSSH's
+	// MaxSessions (10 on the login node) refuses the 11th channel with
+	// "open failed"; found by a 30-call burst against v0.7.0.
+	slotsOnce sync.Once
+	slots     chan struct{}
+
 	connMu   sync.Mutex // serializes connection setup
 	mu       sync.Mutex // guards the fields below
 	client   *ssh.Client
@@ -541,10 +547,29 @@ func (b *IAP) drop(c *ssh.Client) {
 	b.mu.Unlock()
 }
 
+// MaxSessionsPerConn is how many commands bifrost runs at once over one SSH
+// connection; the rest wait their turn. Below the server's MaxSessions (10).
+const MaxSessionsPerConn = 8
+
+func (b *IAP) acquire(ctx context.Context) (func(), error) {
+	b.slotsOnce.Do(func() { b.slots = make(chan struct{}, MaxSessionsPerConn) })
+	select {
+	case b.slots <- struct{}{}:
+		return func() { <-b.slots }, nil
+	case <-ctx.Done():
+		return nil, fmt.Errorf("%w: busy (waited for a free SSH session)", ErrUnreachable)
+	}
+}
+
 // Run executes c on the login node as the user.
 func (b *IAP) Run(ctx context.Context, c Command) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout(c))
 	defer cancel()
+	release, err := b.acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ { // one retry on a dead pooled connection
 		client, err := b.connect(ctx)
@@ -554,6 +579,13 @@ func (b *IAP) Run(ctx context.Context, c Command) ([]byte, error) {
 		sess, err := client.NewSession()
 		if err != nil {
 			lastErr = err
+			var oce *ssh.OpenChannelError
+			if errors.As(err, &oce) {
+				// the server refused this one channel (session limit); the
+				// connection is fine and other commands are still using it
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
 			b.drop(client)
 			continue
 		}

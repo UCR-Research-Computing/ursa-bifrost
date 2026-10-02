@@ -225,6 +225,9 @@ func (s *Service) resolveUserPath(ctx context.Context, p string) (string, error)
 		return "", err
 	}
 	out, err := s.run(ctx, rc)
+	if errors.Is(err, backend.ErrUnreachable) {
+		return "", err // a transport problem, not a missing file
+	}
 	if err != nil {
 		return "", fmt.Errorf("%s does not exist or cannot be read", p)
 	}

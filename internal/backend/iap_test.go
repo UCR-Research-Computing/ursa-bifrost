@@ -42,6 +42,12 @@ type fakeGoogle struct {
 	denyIAP  bool
 	// renameKeys simulates Google changing how keys are named (key id != sha256(line))
 	renameKeys bool
+	// maxSessions refuses channels beyond this many open at once (OpenSSH
+	// MaxSessions; 0 = unlimited). slow makes each command take this long.
+	maxSessions int
+	open        int
+	peak        int
+	slow        time.Duration
 }
 
 func newFakeGoogle(t *testing.T) *fakeGoogle {
@@ -173,11 +179,30 @@ func (f *fakeGoogle) serveSSH(c net.Conn) {
 	}
 	go ssh.DiscardRequests(reqs)
 	for nc := range chans {
+		f.mu.Lock()
+		if f.maxSessions > 0 && f.open >= f.maxSessions {
+			f.mu.Unlock()
+			_ = nc.Reject(ssh.ConnectionFailed, "open failed")
+			continue
+		}
+		f.open++
+		if f.open > f.peak {
+			f.peak = f.open
+		}
+		f.mu.Unlock()
 		ch, creqs, err := nc.Accept()
 		if err != nil {
+			f.mu.Lock()
+			f.open--
+			f.mu.Unlock()
 			continue
 		}
 		go func() {
+			defer func() {
+				f.mu.Lock()
+				f.open--
+				f.mu.Unlock()
+			}()
 			defer ch.Close()
 			for req := range creqs {
 				if req.Type != "exec" {
@@ -190,6 +215,9 @@ func (f *fakeGoogle) serveSSH(c net.Conn) {
 				f.mu.Unlock()
 				_ = req.Reply(true, nil)
 				in, _ := io.ReadAll(io.LimitReader(ch, 1<<20))
+				if f.slow > 0 {
+					time.Sleep(f.slow)
+				}
 				code := 0
 				out := "ran: " + cmd
 				switch {
@@ -486,4 +514,73 @@ func TestIAPRefusesUnknownKeyIDScheme(t *testing.T) {
 	if len(f.commands) != 0 {
 		t.Errorf("connected anyway: %v", f.commands)
 	}
+}
+
+// TestIAPBurstRespectsSessionLimit: 30 concurrent calls over one connection
+// to a server that allows 10 sessions all succeed, never more than
+// MaxSessionsPerConn run at once, and one key is registered (live finding:
+// v0.7.0 failed 9 of 30 burst calls with "open failed", and the refused
+// channel tore down the connection under the others).
+func TestIAPBurstRespectsSessionLimit(t *testing.T) {
+	f := newFakeGoogle(t)
+	f.maxSessions, f.slow = 10, 50*time.Millisecond
+	b := f.backend()
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var errs []error
+	for i := 0; i < 30; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := b.Run(context.Background(), Sinfo()); err != nil {
+				mu.Lock()
+				errs = append(errs, err)
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if len(errs) > 0 {
+		t.Fatalf("%d of 30 calls failed, first: %v", len(errs), errs[0])
+	}
+	if f.peak > 8 || f.peak < 2 {
+		t.Errorf("peak concurrent sessions %d, want 2..8", f.peak)
+	}
+	if f.imports != 1 {
+		t.Errorf("%d keys registered, want 1", f.imports)
+	}
+	_ = b.Revoke(context.Background())
+}
+
+// TestIAPRefusedChannelKeepsConnection: a refused session (server at its
+// limit, e.g. because of the person's own interactive ssh) is retried on the
+// same connection instead of tearing it down.
+func TestIAPRefusedChannelKeepsConnection(t *testing.T) {
+	f := newFakeGoogle(t)
+	b := f.backend()
+	if _, err := b.Run(context.Background(), Sinfo()); err != nil {
+		t.Fatal(err)
+	}
+	b.mu.Lock()
+	first := b.client
+	b.mu.Unlock()
+	f.mu.Lock()
+	f.maxSessions, f.open = 1, 1 // full: the next channel is refused
+	f.mu.Unlock()
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		f.mu.Lock()
+		f.open = 0 // a slot frees up
+		f.mu.Unlock()
+	}()
+	if _, err := b.Run(context.Background(), Sinfo()); err != nil {
+		t.Fatalf("refused channel was not retried: %v", err)
+	}
+	b.mu.Lock()
+	same := b.client == first
+	b.mu.Unlock()
+	if !same {
+		t.Error("a refused channel tore down the shared connection")
+	}
+	_ = b.Revoke(context.Background())
 }

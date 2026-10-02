@@ -624,6 +624,7 @@ for a shell from an assistant: disk space, browsing their files, checking a modu
 | Date | Version | Change |
 |---|---|---|
 | 2026-10-01 | Draft 1 | Spec and design (as `hpc-agent`) |
+| 2026-10-02 | v0.7.1 | SSH session limit: at most 8 commands at once per person's connection (login node MaxSessions is 10); a refused channel is retried without dropping the connection; transport errors no longer read as "does not exist". Found by a 30-call parallel burst (9 failed on v0.7.0) |
 | 2026-10-02 | v0.7.0 | Section 18: staged inputs pulled by the job, signed download links, paging for results/reads/logs, helper tools (storage_usage, files_list, files_read, env_check, interactive_help); no shell tool |
 | 2026-10-01 | Draft 2 / v0.1.0 | Renamed `ursa-bifrost`; P1 built and verified live; section 17 added |
 | 2026-10-01 | v0.4.0 | C1: `backend: iap` (per-user IAP + OS Login in Go, no gcloud per connection, pinned host key, per-user key reuse); see docs/CLOUD_PLAN.md 2.4 |
