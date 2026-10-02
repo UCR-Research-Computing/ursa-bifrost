@@ -625,3 +625,33 @@ func TestIDTokenForAnotherAppRejected(t *testing.T) {
 		t.Error("forged ID token accepted")
 	}
 }
+
+// TestTokensSurviveRestart: a new server process (Cloud Run scale-to-zero)
+// still accepts a token issued before, and still refuses it after sign-out.
+func TestTokensSurviveRestart(t *testing.T) {
+	h := newHarness(t, twoUsers)
+	a, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok := a["access_token"].(string)
+	// simulate a restart: wipe every in-memory cache
+	h.s.auth = newAuthState()
+	h.s.tokens.m = map[string]cachedTok{}
+	h.s.conns = map[string]*userConn{}
+	cs, err := h.mcp(tok)
+	if err != nil {
+		t.Fatalf("token lost on restart: %v", err)
+	}
+	callJSON(t, cs, "jobs_list", nil)
+	// sign out, restart again: the stored token must not come back
+	req, _ := http.NewRequest("POST", h.ts.URL+"/signout", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	if r, _ := http.DefaultClient.Do(req); r.StatusCode != 200 {
+		t.Fatal("signout")
+	}
+	h.s.auth = newAuthState()
+	if _, err := h.mcp(tok); err == nil {
+		t.Error("token works after sign-out + restart")
+	}
+}

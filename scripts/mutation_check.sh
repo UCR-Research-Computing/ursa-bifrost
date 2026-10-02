@@ -76,6 +76,10 @@ mutate "srv remote download"  internal/core/results.go 'if in.Download && s.Remo
 mutate "srv seal label"       internal/server/store.go 'pt, err := s.aead.Open(nil, b[:n], b[n:], []byte(label))' 'pt, err := s.aead.Open(nil, b[:n], b[n:], nil)'
 mutate "srv cloud scope"      internal/server/oauth.go 'if !strings.Contains(tok.Scope, "https://www.googleapis.com/auth/cloud-platform") {' 'if false {'
 mutate "srv id audience"      internal/server/google.go 'case c.Aud != g.ClientID:' 'case false:'
+mutate "srv stored token session" internal/server/oauth.go '	if found, _ := s.store.Get("session", a.Email, &session{}); !found {
+		return accessRec{}, false
+	}
+	s.auth.mu.Lock()' '	s.auth.mu.Lock()'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL
