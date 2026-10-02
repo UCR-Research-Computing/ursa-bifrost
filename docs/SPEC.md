@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | Document | Specification and design (draft for decision) |
-| Status | Draft 4, 2026-10-01. P1 (v0.1.0), P2 (v0.2.0) and P3 (v0.3.0) built; see section 17. Open questions in section 15. |
+| Status | v0.7.2, 2026-10-02. Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), ursa-agent chat on top. Sections 17-18 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
-| Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `ursa-bifrost`. |
+| Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
 
 ## 1. Summary
@@ -146,9 +146,17 @@ none that I saw advertise tiers, approval or audit. Phase 0 evaluates them (sect
 - Short-TTL cache (15-60 s for queue state, 10 min for partitions, 1 h for modules) so
   several assistants asking at once do not hammer the controller.
 
+As built (v0.7.2): the B1 SSH-CLI path exists twice, as `backend: ssh` (system ssh through
+`gcloud compute ssh --dry-run`, used by the laptop CLI) and `backend: iap` (IAP tunnel and
+OS Login in Go, each person with their own key, required by the hosted server). B2 REST and
+B3 GCP were not built: no slurmrestd daemon runs, prices come from the cluster catalog, and
+node states come from `sinfo`/`scontrol`. The MCP server runs over stdio (`bifrost mcp`) and
+over Streamable HTTP with OAuth (`bifrost serve`, Cloud Run). Cache TTLs are config
+(`cache_ttl`, defaults 20 s queue, 30 s nodes, 60 s accounting, 1 h catalog and modules).
+
 ### 6.1 Language
 
-Recommendation: Go.
+Decided (Q2): Go. Original reasoning:
 - One static binary; trivial to install on the laptop, a staff VM or next to the cluster.
 - Deterministic infrastructure in Go or Rust is the standing preference; Go is the cheaper
   of the two here (no performance need: every call waits on SSH or the scheduler).
@@ -169,47 +177,55 @@ fields the assistant would read as instructions.
 
 | Tool | Inputs | Returns |
 |---|---|---|
-| `cluster_status` | none | Per partition: nodes by state (allocated, idle, powered-down, down, drained), queue depth pending/running, recent stockouts |
-| `partitions` | none | Limits, CPUs, memory, GPUs, max time, default partition, $/node-hour (from config) |
-| `jobs_list` | `state?`, `since?`, `limit?` | Caller's jobs: id, name, partition, state, reason, elapsed, nodes. 50 rows unless `limit` is given (cap 200 from config) |
-| `job_show` | `job_id` | Merged `scontrol` + `sacct`: request vs use (CPU efficiency, max RSS vs requested memory), exit code, signal, node list, timings |
-| `job_explain` | `job_id` | Deterministic diagnosis: `findings[]` with rule id, evidence and suggestion (section 8) |
-| `job_pending_reason` | `job_id` | Slurm reason decoded into plain words, estimated start (`--test-only` style), what would make it start sooner |
+| `cluster_status` | none | Per partition: nodes by state (powered up, allocated, idle, booting, down), queue depth running/pending, $/hour being spent now |
+| `partitions` | none | Limits, CPUs, memory, GPUs, max time, default partition, $/node-hour (from the cluster catalog, overridable in config) |
+| `jobs_list` | `state?`, `since?`, `limit?` | Caller's jobs (queue plus recent accounting, newest first): id, name, partition, state, reason, elapsed, nodes, exit code. 50 rows unless `limit` is given (cap `limits.list_rows`, 200) |
+| `job_show` | `job_id`, `include_script?` | Merged `squeue` + `sacct`: request vs use (CPU efficiency, peak memory vs requested), exit code, signal, node list, timings, steps, log paths; for a pending job the reason decoded into plain words with advice (there is no separate pending-reason tool) |
+| `job_explain` | `job_id`, `lines?` | Deterministic diagnosis: `findings[]` with rule id, severity, evidence and suggestion (section 8), plus the redacted log tail as untrusted data |
 | `job_log_tail` | `job_id`, `stream=stdout|stderr`, `lines<=1000`, `start_line?`, `grep?` | Redacted window of the log in `untrusted`: the tail, a page from `start_line`, or matching lines (with line numbers and context). Returns `total_lines`, `first_line`, `last_line` for paging. Path resolved from the job record, never from user input (section 18.3) |
-| `job_results` | `job_id`, `prefix?`, `pattern?`, `offset?`, `limit?`, `read?`, `read_offset?`, `read_bytes?`, `grep?` | The job folder, paged (no file-count wall); one text file read in chunks or searched; laptop download (section 18.3) |
-| `results_link` | `job_id`, `files[]` | Copies the chosen outputs to the private staging bucket and returns signed download links (section 18.2) |
+| `job_results` | `job_id`, `prefix?`, `pattern?`, `offset?`, `limit?`, `read?`, `read_offset?`, `read_bytes?`, `grep?`, `download?`, `files?` | The job folder, paged (no file-count wall); one text file read in chunks or searched; download to `results_dir/<job_id>` on the laptop only (section 18.3) |
+| `results_link` | `job_id`, `files[]` | Copies the chosen outputs to the private staging bucket and returns signed download links (section 18.2). Registered only when `staging` is configured |
 | `storage_usage` | none | Space used in your home and scratch folders (largest folders first) and how full each filesystem is (section 18.4) |
-| `files_list` | `path`, `pattern?`, `offset?`, `limit?` | One folder under your home or scratch; hidden and credential-like entries are never shown (section 18.4) |
+| `files_list` | `path?`, `pattern?`, `offset?`, `limit?` | One folder under your home or scratch; hidden and credential-like entries are never shown (section 18.4) |
 | `files_read` | `path`, `offset?`, `bytes?`, `grep?` | One text file under your home or scratch, in chunks or searched; same deny rules (section 18.4) |
-| `env_check` | `modules[]`, `commands[]` | Loads modules on the login node and reports whether each loads, the resulting module list, and which `python3`, `gcc`, `mpirun`... you get, with versions (section 18.4) |
-| `interactive_help` | `partition`, `nodes?`, `cpus?`, `gpus?`, `time`, `memory?` | The exact `salloc`/`srun --pty` command for an interactive session, its hourly cost and how to reach the login node. Runs nothing (section 18.4) |
-| `modules_search` | `query` | Matching modules and versions; GPU/MPI variants flagged |
-| `module_show` | `name`, `mpi?` | What the module sets (paths, dependencies, prerequisites). MPI-built packages (hdf5, fftw, petsc...) exist only under an MPI in the site's hierarchical Lmod, so they are shown after `module load <mpi>` (openmpi by default, or the `mpi` given); the answer names the MPI loaded and every build available |
-| `recipes` | `query` | Known-good install recipes (from deep-research's install ladder and lessons) |
-| `script_check` | `script` | Static check of a batch script against the cluster: partition exists, limits fit, modules exist, GPU request matches partition, login-node misuse patterns. No submission |
-| `my_usage` | `period` | Caller's node-hours and estimated cost by partition |
+| `env_check` | `modules[]?`, `commands[]?` | Loads modules on the login node and reports whether each loads, the resulting module list, and which `python3`, `gcc`, `mpirun`... you get, with versions (section 18.4) |
+| `interactive_help` | `partition?`, `nodes?`, `cpus?`, `gpus?`, `time?`, `memory?` | The exact `srun --pty`/`salloc` command for an interactive session, its hourly and worst-case cost and how to reach the login node. Runs nothing (section 18.4) |
+| `modules_search` | `query?` | Matching modules and versions with their MPI prerequisite and GPU builds, plus matching prebuilt containers and recipes |
+| `module_show` | `name`, `mpi?` | What the module sets (paths, environment, dependencies). MPI-built packages (hdf5, fftw, petsc...) exist only under an MPI in the site's hierarchical Lmod, so they are shown after `module load <mpi>` (openmpi by default, or the `mpi` given, which must be one of the package's builds); the answer names the MPI loaded and every build available |
+| `recipes` | `query?` | Known-good recipes from the cluster catalog (modules, run command, partition, notes) plus the site rules |
+| `script_check` | `script` | Static check of a batch script against the cluster: partition exists, limits fit, modules exist and their MPI prerequisite is loaded, GPU request matches partition, login-node misuse patterns, worst-case cost. No submission |
+| `my_usage` | `since?`, `until?`, `group_by?` | Caller's node-hours, core-hours, CPU efficiency and estimated cost, by partition or by job name |
+| `waste_report` | `since?`, `cpu_threshold?`, `min_node_hours?` | Avoidable spend in the caller's own jobs: low CPU efficiency, idle time before a timeout, warm workers, repeated fast failures, oversized memory requests, idle nodes (details in section 17, P2) |
 
 ### 7.2 Read tier R2 (staff: all users)
 
+Registered only when the person's tiers include R2. Descriptions start with `[staff]`.
+
 | Tool | Inputs | Returns |
 |---|---|---|
-| `jobs_list_all` | `user?`, `account?`, `partition?`, `state?`, `since?` | As `jobs_list`, any user |
-| `job_show_any`, `job_explain_any` | `job_id` | As R1 for any job; log contents per Q11 |
-| `usage_report` | `group_by=user|account|partition|lab`, `period` | Node-hours, CPU-hours, GPU-hours, estimated cost; optional join to Nexus labs/grants (read only) |
-| `waste_report` | `period`, `threshold?` | Jobs with low CPU or memory efficiency, idle allocated nodes, long-idle warm workers, oversized requests |
-| `health` | none | Down/drained nodes with reasons, stockouts, backlog trend, stuck jobs (running far past typical) |
-| `ticket_draft` | `job_id`, `ticket_text?` | Ticket-ready summary: what happened, evidence, suggested fix, a reply draft. A job that COMPLETED with exit code 0 and no error findings is reported as a success (the reply asks which output was unexpected), not as an unmatched failure. Never posted anywhere by the server |
+| `jobs_list_all` | `user?`, `state?`, `since?`, `limit?` | As `jobs_list`, every user or one user |
+| `job_show_any`, `job_explain_any` | `job_id` (+ `include_script?` / `lines?`) | As R1 for any user's job (ticket triage) |
+| `usage_report` | `since?`, `until?`, `group_by=user|partition|job`, `user?` | Node-hours, core-hours, efficiency and estimated cost for every user |
+| `waste_report_all` | `since?`, `cpu_threshold?`, `min_node_hours?`, `user?` | `waste_report` over every user's jobs |
+| `health` | none | Down/drained nodes with reasons, slow boots (stockouts), long-pending and launch-failed jobs, recent node failures, high failure rate, idle billing nodes; `ok` false on any error |
+| `ticket_draft` | `job_id`, `ticket_text?` | Ticket-ready summary: what happened, evidence, suggested fix, a reply draft, confidence. A job that COMPLETED with exit code 0 and no error findings is reported as a success (the reply asks which output was unexpected), not as an unmatched failure. The researcher's text is untrusted and never copied into the reply. Never posted anywhere by the server |
 
 ### 7.3 Act tier A1 (own jobs, approval required)
 
+Registered only when the person's tiers include A1. Descriptions start with `[act]`;
+annotations say not read-only (`job_cancel_confirm` is also marked destructive).
+
 | Tool | Inputs | Behavior |
 |---|---|---|
-| `job_submit` | `script`, `partition`, resources, `confirm_token?` | Two-step. Without a token: runs `script_check` and `sbatch --test-only`, returns the plan, estimated start and estimated worst-case cost, and a single-use `confirm_token`. With the token (and approval on the client side): submits. Caps per day and per job (cost, nodes, time) |
-| `job_cancel` | `job_id`, `confirm_token?` | Same two-step; own jobs only |
-| `job_hold`, `job_release` | `job_id` | Own jobs only |
-| `upload_prepare` | `filename`, `bytes` | A signed upload link (15 min) for one file into your private staging area; changes nothing on the cluster (section 18.1) |
-| `uploads_list` | none | Your staged uploads: id, name, size, when they expire |
-| `job_submit` `inputs[]` | upload ids | The job fetches each staged file into `inputs/` in its folder when it starts; the plan (and its confirm token) covers the exact files (section 18.1) |
+| `job_submit` | `script`, `partition?`, `nodes?`, `time?`, `job_name?`, `inputs[]?` | Step 1: runs `script_check` (errors block), enforces caps (nodes, hours, $/job, $/day, submits/day) and `sbatch --test-only`; returns the plan, estimated start, worst-case cost and a single-use `confirm_token`. Nothing is submitted. `inputs` are upload ids from `upload_prepare`, fetched by the job into `inputs/` when it starts (section 18.1) |
+| `job_submit_confirm` | `confirm_token` | Step 2: re-checks the plan hash and the day cap, writes the script to a new `~/bifrost-jobs/<stamp>-<name>/` and submits with the enforced flags |
+| `job_cancel`, `job_hold`, `job_release` | `job_id` | Step 1 for the caller's own jobs: state checked (only pending/running can be cancelled, only pending held/released), returns a plan and token |
+| `job_cancel_confirm`, `job_hold_confirm`, `job_release_confirm` | `confirm_token` | Step 2: ownership and state checked again, then `scancel` / `scontrol hold|release` |
+| `upload_prepare` | `filename`, `bytes` | A signed upload link (15 min) for one file into your private staging area, plus a ready `curl` command; changes nothing on the cluster (section 18.1). Needs `staging` |
+| `uploads_list` | none | Your staged uploads: id, name, size, when they are deleted. Needs `staging` |
+
+Count on the hosted server with all tiers (verified with `tools/list`, 2026-10-02): 19 R1,
+7 R2 and 10 A1 tools, 36 in all.
 
 ### 7.4 Never exposed
 
@@ -220,43 +236,78 @@ and job output paths, reading hidden or credential-like files anywhere.
 
 ### 7.5 MCP resources and prompts
 
-- Resources: `hpc://partitions`, `hpc://modules`, `hpc://policies` (login-node rule, fair
-  use, data classes), `hpc://job/{id}`.
+- Resources: `hpc://catalog` (the cluster catalog: partitions, prices, modules, recipes,
+  site rules) and `hpc://policies` (how this server behaves: tiers, approval, untrusted data,
+  caps). Planned `hpc://partitions`, `hpc://modules` and `hpc://job/{id}` were not built;
+  the same facts come from the catalog resource and the read tools.
 - Prompts: `diagnose_job`, `write_batch_script`, `monthly_usage_summary`,
   `triage_ticket`. Prompts are templates for the client; the server runs no model.
 
 ## 8. Diagnosis rules (job_explain)
 
-Fixed rules over accounting data and the log tail; each finding carries the evidence that
-fired it. First set, from real failures:
+Fixed rules over the accounting record and the log tail (`internal/rules`); each finding
+carries the evidence that fired it, a severity (error, warning, info) and a suggestion. Every
+log rule has a sample in `TestEachLogRuleFires`, mostly from real failed jobs. As built:
 
-| Rule | Evidence | Suggestion |
+State and accounting rules:
+
+| Rule | Fires on | Severity |
 |---|---|---|
-| OOM | state OUT_OF_MEMORY, or `oom-kill` in log, or MaxRSS near requested memory | Request more memory or use highmem |
-| Timeout | state TIMEOUT | Raise time limit; check checkpointing |
-| Node failure | NODE_FAIL, requeue count | Usually not the user's fault; resubmit; note stockouts |
-| Stockout | slurm-gcp resume failure, `ZONE_RESOURCE_POOL_EXHAUSTED` | Try computehigh or another partition |
-| Module missing | `module: command not found`, `Unable to locate a modulefile` | Name the closest existing module |
-| Python import | `ModuleNotFoundError: X` | Module that provides X, or a pip/venv recipe |
-| TLS certificates | `CERTIFICATE_VERIFY_FAILED` | Set the cluster certificate bundle variable |
-| Blocked download | HTTP 403/429 from a site in the log | Fetch elsewhere and stage the data |
-| Renamed API | `KeyError`/`AttributeError` on a known library | Version pin or new name (from recipes) |
-| Low efficiency | CPU efficiency < 20% on a multi-core request | Request fewer cores |
-| GPU idle | GPU requested, no GPU process seen | Check CUDA build and device visibility |
-| Login-node misuse | heavy process on the login node (staff tier) | Point to batch or interactive jobs |
+| `oom` | state OUT_OF_MEMORY | error |
+| `timeout` | state TIMEOUT, or `DUE TO TIME LIMIT` in the log | error |
+| `node-fail` | state NODE_FAIL (with the restart count) | error |
+| `preempted` | state PREEMPTED | warning |
+| `cancelled` | state CANCELLED (who and when if known) | info |
+| `pending` | a pending job: reason decoded with advice | info |
+| `memory-near-limit` | peak memory at 95% or more of the allocation (not when the state is already OUT_OF_MEMORY) | warning, error when the job FAILED |
+| `exit-signal` | FAILED with exit code 128+N (signal named: SIGKILL, SIGSEGV, ...), unless a crash or memory rule already explains it | error |
+| `low-cpu-efficiency` | CPU efficiency below 20% on 4+ cores for 10+ minutes | warning |
+| `script-error` | FAILED and no other rule matched (notes when the log could not be read) | error |
+| `command-not-found` | exit code 127 without a log (the log rule below covers the rest) | error |
 
-deep-research's `FAILURE_CLASSES` and lessons are the seed; rules live in one data file
-with tests per rule.
+Log rules (regular expressions over the redacted log tail):
+
+| Rule | Detects |
+|---|---|
+| `oom-log` | out-of-memory kill messages in the log |
+| `install-ladder` | deep-research's software setup found no working install method |
+| `container` | Apptainer image could not be pulled or opened |
+| `tool-crash` | assertion failure or segfault |
+| `glibc` | binary needs a newer glibc than Rocky 8 (2.28) |
+| `module-missing` | `module: command not found`, `Unable to locate a modulefile` |
+| `python-import` | `ModuleNotFoundError` / `ImportError` |
+| `tls` | `CERTIFICATE_VERIFY_FAILED` and similar |
+| `download` | HTTP 403/404/429 or a failed fetch |
+| `bad-arguments` | a program rejected its command-line flags |
+| `api-change` | `AttributeError`/`TypeError` from a renamed or removed library API |
+| `syntax` | syntax error in the script |
+| `numerical` | NaN, divergence, overflow, division by zero |
+| `missing-feature` | the installed build lacks a needed feature (no MPI, no CUDA...) |
+| `cuda` | GPU/CUDA problems (no device, driver mismatch, out of GPU memory) |
+| `disk-full` | no space left or quota exceeded |
+| `permission` | permission denied |
+| `command-not-found` | `command not found` / make's `Command not found` (tailored fixes: python3, mpirun, nvcc) |
+| `python-error` | a Python traceback in the script's own code (NameError, TypeError...) |
+
+Planned and not built: "GPU idle" (no per-job GPU accounting: GPUs are not in
+`AccountingStorageTRES`) and "login-node misuse" (would need process data from the login
+node). deep-research's `FAILURE_CLASSES` and lessons were the seed.
 
 ## 9. Security and governance
 
 ### 9.1 Identity
 
-- Personal phase: the server runs on the laptop and uses Chuck's SSH identity. Every tool
-  is scoped to that user unless the tier allows more.
-- Service phase: callers authenticate to ursa-bifrost (campus SSO through MCP's OAuth flow);
-  ursa-bifrost obtains a short-lived per-user Slurm JWT and calls slurmrestd as that user.
-  No shared "AI" account that can see everything.
+- Laptop: the CLI and `bifrost mcp` (stdio) run as the person at the keyboard, through their
+  own `gcloud` login (IAP tunnel + OS Login). Every tool is scoped to that user unless the
+  config grants more tiers.
+- Hosted (`bifrost serve`, built in C2/C3): callers sign in with Google (`hd=ucr.edu`) through
+  bifrost's own OAuth 2.1 server; bifrost then reaches the login node **as that person** with
+  their Google token (IAP + OS Login, their own SSH key, sealed at rest). Tiers come from
+  `users.yaml`, checked on every request. No shared "AI" account that can see everything, and
+  no token passthrough. Details: docs/CLOUD_PLAN.md sections 2.4-2.5.
+- The original plan (campus SSO with a per-user Slurm JWT through slurmrestd) was not needed:
+  no slurmrestd daemon runs on the cluster, and IAP + OS Login gives per-person identity
+  without one (CLOUD_PLAN.md 2.2-2.3).
 
 ### 9.2 Tiers
 
@@ -313,43 +364,92 @@ Retention per Q12. A weekly summary is cheap to produce from the file.
 
 ## 10. Configuration
 
-One file per deployment (example):
+One YAML file per deployment (`internal/config`; `bifrost config show` prints the effective
+values, `bifrost config init` writes a commented starter, `bifrost config path` says where). Laptop example, as used by Chuck:
 
 ```yaml
 cluster: ursa-major
-backend: ssh-cli          # ssh-cli | rest
-ssh: {host: ursa-login, user: netid_ucr_edu}
-rest: {url: https://..., token_lifespan_s: 900}
-partitions_cost_usd_per_node_hour: {computehigh: 1.87, standard: 0.0, gpul4: 0.0}  # fill in (Q8)
-tiers:
-  netid_ucr_edu: [R1, R2, A1]
-caps: {max_nodes: 4, max_hours: 24, max_cost_usd_per_job: 25, max_cost_usd_per_day: 50}
-audit: {path: ~/.local/share/ursa-bifrost/audit.jsonl, retain_days: 365}
-nexus: {enabled: false, cli: nexus}   # read-only joins for usage_report
+backend: ssh                 # ssh (system ssh via gcloud IAP) | iap (Go IAP + OS Login, no gcloud per call) | fixture (tests)
+ssh:
+  gcloud: {instance: ucrslurmcl-slurm-login-001, zone: us-central1-a, project: ucr-ursa-major-hpc-cluster}
+  # host: ursa-login         # or a plain ssh host / ~/.ssh/config alias
+  control_persist: 900
+  connect_timeout: 30
+catalog_path: /apps/docs/catalog.json     # ursa-catalog: partitions, prices, modules, recipes
+log_roots: ["/home/{user}/", "/scratch/{user}/"]
+show_cost: true              # false hides every dollar figure
+# usd_per_node_hour: {computehigh: 1.87}  # overrides the catalog price per partition
+tiers: [R1, R2, A1]          # laptop: tiers of the local user
+caps: {max_nodes: 4, max_hours: 24, max_cost_usd_per_job: 25, max_cost_usd_per_day: 75,
+       max_submits_per_day: 20, confirm_ttl_minutes: 10}
+cache_ttl: {queue: 20s, nodes: 30s, acct: 60s, catalog: 1h, modules: 1h}
+limits: {log_lines: 200, list_rows: 200, script_bytes: 65536, untrusted_chars: 16000, calls_per_min: 60}
+audit_path: ~/.local/share/ursa-bifrost/audit.jsonl
+state_path: ~/.local/share/ursa-bifrost/a1.json   # A1 plans, tokens, spend ledger (0600)
+results_dir: ~/ursa-results                       # laptop downloads
+jobs_root: bifrost-jobs                           # submitted jobs run in ~/bifrost-jobs/<stamp>-<name>
 ```
+
+Built-in defaults (`bifrost config init`): tiers `[R1]`, day cap $50; Chuck's laptop config raises
+the tiers to R1+R2+A1 and keeps $75/day as his standing cap (2026-10-02).
+
+Hosted server (`bifrost serve`, Cloud Run; secret `bifrost-config`) adds:
+
+```yaml
+backend: iap
+iap: {project: ucr-ursa-major-hpc-cluster, zone: us-central1-a, instance: ucrslurmcl-slurm-login-001,
+      host_keys: [...]}      # pinned login-node host keys
+server:
+  base_url: https://bifrost-mcp-125853442225.us-central1.run.app
+  data_dir: /data            # sealed sessions, SSH keys, per-user ledgers (Cloud Storage volume)
+  users_file: /users/users.yaml   # who may sign in, with which tiers (secret bifrost-users)
+  google_client_id: ...      # secret via google_client_secret_env; sealing key via secret_key_env
+  access_token_minutes: 60
+staging: {bucket: ucr-ursa-major-hpc-cluster-bifrost-staging, upload_minutes: 15, link_minutes: 60,
+          max_upload_bytes: 5368709120, max_user_bytes: 21474836480, max_link_bytes: 2147483648,
+          retain_days: 7}
+audit_path: "-"              # stdout -> Cloud Logging
+caps: {..., max_cost_usd_per_day: 50}   # hosted day cap (per person)
+```
+
+Planned and not built: a `rest` backend (slurmrestd), Nexus joins for `usage_report`, audit
+retention settings.
 
 ## 11. Integration points
 
-- Hermes: MCP client (stdio). Use: "how is Ursa Major", ticket help, cost questions.
-- Claude Code: MCP client for RC work in the nexus repo.
-- deep-research: first through the CLI (`ursa-bifrost jobs show 260 --json`), later its Lab
-  could replace `SlurmSSHTarget` with ursa-bifrost calls (Q14). Its warm-worker logic stays
-  in deep-research.
-- work-watch: optional event alerts (job finished, node down) through the existing
-  Telegram path, opt-in per user (Q15).
-- ServiceNow: `ticket_draft` output is pasted or attached by staff; ursa-bifrost never
-  writes to ServiceNow.
-- Nexus: optional read-only joins (Slurm account or user -> lab -> grant) for reports.
+- Hermes: MCP client of the hosted server (`ursa`, Streamable HTTP + OAuth); earlier over
+  stdio on the laptop. Use: "how is Ursa Major", ticket help, cost questions, submitting jobs
+  with approval.
+- Claude Code: MCP client (stdio `bifrost mcp` or the hosted URL) for RC work.
+- ursa-agent (C4, v0.6.0): a Gemini agent with a chat page and A2A, acting as the signed-in
+  person through bifrost; approvals enforced in its code (docs/CLOUD_PLAN.md 2.6).
+- deep-research: uses its own SSH path today; moving its Lab cluster calls onto bifrost is
+  open (Q14). Its warm-worker logic stays in deep-research.
+- work-watch: optional event alerts, not built (Q15).
+- ServiceNow: `ticket_draft` output is pasted or attached by staff; bifrost never writes to
+  ServiceNow.
+- Nexus: read-only joins for reports were planned (Q9), not built.
 
 ## 12. Testing
 
 - Recorded fixtures of real `--json` output (squeue, sacct, sinfo, scontrol) from Slurm
-  25.11, redacted; the core is tested against them without a cluster.
-- One test per diagnosis rule, from real failed-job records.
-- Policy tests: tier denials, confirm-token binding and expiry, redaction, caps, path
-  restrictions, injection strings in job names and logs never change behavior.
-- A fake backend for client tests; a live smoke test (read-only) against the real
-  cluster, run by hand.
+  25.11, anonymized (`scripts/make_fixtures.py`); CI fails if a real username, uid or internal
+  IP appears. The core is tested against them without a cluster (`backend: fixture`).
+- One test per diagnosis rule, from real failed-job records where possible.
+- Policy tests: tier denials, confirm-token binding, single use and expiry, cross-process
+  token lock, redaction, caps, path restrictions, injection strings in job names and logs
+  never change behavior; the allow-list test pins the set of remote programs.
+- Server tests: a fake Google (ID tokens, refresh, revocation), the full OAuth flow with a
+  real MCP client, two users kept apart, removal and tier changes, sealed storage.
+- `make check` (gofmt, vet, `go test -race`, build) before every commit; CI runs it plus the
+  ursa-agent tests on every PR.
+- `scripts/mutation_check.sh`: disables each safety guard in turn and requires a test to
+  fail (95 guards as of v0.7.2). A guard whose pattern no longer applies is reported BROKEN
+  and fails the run.
+- Live campaigns against the real cluster, read-only except jobs submitted through the
+  two-step flow: v0.3.1 (13 jobs, 16 negative CLI cases, 22 MCP checks), v0.7.0/v0.7.1
+  (file tools, a 30-call parallel burst), and the 2026-10-01 sweep of every hosted tool that
+  produced v0.7.2. Never compute on the login node.
 
 ## 13. Phases
 
@@ -360,6 +460,19 @@ nexus: {enabled: false, cli: nexus}   # read-only joins for usage_report
 | P2 Staff read | R2 tools, `waste_report`, `health`, `ticket_draft`, staff accounts, optional Nexus joins | v0.2, used on real tickets | 1-2 weeks |
 | P3 Act | A1 with two-step approval and caps; deep-research Lab as first client | v0.3 | 1-2 weeks |
 | P4 Service | HTTP transport, campus SSO, per-user JWT via slurmrestd, quotas, audit review, training partition | RC service | months; needs the team and the admins |
+
+How it went (2026-10-01/02): P0-P3 were done as planned (v0.1-v0.3). P4 was replaced by the
+cloud plan in docs/CLOUD_PLAN.md section 5, which avoids slurmrestd:
+
+| Phase | Status |
+|---|---|
+| C1 IAP backend (`backend: iap`) | done, v0.4.0 |
+| C2 HTTP + OAuth (`bifrost serve`) | done, v0.5.0 |
+| C3 Deploy on Cloud Run | done, v0.5.1 (live; Hermes uses it) |
+| C4 ursa-agent (ADK, chat page, A2A) | done, v0.6.0 |
+| Files in and out, paging, helper tools (section 18) | done, v0.7.0-v0.7.1 |
+| C5 Gemini Enterprise registration | open: needs a Gemini Enterprise admin |
+| C6 optional slurmrestd reads | not planned unless read latency matters |
 
 ## 14. Risks
 
@@ -375,6 +488,12 @@ nexus: {enabled: false, cli: nexus}   # read-only joins for usage_report
 | Scope creep into a portal | Non-goal N5; keep to typed tools |
 
 ## 15. Open questions for Chuck
+
+Status (2026-10-02): decided: Q1 personal first, then staff on the hosted server; Q2 Go;
+Q3 name and repo; Q5 scheduler queries and sbatch over SSH on the login node are fine (no
+compute there); Q7 A1 allowed for own jobs with two-step tokens and caps; Q8 prices from the
+cluster catalog, dollars shown (`show_cost`). Superseded: Q4 (identity solved with IAP +
+OS Login, no slurmrestd needed). Still open: Q6, Q9-Q15. The original questions follow.
 
 Q1. First version scope: personal only (you, Hermes, Claude Code), or staff from day one?
 
@@ -430,7 +549,7 @@ Telegram (opt-in), or stay strictly on demand?
   partitions) after it can look facts up.
 - Zero actions taken without approval; zero secrets in audit samples.
 
-## 17. Implementation status (v0.1.0, 2026-10-01)
+## 17. Implementation status (v0.1.0-v0.3.3; later releases: section 18 and "Release notes after v0.3" at the end)
 
 Decisions taken: Q2 Go (go-sdk v1.8.0, Go 1.25+). Q3 name `ursa-bifrost`, public repo
 `UCR-Research-Computing/ursa-bifrost` (module path matches). Q1 personal
@@ -447,9 +566,9 @@ Built (P1):
 | Allow-list | `internal/backend/command.go` | constructors only; args validated and quoted; test pins the program set |
 | Slurm JSON types | `internal/slurm` | squeue, sacct, sinfo, scontrol show nodes (25.11.4, data_parser v0.0.44) |
 | Core ops | `internal/core` | jobs list/show/explain/log, cluster status, partitions, usage, script check, modules, recipes |
-| Diagnosis rules | `internal/rules` | 17 log rules (seeded from deep-research FAILURE_CLASSES), state rules (OOM, timeout, node fail, preempt, cancel), memory near limit, exit-signal (128+N), low CPU efficiency, pending reasons |
+| Diagnosis rules | `internal/rules` | 17 log rules at v0.1.0, 18 regex rules plus `oom-log` today (seeded from deep-research FAILURE_CLASSES), state rules (OOM, timeout, node fail, preempt, cancel), memory near limit, exit-signal (128+N), low CPU efficiency, pending reasons |
 | Policy | `internal/policy` | redaction, untrusted blocks, tiers, token-bucket rate limit, JSONL audit (0600) |
-| MCP | `internal/mcpserver` | 11 R1 tools, 4 R2 tools, 2 resources, 3 prompts, stdio; server instructions carry the untrusted-data rule |
+| MCP | `internal/mcpserver` | 11 R1 tools, 4 R2 tools, 2 resources, 3 prompts, stdio; server instructions carry the untrusted-data rule (v0.1.0; today: 19 R1, 7 R2, 10 A1, 2 resources, 4 prompts, section 7) |
 | CLI | `cmd/bifrost` | same core; `--json` everywhere; `doctor`; `check` exits 2 on errors |
 | Tests | `*_test.go`, `testdata/` | anonymized real recordings; 8 real failed jobs as rule fixtures; MCP round-trip in memory; stdio smoke script |
 
@@ -527,9 +646,11 @@ SDK Hermes uses) found five bugs, all fixed with a test that fails on v0.3.0:
 
 Mutation check: 26 guards, all killed.
 
-Not yet built: `job_pending_reason` is
-folded into `job_show`/`job_explain`; A1 submit/cancel (P3); HTTP transport, SSO and REST
-backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, unused).
+Not built at v0.1.0 (status at the time): a separate `job_pending_reason` tool (folded into
+`job_show`/`job_explain`, and it stayed that way); A1 submit/cancel (built in P3); HTTP
+transport and per-user identity (built in C1-C3 with IAP + OS Login instead of SSO and a
+REST backend); Nexus joins (Q9, still not built); `squeue --start` estimates (constructor
+exists, unused).
 
 ## 18. Files in and out, paging, and helper tools (v0.7.0)
 
@@ -623,24 +744,39 @@ for a shell from an assistant: disk space, browsing their files, checking a modu
 
 | Date | Version | Change |
 |---|---|---|
-| 2026-10-01 | Draft 1 | Spec and design (as `hpc-agent`) |
+| 2026-10-02 | Draft 5 (docs) | Spec brought in line with v0.7.2: header, tool catalog from the live `tools/list` (36 tools), resources, diagnosis rules as built, configuration, identity (IAP + OS Login, not slurmrestd), integration, testing, phases C1-C6, decided questions marked |
 | 2026-10-02 | v0.7.2 | Fixes from the 2026-10-01 tool sweep: `module_show` loads the package's MPI first (hierarchical Lmod; hdf5/fftw failed with "bash exited 1: no error text") and reports a real "not found"; `ticket_draft` calls a COMPLETED, exit-0 job a success instead of "could not match the failure" (job 307); `jobs_list` defaults to 50 rows (200-row default answers were ~70 KB). Six new mutation guards |
 | 2026-10-02 | v0.7.1 | SSH session limit: at most 8 commands at once per person's connection (login node MaxSessions is 10); a refused channel is retried without dropping the connection; transport errors no longer read as "does not exist". Found by a 30-call parallel burst (9 failed on v0.7.0) |
-| 2026-10-02 | v0.7.0 | Section 18: staged inputs pulled by the job, signed download links, paging for results/reads/logs, helper tools (storage_usage, files_list, files_read, env_check, interactive_help); no shell tool |
-| 2026-10-01 | Draft 2 / v0.1.0 | Renamed `ursa-bifrost`; P1 built and verified live; section 17 added |
+| 2026-10-01 | v0.7.0 | Section 18: staged inputs pulled by the job, signed download links, paging for results/reads/logs, helper tools (storage_usage, files_list, files_read, env_check, interactive_help); no shell tool |
+| 2026-10-01 | v0.6.0 | C4: ursa-agent (ADK Gemini agent: chat page + A2A, approvals in code); bifrost `GET /whoami` (written up as "v0.5.5" below, released in v0.6.0) |
+| 2026-10-01 | v0.5.4 | Command-not-found diagnosis (make's "Command not found", exit 127) with tailored fixes |
+| 2026-10-01 | v0.5.3 | One-click repeat sign-in |
+| 2026-10-01 | v0.5.2 | Access tokens survive Cloud Run restarts (sealed store) |
+| 2026-10-01 | v0.5.1 | C3: deployed on Cloud Run; `/health` |
+| 2026-10-01 | v0.5.0 | C2: hosted server (`bifrost serve`): MCP over HTTP, OAuth via Google sign-in, per-user identity, tiers and caps |
 | 2026-10-01 | v0.4.0 | C1: `backend: iap` (per-user IAP + OS Login in Go, no gcloud per connection, pinned host key, per-user key reuse); see docs/CLOUD_PLAN.md 2.4 |
+| 2026-10-01 | v0.3.3 | script_check: a package built for several MPIs (hdf5, fftw) is satisfied by whichever MPI is loaded; the error lists every choice. Found by the GADGET-4 pilot (job 305) |
 | 2026-10-01 | v0.3.2 | Slurm NO_VAL timestamps (year 2106) treated as unset |
-| 2026-10-01 | v0.3.3 | script_check: a package built for several MPIs (hdf5, fftw) is satisfied by whichever MPI is loaded; the error lists every choice. Found by the GADGET-4 pilot (job 305: openmpi + hdf5/fftw flagged as needing mpich, yet ran fine) |
 | 2026-10-01 | v0.3.1 | Live test campaign: cross-process token lock, redaction order, booting nodes not down, day-cap release on cancel-before-start, elapsed display |
 | 2026-10-01 | Draft 4 / v0.3.0 | P3: A1 submit/cancel/hold/release with single-use confirm tokens and caps; job_results (list/read/download to ~/ursa-results) |
 | 2026-10-01 | v0.2.2 | modules_search also returns matching prebuilt containers and recipes (AlphaFold is a container, not a module) |
-| 2026-10-01 | v0.2.1 | python-error rule (NameError/TypeError/... in the script's own code; found on live job 237); no false srun warning when --ntasks-per-node is set |
+| 2026-10-01 | v0.2.1 | python-error rule (found on live job 237); no false srun warning when --ntasks-per-node is set |
 | 2026-10-01 | Draft 3 / v0.2.0 | P2: waste_report(_all), health, ticket_draft, triage_ticket prompt; public repo in the UCR-Research-Computing org; Hermes connected |
+| 2026-10-01 | Draft 2 / v0.1.0 | Renamed `ursa-bifrost`; P1 built and verified live; section 17 added |
+| 2026-10-01 | Draft 1 | Spec and design (as `hpc-agent`) |
+
+## Release notes after v0.3
+
+### v0.4.0 (C1): IAP backend
+`backend: iap`: per-user IAP tunnel and OS Login in Go (no gcloud per connection), pinned
+login-node host keys, one OS Login key per user reused across connections and processes
+(8 h expiry, replaced before it lapses, removed on sign-out). Live findings in
+docs/CLOUD_PLAN.md section 2.4.
 
 ### v0.5.0 (C2): hosted server
 `bifrost serve`: MCP over HTTP with OAuth through Google sign-in. Each person
 reaches the cluster with their own identity, tiers, caps and ledger; see
-docs/CLOUD_PLAN.md section 2.5 and docs/DEPLOY.md. Not yet deployed.
+docs/CLOUD_PLAN.md section 2.5 and docs/DEPLOY.md. Deployed in v0.5.1.
 
 ### v0.5.1 (C3): deployed
 Live on Cloud Run (docs/DEPLOY.md). `/health` replaces `/healthz` on run.app.
@@ -668,10 +804,16 @@ exit code 127 without a log, and tailor the fix to the missing command (no bare
 `python` on the nodes: use python3 or `make PYTHON=python3`; mpirun needs
 `module load openmpi`; nvcc only on gpul4). Found live on job 302 (GADGET-4).
 
-### v0.5.5: GET /whoami
+### v0.5.5 (released in v0.6.0): GET /whoami
 Returns the email and tiers behind a bifrost access token (401 otherwise), so an
 OAuth client such as ursa-agent can show who is signed in and key its sessions.
 Reveals nothing the token holder cannot already learn by calling tools.
+
+### v0.6.0 (C4): ursa-agent
+Gemini agent (agent/, ADK) with a chat page and A2A, acting as the signed-in person through
+bifrost; approvals enforced in code. Model calls through the AI gateway with key
+its-research-computing-ursa-agent. See docs/CLOUD_PLAN.md section 2.6.
+
 
 ### v0.7.0: files in and out, paging, helper tools
 Section 18, as built: `upload_prepare`/`uploads_list`, `job_submit inputs=[...]`,
@@ -684,11 +826,11 @@ Lmod prints a long help text for an unknown module, so `env_check` keeps only it
 lines; the bucket refuses an upload larger than the signed size (400) and a changed size
 header (403).
 
-### v0.6.0 (C4): ursa-agent
-Gemini agent (agent/, ADK) with a chat page and A2A, acting as the signed-in person through
-bifrost; approvals enforced in code. Model calls through the AI gateway with key
-its-research-computing-ursa-agent. See docs/CLOUD_PLAN.md section 2.6.
-
+### v0.7.1: SSH session limit
+The login node allows 10 sessions per SSH connection (MaxSessions). A 30-call parallel burst
+on v0.7.0 failed 9 calls. bifrost now runs at most 8 commands at once per person's
+connection, retries a refused channel on the same connection, and reports transport errors
+as such rather than as "file does not exist".
 
 ### v0.7.2: fixes from the tool sweep
 Found by touching every hosted tool on 2026-10-01 (v0.5.x) and re-checked on v0.7.1:
