@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (draft for decision) |
-| Status | v0.8.1, 2026-10-02. Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), ursa-agent chat on top. Sections 17-19 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
+| Document | Specification and design (Draft 6; built through bifrost v0.8.1 and ursa-agent 0.3.0) |
+| Status | bifrost v0.8.1, ursa-agent 0.3.0, 2026-10-02 (spec Draft 6). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-20 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -422,10 +422,12 @@ retention settings.
   stdio on the laptop. Use: "how is Ursa Major", ticket help, cost questions, submitting jobs
   with approval.
 - Claude Code: MCP client (stdio `bifrost mcp` or the hosted URL) for RC work.
-- ursa-agent (C4, v0.6.0): a Gemini agent with a chat page and A2A, acting as the signed-in
-  person through bifrost; approvals enforced in its code (docs/CLOUD_PLAN.md 2.6).
+- ursa-agent (C4, v0.6.0; dashboard since ursa-agent 0.3.0, section 20): a Gemini agent with
+  a chat page and A2A, acting as the signed-in person through bifrost; approvals enforced in
+  its code (docs/CLOUD_PLAN.md 2.6). Its web page is a read-only cluster dashboard.
 - deep-research: uses its own SSH path today; moving its Lab cluster calls onto bifrost is
-  open (Q14). Its warm-worker logic stays in deep-research.
+  decided (Q14) and under way per the migration plan (R1-R3 next). Its warm worker is replaced
+  by the `lab` partition (section 19). Since v0.52.1 its jobs ask for cores on shared partitions.
 - work-watch: optional event alerts, not built (Q15).
 - ServiceNow: `ticket_draft` output is pasted or attached by staff; bifrost never writes to
   ServiceNow.
@@ -494,7 +496,10 @@ Status (2026-10-02): decided: Q1 personal first, then staff on the hosted server
 Q3 name and repo; Q5 scheduler queries and sbatch over SSH on the login node are fine (no
 compute there); Q7 A1 allowed for own jobs with two-step tokens and caps; Q8 prices from the
 cluster catalog, dollars shown (`show_cost`). Superseded: Q4 (identity solved with IAP +
-OS Login, no slurmrestd needed). Still open: Q6, Q9-Q15. The original questions follow.
+OS Login, no slurmrestd needed). Decided 2026-10-02: Q14, deep-research moves its Lab cluster
+calls onto bifrost (nexus `2026-10-02_Deep_Research_Bifrost_Migration_Plan.md`; R0 shipped as
+deep-research v0.52.1, B2/B6 as bifrost v0.8.0, the cluster change D1 applied). Still open:
+Q6, Q9-Q13, Q15. The original questions follow.
 
 Q1. First version scope: personal only (you, Hermes, Claude Code), or staff from day one?
 
@@ -743,9 +748,10 @@ for a shell from an assistant: disk space, browsing their files, checking a modu
 
 ## 19. Shared partitions: cores and cost (v0.8.0)
 
-Ursa Major is moving to shared nodes (blueprint branch `lab-partition-shared-nodes`, not
-yet applied): every partition except `highmem` and `gpul4` will let several jobs share a
-node. On a shared partition a job gets only the cores and memory it asks for, held there by
+Ursa Major shares nodes since 2026-10-02 (blueprint branch `lab-partition-shared-nodes`,
+applied that day): every partition except `highmem` and `gpul4` lets several jobs share a
+node, including the new `lab` partition (c3-highcpu-44, up to 4 nodes, nodes stay up an hour
+after their last job). On a shared partition a job gets only the cores and memory it asks for, held there by
 the cgroup; a job that asks for nothing gets 1 core and `DefMemPerCPU` (node memory / node
 cores). Measured before the change (job 324, 2026-10-02, all partitions
 `OverSubscribe=EXCLUSIVE`): a job with `--cpus-per-task=2` still received all 22 cores and
@@ -773,10 +779,24 @@ partitions.
 
 Whole-node partitions keep today's behaviour: no core request needed, whole-node pricing.
 
-### 19.3 Not changed
+### 19.3 As applied (2026-10-02)
 
-The rule switches on by itself when Slurm reports a partition as shared, so nothing changes
-before the blueprint is applied. `waste_report`'s CPU efficiency was already measured
+Slurm reports `OverSubscribe=NO` for the shared partitions (`sinfo -h -o %R|%h`:
+`computehigh|NO lab|NO nvmescratch|NO spot|NO standard|NO`, `gpul4|EXCLUSIVE
+highmem|EXCLUSIVE`), which the rule in 19.1 reads as shared; bifrost switched over with no
+redeploy. Shared partitions also lost `PowerDownOnIdle`, so a node stays up `SuspendTime`
+(300 s; lab 3600 s) after its last job. Verified with real jobs: 328 (`--cpus-per-task=2`,
+computehigh) held 2 cores (`nproc` 2, AllocTRES `cpu=2,mem=7914M`), 330 (`--exclusive`) held
+all 22, and 333 + 335 (4 cores each) ran together on one `lab` node. The cluster catalog
+(`ursa-catalog`) publishes `exclusive` and `oversubscribe` per partition; `ursa-cost` prices
+the share held. Spent-cost totals were unchanged by the switch ($127.8x over 30 days), since
+earlier jobs held whole nodes. Live checks found three bugs, fixed in v0.8.1 (release notes).
+Cluster record: nexus `ops/hpc-cluster/SPEC.md` 1.1.
+
+### 19.4 Not changed
+
+The rule switches on by itself when Slurm reports a partition as shared (it did on
+2026-10-02, 19.3). `waste_report`'s CPU efficiency was already measured
 against the allocated cores. deep-research v0.52.1 writes an explicit core request (default
 2) on shared partitions, so its jobs pass the rule.
 
@@ -867,6 +887,9 @@ with a question about that panel (e.g. "Why did job 315 fail?").
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-02 | Draft 6 (docs) | Status brought up to date: cluster shared since 2026-10-02 (19.3 as applied), Q14 decided, dashboard in the header |
+| 2026-10-02 | ursa-agent 0.3.0 | Section 20: read-only dashboard (12 panels, 4 staff-only) with the chat in a drawer; per-person cache; token-refresh lock; strict CSP. Tag `agent-v0.3.0`, Cloud Run `ursa-agent` revision 00003. N5 amended |
+| 2026-10-02 | v0.8.1 | First day on shared nodes: no-core error reads as a sentence; script_check ignores `module load` and run-time patterns in comments. 116 mutation guards |
 | 2026-10-02 | v0.8.0 | Section 19, shared partitions: sharing read live from Slurm (`sinfo -h -o %R\|%h`); on a shared partition `script_check`/`job_submit` refuse a script with no core request, and every cost (worst case, caps, estimates, spent cost, interactive sessions) is the share of the node held; `cluster_status` names shared and whole-node partitions. No change until the cluster's partitions are shared. 18 new mutation guards (113); jobs_list cap guard now tested. Spec fixes: `my_usage` groups by partition, state or user (not job name) |
 | 2026-10-02 | Draft 5 (docs) | Spec brought in line with v0.7.2: header, tool catalog from the live `tools/list` (36 tools), resources, diagnosis rules as built, configuration, identity (IAP + OS Login, not slurmrestd), integration, testing, phases C1-C6, decided questions marked |
 | 2026-10-02 | v0.7.2 | Fixes from the 2026-10-01 tool sweep: `module_show` loads the package's MPI first (hierarchical Lmod; hdf5/fftw failed with "bash exited 1: no error text") and reports a real "not found"; `ticket_draft` calls a COMPLETED, exit-0 job a success instead of "could not match the failure" (job 307); `jobs_list` defaults to 50 rows (200-row default answers were ~70 KB). Six new mutation guards |
