@@ -1,0 +1,21 @@
+name: Feature request
+description: A new tool, diagnosis rule, or client integration
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What do you or your users need to do that bifrost can't do today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: How it could work. Remember the rules - no shell, acting is two-step.
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Which tier would it belong to?
+      options: [R1 read, R2 staff, A1 act, Not sure]
