@@ -48,7 +48,7 @@ Usage:
   bifrost job explain <id> [--lines N] [--any]
   bifrost job log <id> [--stderr] [--lines N] [--start N] [--grep RE] [--any]
   bifrost modules [query]                  search software modules
-  bifrost module <name>                    module show
+  bifrost module [--mpi M] <name>          module show (MPI-built ones under their MPI)
   bifrost recipes [query]                  known-good recipes and site rules
   bifrost check <script.sh|->              static check of a batch script
   bifrost usage [--since T] [--until T] [--by partition|state|user] [--all]
