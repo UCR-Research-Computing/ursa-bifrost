@@ -87,6 +87,13 @@ mutate "srv consent retry"     internal/server/oauth.go '		if !p.Consent {
 mutate "srv no forced consent" internal/server/oauth.go '	prompt := "select_account"' '	prompt := "consent"'
 mutate "rule cmd-not-found case" internal/rules/rules.go '(?mi)(\S+): command not found\s*$' '(?m)(\S+): command not found$'
 mutate "rule exit 127"           internal/rules/rules.go 'if st == "FAILED" && f.ExitCode == "127" && !hasRule(out, "command-not-found") {' 'if false {'
+mutate "srv whoami auth"        internal/server/server.go '	_, u, err := s.verifyAccess(tok)
+	if err != nil {
+		s.challenge(w, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"email": u.Email, "tiers": u.Tiers})' '	u := s.users.Lookup("bob@ucr.edu")
+	writeJSON(w, 200, map[string]any{"email": u.Email, "tiers": u.Tiers})'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

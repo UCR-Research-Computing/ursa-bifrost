@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ursa Major assistant</title>
+<style>
+:root{--bg:#f6f7f9;--fg:#1d2330;--mut:#5b6474;--card:#fff;--line:#dfe3ea;--acc:#1a73e8;--ok:#137333;--bad:#b3261e}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg);display:flex;flex-direction:column;height:100vh}
+header{display:flex;align-items:center;gap:.8rem;padding:.6rem 1rem;background:var(--card);border-bottom:1px solid var(--line)}
+header h1{font-size:1rem;margin:0;font-weight:600}
+header .who{margin-left:auto;color:var(--mut);font-size:.9rem}
+header button,header a{font:inherit;font-size:.85rem}
+main{flex:1;overflow-y:auto;padding:1rem;max-width:52rem;width:100%;margin:0 auto}
+.msg{margin:.6rem 0;padding:.6rem .8rem;border-radius:10px;white-space:pre-wrap;word-wrap:break-word}
+.you{background:#e8f0fe;margin-left:15%}
+.bot{background:var(--card);border:1px solid var(--line);margin-right:8%}
+.tools{color:var(--mut);font-size:.8rem;margin-top:.3rem}
+.plan{border:2px solid var(--acc);background:#fff;border-radius:10px;padding:.7rem .9rem;margin:.6rem 8% .6rem 0}
+.plan h3{margin:0 0 .4rem;font-size:.95rem}
+.plan table{border-collapse:collapse;font-size:.88rem}
+.plan td{padding:.1rem .7rem .1rem 0;vertical-align:top}
+.plan td:first-child{color:var(--mut)}
+.plan .btns{margin-top:.6rem;display:flex;gap:.5rem}
+.plan button{font:inherit;padding:.35rem .9rem;border-radius:6px;border:1px solid var(--line);cursor:pointer}
+.approve{background:var(--ok);color:#fff;border-color:var(--ok)!important}
+.reject{background:#fff;color:var(--bad)}
+.done{color:var(--mut);font-size:.85rem;margin-top:.4rem}
+form{display:flex;gap:.5rem;padding:.7rem 1rem;background:var(--card);border-top:1px solid var(--line);max-width:52rem;width:100%;margin:0 auto}
+textarea{flex:1;font:inherit;padding:.5rem .6rem;border:1px solid var(--line);border-radius:8px;resize:none;height:3.2rem}
+form button{font:inherit;padding:0 1.1rem;border-radius:8px;border:0;background:var(--acc);color:#fff;cursor:pointer}
+form button:disabled{opacity:.5}
+.signin{max-width:34rem;margin:4rem auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1.5rem 1.8rem}
+.signin a.b{display:inline-block;background:var(--acc);color:#fff;padding:.55rem 1.2rem;border-radius:6px;text-decoration:none}
+.hint{color:var(--mut);font-size:.85rem}
+</style>
+</head>
+<body>
+<header>
+  <h1>Ursa Major assistant</h1>
+  <span class="who" id="who"></span>
+  <button id="newchat" hidden>New chat</button>
+  <a id="logout" href="/logout" hidden>Sign out</a>
+</header>
+<main id="log">
+  <div class="signin" id="signin" hidden>
+    <h2>Ursa Major assistant</h2>
+    <p>Ask about the Ursa Major cluster: what is running, why a job failed, which partition or module
+      to use. It can also plan job submissions; nothing runs until you press Approve.</p>
+    <p>Sign in with your UCR Google account. The assistant works as you on the cluster, with your
+      permissions and limits.</p>
+    <p><a class="b" href="/login">Sign in</a></p>
+  </div>
+</main>
+<form id="f" hidden>
+  <textarea id="q" placeholder="e.g. Why did my last job fail?  /  What's running on the cluster?" required></textarea>
+  <button id="send">Send</button>
+</form>
+<script>
+const log = document.getElementById('log'), q = document.getElementById('q'), send = document.getElementById('send');
+function el(tag, cls, text){const e=document.createElement(tag); if(cls) e.className=cls; if(text!==undefined) e.textContent=text; return e;}
+function scroll(){log.scrollTop = log.scrollHeight;}
+function say(cls, text, tools){
+  const m = el('div', 'msg '+cls, text);
+  if (tools && tools.length){ m.appendChild(el('div','tools','tools: '+tools.join(', '))); }
+  log.appendChild(m); scroll();
+}
+const shown = new Set();
+function plans(list){
+  for (const p of (list||[])){
+    if (shown.has(p.id)) continue; shown.add(p.id);
+    const s = p.summary || {}, box = el('div','plan');
+    box.appendChild(el('h3', null, 'Approve this ' + (s.action || p.tool) + '?'));
+    const t = el('table');
+    const rows = [['job', s.job_id || s.job_name], ['partition', s.partition], ['nodes', s.nodes],
+      ['time limit', s.time_limit], ['worst case', s.worst_case_usd !== undefined ? '$' + s.worst_case_usd : undefined],
+      ['spent today', s.committed_today_usd !== undefined ? '$' + s.committed_today_usd + ' of $' + s.day_cap_usd : undefined],
+      ['scheduler', s.scheduler_test], ['effect', s.effect], ['folder', s.remote_dir],
+      ['warnings', (s.warnings||[]).join('; ') || undefined], ['expires', p.expires_at]];
+    for (const [k,v] of rows){ if(v===undefined||v===null||v==='') continue; const r=el('tr'); r.appendChild(el('td',null,k)); r.appendChild(el('td',null,String(v))); t.appendChild(r); }
+    box.appendChild(t);
+    const btns = el('div','btns'), ok = el('button','approve','Approve'), no = el('button','reject','Reject');
+    btns.append(ok, no); box.appendChild(btns);
+    const decide = async (d) => {
+      ok.disabled = no.disabled = true;
+      const r = await fetch('/api/decide', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:p.id, decision:d})});
+      const j = await r.json();
+      btns.remove();
+      box.appendChild(el('div','done', d==='approve' ? (j.decision && j.decision.status==='done' ? 'Approved and done.' : 'Approved, but bifrost refused: see below.') : 'Rejected. Nothing was done.'));
+      if (j.reply) say('bot', j.reply, j.tools);
+      plans(j.pending);
+    };
+    ok.onclick = () => decide('approve'); no.onclick = () => decide('reject');
+    log.appendChild(box); scroll();
+  }
+}
+async function boot(){
+  const r = await fetch('/api/me'); const j = await r.json();
+  if (!j.signed_in){ document.getElementById('signin').hidden = false; return; }
+  document.getElementById('who').textContent = j.email;
+  document.getElementById('f').hidden = false; document.getElementById('logout').hidden = false; document.getElementById('newchat').hidden = false;
+  say('bot', 'Hi. Ask me about Ursa Major: running jobs, failures, partitions, modules, costs. I can plan a job submission for you; nothing runs until you press Approve.');
+  plans(j.pending);
+  q.focus();
+}
+document.getElementById('f').onsubmit = async (e) => {
+  e.preventDefault(); const text = q.value.trim(); if(!text) return;
+  say('you', text); q.value=''; send.disabled = true; send.textContent = '...';
+  try {
+    const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:text})});
+    const j = await r.json();
+    if (r.status === 401){ say('bot', 'Your sign-in expired. Reload the page to sign in again.'); return; }
+    if (j.error){ say('bot', 'Error: ' + j.error); return; }
+    say('bot', j.reply || '(no reply)', j.tools); plans(j.pending);
+  } catch(err){ say('bot', 'Network error: ' + err); }
+  finally { send.disabled = false; send.textContent = 'Send'; q.focus(); }
+};
+q.addEventListener('keydown', (e) => { if (e.key==='Enter' && !e.shiftKey){ e.preventDefault(); document.getElementById('f').requestSubmit(); }});
+document.getElementById('newchat').onclick = async () => { await fetch('/api/new',{method:'POST'}); location.reload(); };
+boot();
+</script>
+</body>
+</html>

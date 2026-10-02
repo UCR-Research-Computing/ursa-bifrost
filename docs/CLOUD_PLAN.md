@@ -172,6 +172,29 @@ which removes the propagation delay and the stored key entirely.
   asks before each billable or IAM change), docs/DEPLOY.md. Manual step: the
   Google OAuth client, because the IAP OAuth Admin API was shut down in March 2026.
 
+### 2.6 C4 status (v0.6.0): ursa-agent
+
+`agent/` (Python, Google ADK 2.11) is a Gemini agent with bifrost's 28 tools.
+
+- Model: `gemini-3.8-flash` through the UCR AI gateway with its own virtual key
+  `its-research-computing-ursa-agent` (Research Computing lab, $50 cap, 1M TPM / 300 RPM,
+  365 days), stored only in Secret Manager `ursa-agent-gateway-key`. Spend shows in Grafana
+  under that alias.
+- Identity: the agent is an ordinary OAuth client of bifrost (DCR + PKCE). People sign in
+  with Google on bifrost's page; the agent holds that person's bifrost token and passes it on
+  every MCP call (`header_provider`), so tiers, caps and the audit log are per person. The
+  agent's service account has no cluster or Vertex access.
+- Approval gate in code (`approval.py`): `*_confirm` tools are refused when the model calls
+  them (`before_tool_callback`); plan tokens are parked server-side and removed from what the
+  model sees (`after_tool_callback`). Only the person's Approve button (`POST /api/decide`)
+  or, over A2A, `POST /a2a/decide` with the same bearer token, sends the confirm. Verified
+  live: told "confirm it yourself", the model declined, and the token never reached it.
+- Surfaces: chat page `/`; A2A JSON-RPC at `/a2a/` with the agent card at
+  `/a2a/.well-known/agent-card.json` (public; security scheme = bifrost bearer). A2A calls
+  need a bifrost access token; C5 maps Gemini Enterprise's user token to one.
+- State: in memory. Scale to zero means sign in again and chats start fresh (acceptable for
+  v1; a persistent session store is a later step).
+
 ## 3. Architecture
 
 ```
