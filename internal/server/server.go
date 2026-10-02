@@ -178,6 +178,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/token", s.handleToken)
 	mux.HandleFunc("/revoke", s.handleRevoke)
 	mux.HandleFunc("/signout", s.handleSignout)
+	mux.HandleFunc("/whoami", s.handleWhoami)
 	// /healthz is reserved by Google's front end on run.app URLs (returns
 	// Google's 404), so the health check lives at /health; /healthz is kept for
 	// local runs.
@@ -290,4 +291,21 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 		return nil
 	}
 	return err
+}
+
+// handleWhoami tells a client (e.g. the ursa-agent web app) who its bearer
+// token belongs to: the email and tiers. It reveals nothing the token holder
+// could not learn by calling tools, and nothing about anyone else.
+func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
+	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || tok == "" {
+		s.challenge(w, "")
+		return
+	}
+	_, u, err := s.verifyAccess(tok)
+	if err != nil {
+		s.challenge(w, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"email": u.Email, "tiers": u.Tiers})
 }

@@ -82,3 +82,15 @@ the next token refresh and ends the session.
 - Hermes: `hermes mcp add ursa --url <service url>/mcp --auth oauth`, then
   `trust: untrusted` so destructive tools ask for approval.
 - Health check: `GET /health`. Google's front end answers `/healthz` itself on run.app.
+
+## ursa-agent (C4)
+
+1. Gateway key (once): `gateway-admin --json generate --user ursa-agent --role Staff --college ITS
+   --department "Research Computing" --pi "Chuck Forsyth" --pi-email <pi email> --lab "Research Computing"
+   --budget 50 --tpm 1000000 --rpm 300 --duration 365d`, then pipe the `key` field straight into
+   `gcloud secrets create ursa-agent-gateway-key --data-file=-` (never print it).
+2. `agent/deploy.sh plan`, then `agent/deploy.sh apply`. It creates the `ursa-agent` service account
+   (no cluster, no Vertex access), the session secret, builds and deploys
+   `https://ursa-agent-<project number>.us-central1.run.app`.
+3. Open the URL and sign in. The agent registers itself as a bifrost OAuth client on first use.
+

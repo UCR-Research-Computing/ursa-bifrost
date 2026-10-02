@@ -758,3 +758,24 @@ func TestSignoutEndsEveryClientsTokens(t *testing.T) {
 		t.Error("second client's token works after sign-out + restart")
 	}
 }
+
+func TestWhoami(t *testing.T) {
+	h := newHarness(t, twoUsers)
+	b, err := h.signIn("bob@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("GET", h.ts.URL+"/whoami", nil)
+	req.Header.Set("Authorization", "Bearer "+b["access_token"].(string))
+	r, _ := http.DefaultClient.Do(req)
+	var got map[string]any
+	_ = json.NewDecoder(r.Body).Decode(&got)
+	if r.StatusCode != 200 || got["email"] != "bob@ucr.edu" || fmt.Sprint(got["tiers"]) != "[R1]" {
+		t.Errorf("whoami: %d %v", r.StatusCode, got)
+	}
+	req2, _ := http.NewRequest("GET", h.ts.URL+"/whoami", nil)
+	req2.Header.Set("Authorization", "Bearer bfx_madeup")
+	if r2, _ := http.DefaultClient.Do(req2); r2.StatusCode != 401 {
+		t.Errorf("made-up token: %d", r2.StatusCode)
+	}
+}

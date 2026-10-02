@@ -562,3 +562,13 @@ exit code 127 without a log, and tailor the fix to the missing command (no bare
 `python` on the nodes: use python3 or `make PYTHON=python3`; mpirun needs
 `module load openmpi`; nvcc only on gpul4). Found live on job 302 (GADGET-4).
 
+### v0.5.5: GET /whoami
+Returns the email and tiers behind a bifrost access token (401 otherwise), so an
+OAuth client such as ursa-agent can show who is signed in and key its sessions.
+Reveals nothing the token holder cannot already learn by calling tools.
+
+### v0.6.0 (C4): ursa-agent
+Gemini agent (agent/, ADK) with a chat page and A2A, acting as the signed-in person through
+bifrost; approvals enforced in code. Model calls through the AI gateway with key
+its-research-computing-ursa-agent. See docs/CLOUD_PLAN.md section 2.6.
+
