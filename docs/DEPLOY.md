@@ -30,10 +30,14 @@ done in the console:
    `https://www.googleapis.com/auth/cloud-platform`. bifrost needs
    cloud-platform for the IAP tunnel and OS Login key import, and it has no
    narrower scope (CLOUD_PLAN.md section 6).
-3. Clients: Create client, type **Web application**. Authorized redirect URI:
-   `<service url>/oauth/google/callback` (add it after the first deploy prints the URL).
-4. Put the client ID in the config (`server.google_client_id`). Store the client
-   secret in Secret Manager: `gcloud secrets create bifrost-google-client-secret --data-file=-`.
+3. Clients: Create client, type **Web application**, and tick "This client will be used
+   by an AI-powered agent". Authorized redirect URIs:
+   `https://bifrost-mcp-<project number>.us-central1.run.app/oauth/google/callback`
+   (the Cloud Run URL is deterministic, so it is known before the first deploy) and
+   `http://localhost:8080/oauth/google/callback` for a local sign-in test. Download the JSON.
+4. Put the client ID in the config (`server.google_client_id`) and point `CLIENT_JSON`
+   in deploy/env at the downloaded file; deploy.sh loads the secret into Secret Manager
+   without printing it.
 
 ## Deploy
 
@@ -45,6 +49,7 @@ PROJECT=ucr-ursa-major-hpc-cluster
 REGION=us-central1
 CONFIG=$HOME/bifrost-deploy/config.yaml
 USERS=$HOME/bifrost-deploy/users.yaml
+CLIENT_JSON=$HOME/.config/secrets/google/bifrost-oauth-client.json
 EOF
 deploy/deploy.sh plan      # read-only: shows what is missing
 deploy/deploy.sh apply     # asks before each billable or IAM change
@@ -63,3 +68,17 @@ Sign out (deletes the stored Google token and SSH key):
 `curl -X POST -H "Authorization: Bearer <token>" <url>/signout`, or remove
 ursa-bifrost from https://myaccount.google.com/permissions. bifrost notices on
 the next token refresh and ends the session.
+
+## Live deployment (UCR, 2026-10-01)
+
+- Service: `bifrost-mcp`, us-central1, https://bifrost-mcp-125853442225.us-central1.run.app
+  (min 0 / max 1 instances, 1 vCPU, 512 MiB, gen2).
+- Service account `bifrost-mcp@ucr-ursa-major-hpc-cluster.iam.gserviceaccount.com`:
+  `secretAccessor` on the four bifrost secrets and `storage.objectUser` on
+  `gs://ucr-ursa-major-hpc-cluster-bifrost-data`. No compute, IAP or OS Login roles.
+- Verified live: Google sign-in (Internal app with the AI-agent flag), MCP over HTTP,
+  calls ran on the login node as the person who signed in (first call 3.5 s, then
+  0.1 s), audit in Cloud Logging names the person, the bucket holds only sealed records.
+- Hermes: `hermes mcp add ursa --url <service url>/mcp --auth oauth`, then
+  `trust: untrusted` so destructive tools ask for approval.
+- Health check: `GET /health`. Google's front end answers `/healthz` itself on run.app.

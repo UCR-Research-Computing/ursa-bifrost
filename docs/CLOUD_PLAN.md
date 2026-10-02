@@ -138,9 +138,9 @@ Option for later (needs a cluster change, not done): `enable-oslogin-certificate
 login node lets bifrost use `signSshPublicKey` short-lived certificates instead of profile keys,
 which removes the propagation delay and the stored key entirely.
 
-### 2.5 C2 status (v0.5.0)
+### 2.5 C2/C3 status (v0.5.1)
 
-`bifrost serve` (internal/server) is built and tested; it is not deployed yet.
+`bifrost serve` (internal/server) is built, tested and **deployed** on Cloud Run (C3 done 2026-10-01; see docs/DEPLOY.md "Live deployment"). Hermes uses it as its `ursa` MCP server.
 
 - MCP over Streamable HTTP at `/mcp` (stateless, JSON responses). A 401 includes
   `WWW-Authenticate: Bearer resource_metadata=...` for discovery.
