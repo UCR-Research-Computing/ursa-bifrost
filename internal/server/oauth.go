@@ -71,12 +71,13 @@ type refreshRec struct {
 	Expires  time.Time `json:"expires"`
 }
 
-// accessRec is a live bifrost access token (memory only; lost on restart, the
-// client refreshes).
+// accessRec is a live bifrost access token. It is cached in memory and also
+// sealed in the store, so tokens survive Cloud Run restarts and scale-to-zero
+// (some MCP clients ask for a new browser sign-in on a 401 instead of refreshing).
 type accessRec struct {
-	Email    string
-	ClientID string
-	Expires  time.Time
+	Email    string    `json:"email"`
+	ClientID string    `json:"client_id"`
+	Expires  time.Time `json:"expires"`
 }
 
 type authState struct {
@@ -506,9 +507,14 @@ func (s *Server) issue(w http.ResponseWriter, clientID, email string) {
 	if ttl <= 0 {
 		ttl = time.Hour
 	}
+	rec := accessRec{Email: email, ClientID: clientID, Expires: time.Now().Add(ttl)}
 	s.auth.mu.Lock()
-	s.auth.access[hashTok(at)] = accessRec{Email: email, ClientID: clientID, Expires: time.Now().Add(ttl)}
+	s.auth.access[hashTok(at)] = rec
 	s.auth.mu.Unlock()
+	if err := s.store.Put("access", hashTok(at), rec); err != nil {
+		oauthErr(w, 500, "server_error", "storing access token")
+		return
+	}
 	if err := s.store.Put("refresh", hashTok(rt), refreshRec{ClientID: clientID, Email: email, Expires: time.Now().Add(refreshTTL)}); err != nil {
 		oauthErr(w, 500, "server_error", "storing refresh token")
 		return
@@ -530,6 +536,7 @@ func (s *Server) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	s.auth.mu.Lock()
 	delete(s.auth.access, hashTok(t))
 	s.auth.mu.Unlock()
+	_ = s.store.Delete("access", hashTok(t))
 	_ = s.store.Delete("refresh", hashTok(t))
 	w.WriteHeader(200) // RFC 7009: always 200
 }
@@ -537,9 +544,7 @@ func (s *Server) handleRevoke(w http.ResponseWriter, r *http.Request) {
 // verifyAccess checks a bifrost access token and the user list (re-checked on
 // every request so removing someone takes effect immediately).
 func (s *Server) verifyAccess(tok string) (*accessRec, *User, error) {
-	s.auth.mu.Lock()
-	a, ok := s.auth.access[hashTok(tok)]
-	s.auth.mu.Unlock()
+	a, ok := s.lookupAccess(tok)
 	if !ok || time.Now().After(a.Expires) {
 		return nil, nil, errors.New("invalid or expired token")
 	}
@@ -548,6 +553,37 @@ func (s *Server) verifyAccess(tok string) (*accessRec, *User, error) {
 		return nil, nil, fmt.Errorf("%s is no longer allowed", a.Email)
 	}
 	return &a, u, nil
+}
+
+// lookupAccess finds an access token in memory, then in the sealed store
+// (after a restart), and caches it again.
+func (s *Server) lookupAccess(tok string) (accessRec, bool) {
+	if tok == "" {
+		return accessRec{}, false
+	}
+	h := hashTok(tok)
+	s.auth.mu.Lock()
+	a, ok := s.auth.access[h]
+	s.auth.mu.Unlock()
+	if ok {
+		return a, true
+	}
+	if found, err := s.store.Get("access", h, &a); err != nil || !found {
+		return accessRec{}, false
+	}
+	if time.Now().After(a.Expires) {
+		_ = s.store.Delete("access", h)
+		return accessRec{}, false
+	}
+	// a token loaded from the store is only good while the person is still
+	// signed in (sign-out deletes the session; in-memory copies are dropped then)
+	if found, _ := s.store.Get("session", a.Email, &session{}); !found {
+		return accessRec{}, false
+	}
+	s.auth.mu.Lock()
+	s.auth.access[h] = a
+	s.auth.mu.Unlock()
+	return a, true
 }
 
 // gc drops expired in-memory records.

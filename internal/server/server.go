@@ -223,9 +223,7 @@ func (s *Server) handleSignout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tok, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	s.auth.mu.Lock()
-	a, ok := s.auth.access[hashTok(tok)]
-	s.auth.mu.Unlock()
+	a, ok := s.lookupAccess(tok)
 	if !ok {
 		s.challenge(w, "")
 		return
@@ -250,6 +248,9 @@ func (s *Server) handleSignout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.auth.mu.Unlock()
+	_ = s.store.Delete("access", hashTok(tok))
+	// Other stored access/refresh tokens for this person are refused from now
+	// on: both paths require a live session record, deleted above.
 	s.audit("signout", a.Email, "allowed", "")
 	writeJSON(w, 200, map[string]string{"status": "signed out"})
 }

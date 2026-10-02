@@ -540,3 +540,11 @@ docs/CLOUD_PLAN.md section 2.5 and docs/DEPLOY.md. Not yet deployed.
 Live on Cloud Run (docs/DEPLOY.md). `/health` replaces `/healthz` on run.app.
 deploy.sh loads the OAuth client secret from the downloaded JSON and checks the
 client ID matches the config. Hermes uses the hosted server.
+
+### v0.5.2: tokens survive restarts
+Cloud Run scales to zero and redeploys start a new process; access tokens were
+memory-only, so every restart forced a new browser sign-in (Hermes asks for a
+sign-in on a 401 rather than refreshing). Access tokens are now also sealed in
+the store and reloaded on demand, and only while the person still has a session
+(sign-out still ends them).
+
