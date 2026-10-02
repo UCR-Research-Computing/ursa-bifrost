@@ -146,6 +146,15 @@ mutate "v07 sign ttl"             internal/staging/staging.go '	if ttl < time.Se
 mutate "v07 sign object"          internal/staging/staging.go '	if object == "" || strings.HasPrefix(object, "/") || strings.Contains(object, "..") {' '	if false {'
 mutate "v07 signature redaction"  internal/policy/redact.go '	{regexp.MustCompile(`(?i)(X-Goog-Signature=)[0-9a-f]{16,}`), "${1}[REDACTED]"},' ''
 mutate "v07 trace redaction"      internal/core/service.go '		t.cmds = append(t.cmds, policy.Redact(key))' '		t.cmds = append(t.cmds, key)'
+mutate "v071 ssh session slots"   internal/backend/iap.go '	release, err := b.acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()' ''
+mutate "v071 refused channel keeps conn" internal/backend/iap.go '			if errors.As(err, \&oce) {' '			if false \&\& errors.As(err, \&oce) {'
+mutate "v071 unreachable not missing" internal/core/files.go '	if errors.Is(err, backend.ErrUnreachable) {
+		return "", err // a transport problem, not a missing file
+	}' ''
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

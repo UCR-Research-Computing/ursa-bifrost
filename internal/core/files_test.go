@@ -657,3 +657,25 @@ func TestInteractiveHelp(t *testing.T) {
 }
 
 var _ = filepath.Join
+
+// TestUnreachableIsNotMissing: a connection failure while resolving a path is
+// reported as such, not as "does not exist" (live finding in the v0.7.0 burst).
+func TestUnreachableIsNotMissing(t *testing.T) {
+	s, fx := newTestService(t)
+	homeFixture(fx)
+	fx.Fail = map[string]string{"realpath": "x"}
+	s.Backend = unreachable{fx}
+	_, err := s.FilesList(context.Background(), FilesListInput{Path: "~/project"})
+	if err == nil || !errors.Is(err, backend.ErrUnreachable) || strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+type unreachable struct{ *backend.Fixture }
+
+func (u unreachable) Run(ctx context.Context, c backend.Command) ([]byte, error) {
+	if strings.HasPrefix(c.String(), "realpath") {
+		return nil, fmt.Errorf("%w: connection reset", backend.ErrUnreachable)
+	}
+	return u.Fixture.Run(ctx, c)
+}
