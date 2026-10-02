@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Document | Specification and design (draft for decision) |
-| Status | v0.8.0, 2026-10-02. Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), ursa-agent chat on top. Sections 17-19 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
+| Status | v0.8.1, 2026-10-02. Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), ursa-agent chat on top. Sections 17-19 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -895,3 +895,16 @@ Slurm, refuses no-core scripts there (script_check error, job_submit blocked, in
 a partition override), and prices only the share of the node a job holds. Spent costs use the
 share Slurm allocated, so they are unchanged on today's exclusive cluster. The mutation check
 found two guards no test covered (the core cap and the jobs_list row cap); both now have tests.
+
+### v0.8.1: first day on shared nodes
+The cluster went shared on 2026-10-02 (standard, computehigh, nvmescratch, spot and the new
+lab partition report `OverSubscribe=NO`; highmem and gpul4 `EXCLUSIVE`). bifrost switched
+over on its own. Live checks found three wording and parsing bugs, fixed here:
+- The no-core error read "this script 1 core and about 4 GB": it dropped the verb. It now says
+  "this script asks for no cores, so Slurm gives it 1 core and about 4 GB on computehigh".
+- `script_check` treated `module load` inside a comment as a real load, so the site's
+  GROMACS example ("# GPU build: module load gromacs/<version>-cuda on the gpul4 partition")
+  failed with two "module not found" errors. Comment lines are skipped.
+- The srun, pip, bare-python and `apptainer --nv` checks also read comments, so a
+  commented-out GPU alternative warned "apptainer --nv on a partition without GPUs". They
+  read code only now.
