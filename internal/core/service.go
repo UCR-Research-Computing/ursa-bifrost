@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +41,23 @@ func New(cfg config.Config) (*Service, error) {
 	switch cfg.Backend {
 	case "fixture":
 		be = &backend.Fixture{Dir: cfg.FixturesDir, User: firstNonEmpty(cfg.ClusterUser, "alice_ucr_edu"), Logs: map[string]string{}}
+	case "iap":
+		ic := cfg.IAP
+		tc := ic.TokenCommand
+		if len(tc) == 0 {
+			tc = []string{"gcloud", "auth", "print-access-token"}
+		}
+		email := ic.Email
+		if email == "" {
+			out, err := exec.Command("gcloud", "config", "get-value", "account").Output()
+			if err != nil {
+				return nil, fmt.Errorf("iap backend: set iap.email (gcloud not available: %v)", err)
+			}
+			email = strings.TrimSpace(string(out))
+		}
+		be = &backend.IAP{Project: ic.Project, Zone: ic.Zone, Instance: ic.Instance, Email: email,
+			Token: backend.CommandToken(tc), HostKeys: ic.HostKeys, Idle: time.Duration(ic.IdleMinutes) * time.Minute,
+			Keys: backend.FileKeyStore{Dir: config.Expand("~/.local/share/ursa-bifrost/iap-keys")}}
 	default:
 		be = backend.NewSSH(cfg.SSH)
 	}
@@ -52,6 +70,14 @@ func New(cfg config.Config) (*Service, error) {
 		Limiter: policy.NewLimiter(cfg.Limits.CallsPerMin),
 		Now:     time.Now, cache: map[string]cacheEntry{},
 	}, nil
+}
+
+// Close releases backend resources (the IAP backend deletes its OS Login key).
+func (s *Service) Close() error {
+	if c, ok := s.Backend.(interface{ Close() error }); ok {
+		return c.Close()
+	}
+	return nil
 }
 
 // ---- envelope -------------------------------------------------------------------

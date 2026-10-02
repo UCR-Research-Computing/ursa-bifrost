@@ -19,6 +19,19 @@ type GCloud struct {
 	Project  string `yaml:"project"`
 }
 
+// IAPConfig is the login node reached with per-user IAP + OS Login (no gcloud
+// binary). Token comes from TokenCommand (laptop: `gcloud auth
+// print-access-token`) or, in the HTTP server, from the signed-in user.
+type IAPConfig struct {
+	Project      string   `yaml:"project"`
+	Zone         string   `yaml:"zone"`
+	Instance     string   `yaml:"instance"`
+	Email        string   `yaml:"email,omitempty"`         // laptop mode: whose token; default `gcloud config get-value account`
+	TokenCommand []string `yaml:"token_command,omitempty"` // laptop mode
+	HostKeys     []string `yaml:"host_keys,omitempty"`     // pinned login-node host keys (authorized_keys format)
+	IdleMinutes  int      `yaml:"idle_minutes,omitempty"`
+}
+
 // SSH says how to reach the login node. Exactly one of GCloud or Host is used.
 type SSH struct {
 	GCloud         *GCloud `yaml:"gcloud,omitempty"`
@@ -59,9 +72,10 @@ type Caps struct {
 type Config struct {
 	Cluster     string             `yaml:"cluster"`
 	ClusterUser string             `yaml:"cluster_user,omitempty"` // default: `id -un` on the login node
-	Backend     string             `yaml:"backend"`                // ssh | fixture
+	Backend     string             `yaml:"backend"`                // ssh | iap | fixture
 	FixturesDir string             `yaml:"fixtures_dir,omitempty"`
 	SSH         SSH                `yaml:"ssh"`
+	IAP         IAPConfig          `yaml:"iap"`
 	CatalogPath string             `yaml:"catalog_path"`
 	LogRoots    []string           `yaml:"log_roots"` // allowed log prefixes; {user} expands
 	Costs       map[string]float64 `yaml:"usd_per_node_hour,omitempty"`
@@ -173,8 +187,12 @@ func (c Config) Validate() error {
 		if c.FixturesDir == "" {
 			return errors.New("config: fixture backend needs fixtures_dir")
 		}
+	case "iap":
+		if c.IAP.Project == "" || c.IAP.Zone == "" || c.IAP.Instance == "" {
+			return errors.New("config: iap backend needs iap.project, iap.zone and iap.instance")
+		}
 	default:
-		return fmt.Errorf("config: unknown backend %q (ssh or fixture)", c.Backend)
+		return fmt.Errorf("config: unknown backend %q (ssh, iap or fixture)", c.Backend)
 	}
 	if c.JobsRoot != "bifrost-jobs" {
 		return errors.New("config: jobs_root must be bifrost-jobs (other folders are not supported yet)")

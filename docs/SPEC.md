@@ -522,6 +522,7 @@ backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, 
 |---|---|---|
 | 2026-10-01 | Draft 1 | Spec and design (as `hpc-agent`) |
 | 2026-10-01 | Draft 2 / v0.1.0 | Renamed `ursa-bifrost`; P1 built and verified live; section 17 added |
+| 2026-10-01 | v0.4.0 | C1: `backend: iap` (per-user IAP + OS Login in Go, no gcloud per connection, pinned host key, per-user key reuse); see docs/CLOUD_PLAN.md 2.4 |
 | 2026-10-01 | v0.3.2 | Slurm NO_VAL timestamps (year 2106) treated as unset |
 | 2026-10-01 | v0.3.3 | script_check: a package built for several MPIs (hdf5, fftw) is satisfied by whichever MPI is loaded; the error lists every choice. Found by the GADGET-4 pilot (job 305: openmpi + hdf5/fftw flagged as needing mpich, yet ran fine) |
 | 2026-10-01 | v0.3.1 | Live test campaign: cross-process token lock, redaction order, booting nodes not down, day-cap release on cancel-before-start, elapsed display |

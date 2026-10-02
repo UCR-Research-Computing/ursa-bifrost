@@ -115,6 +115,29 @@ slurmrestd would make reads faster and give structured submit, but it would not 
 identity story better; it makes it worse, because it moves "who is this user" from Google into
 our code. Since we run the cluster, we can turn it on any time if speed matters (section 7).
 
+### 2.4 C1 findings (live, 2026-10-01)
+
+Built as `backend.IAP` (`internal/backend/iap.go`), selectable on the laptop with
+`backend: iap`. What live testing changed from the prototype:
+
+| Finding | Change |
+|---|---|
+| The login node caches a user's OS Login key list. A key imported seconds after a lookup is rejected for ~5-30 s (plain OpenSSH shows the same). One fresh key per connection made cold calls 7-30 s, sometimes failing. | One key per user, 8 h OS Login expiry, reused across connections and processes (laptop: `~/.local/share/ursa-bifrost/iap-keys/`, 0600; server: encrypted store). Replaced 10 min before expiry; the old one is deleted. `Revoke` removes it (sign-out, user removed). OS Login expires it even if bifrost never runs again. |
+| Key id is sha256 of the full imported line (comment included); the blob hash returns 200 and deletes nothing. | `keyID(line)`; import is refused if the key is not found under that id. |
+| Parallel calls each imported a key. | Single-flight connection setup. |
+| `x/crypto/ssh` writes stdout and stderr from two goroutines; a shared buffer raced. | Locked writer for merged output. |
+| A connection lost mid-command must not re-run a state-changing command. | Write commands are never retried; the error says to check state first. |
+| Host keys are not in guest attributes on this image. | Pinned from `/etc/ssh/ssh_host_*_key.pub` (config `iap.host_keys`). |
+
+Measured with key reuse: first call ~2.5 s (import + tunnel + handshake), later calls
+1.8-4.4 s each as separate CLI processes (tunnel + handshake ~1 s, then the command; sacct
+dominates `jobs`). Within one process (the server) calls reuse the open SSH connection:
+~0.2 s plus command time.
+
+Option for later (needs a cluster change, not done): `enable-oslogin-certificates=TRUE` on the
+login node lets bifrost use `signSshPublicKey` short-lived certificates instead of profile keys,
+which removes the propagation delay and the stored key entirely.
+
 ## 3. Architecture
 
 ```

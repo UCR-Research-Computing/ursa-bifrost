@@ -129,6 +129,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stdout, stderr, g, err)
 	}
+	defer func() { _ = svc.Close() }() // iap backend: delete the OS Login key
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

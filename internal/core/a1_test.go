@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -489,5 +490,42 @@ func TestNoValTimestamps(t *testing.T) {
 	}
 	if ts(1790875000) == "" {
 		t.Error("real time hidden")
+	}
+}
+
+// TestStateLockIsHonored proves the A1 state file lock works across processes
+// deterministically: another holder of the flock (as a second bifrost process
+// would be) blocks a confirm until it lets go. The parallel-process race test
+// in cmd/bifrost only catches a missing lock some of the time.
+func TestStateLockIsHonored(t *testing.T) {
+	s, _ := a1Service(t)
+	ctx := context.Background()
+	p, err := s.PrepareSubmit(ctx, SubmitInput{Script: goodScript})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(s.statePath()+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := s.ConfirmSubmit(ctx, p.Token); done <- err }()
+	select {
+	case err := <-done:
+		t.Fatalf("confirm ran while another process held the state lock (err=%v)", err)
+	case <-time.After(400 * time.Millisecond):
+	}
+	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("confirm after unlock: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("confirm still blocked after the lock was released")
 	}
 }
