@@ -31,6 +31,7 @@ import (
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/config"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/core"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/mcpserver"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/server"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/version"
 )
 
@@ -56,6 +57,7 @@ Usage:
   bifrost submit <script.sh|-> [--partition P] [--nodes N] [--time T] [--name J] [--yes]   (A1)
   bifrost cancel|hold|release <id> [--yes]                      (A1)
   bifrost confirm <token>                  confirm a prepared action (A1)
+  bifrost serve                       hosted MCP server (HTTP + Google sign-in; see docs/CLOUD_PLAN.md)
   bifrost config init|show|path
   bifrost doctor                           check config, SSH and the catalog
   bifrost version
@@ -124,6 +126,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	cfg, err := config.Load(g.config)
 	if err != nil {
 		return fail(stdout, stderr, g, err)
+	}
+	if cmd == "serve" {
+		return serveCmd(cfg, stderr)
 	}
 	svc, err := core.New(cfg)
 	if err != nil {
@@ -544,4 +549,48 @@ func fail(stdout, stderr io.Writer, g globals, err error) int {
 		fmt.Fprintln(stderr, "bifrost:", err)
 	}
 	return 1
+}
+
+// serveCmd runs the hosted MCP server. Secrets come from environment variables
+// named in the config (Cloud Run: Secret Manager), never from the file.
+func serveCmd(cfg config.Config, stderr io.Writer) int {
+	sc := cfg.Server
+	secret := os.Getenv(firstNonEmptyStr(sc.SecretKeyEnv, "BIFROST_SECRET_KEY"))
+	gsecret := os.Getenv(firstNonEmptyStr(sc.GoogleClientSecretEnv, "BIFROST_GOOGLE_CLIENT_SECRET"))
+	if secret == "" || gsecret == "" || sc.GoogleClientID == "" {
+		fmt.Fprintln(stderr, "bifrost serve: needs server.google_client_id plus the secret key and Google client secret in the environment")
+		return 2
+	}
+	if cfg.Backend != "iap" {
+		fmt.Fprintln(stderr, "bifrost serve: backend must be iap (each user reaches the cluster with their own Google identity)")
+		return 2
+	}
+	srv, err := server.New(cfg, server.NewGoogle(sc.GoogleClientID, gsecret), secret)
+	if err != nil {
+		fmt.Fprintln(stderr, "bifrost serve:", err)
+		return 1
+	}
+	addr := sc.Listen
+	if p := os.Getenv("PORT"); p != "" {
+		addr = ":" + p
+	}
+	if addr == "" {
+		addr = ":8080"
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := srv.Run(ctx, addr); err != nil {
+		fmt.Fprintln(stderr, "bifrost serve:", err)
+		return 1
+	}
+	return 0
+}
+
+func firstNonEmptyStr(v ...string) string {
+	for _, s := range v {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
 }

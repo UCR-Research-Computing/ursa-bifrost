@@ -1,0 +1,6 @@
+.git
+prototypes
+testdata
+*.md
+!go.mod
+dist

@@ -25,9 +25,23 @@ type Service struct {
 	Limiter *policy.Limiter
 	Now     func() time.Time
 
+	// Principal is who the audit log names as the caller (server: the
+	// signed-in Google email). Empty = the local OS user.
+	Principal string
+	// Remote is set by the HTTP server: results cannot be downloaded to the
+	// server's own disk.
+	Remote bool
+
 	mu    sync.Mutex
 	cache map[string]cacheEntry
 	user  string
+}
+
+// NewService builds a Service around an existing backend and audit log (the
+// HTTP server makes one per signed-in user and shares one audit log).
+func NewService(cfg config.Config, be backend.Backend, audit *policy.Audit) *Service {
+	return &Service{Cfg: cfg, Backend: be, Audit: audit,
+		Limiter: policy.NewLimiter(cfg.Limits.CallsPerMin), Now: time.Now, cache: map[string]cacheEntry{}}
 }
 
 type cacheEntry struct {
@@ -261,7 +275,7 @@ func Call[T any](ctx context.Context, s *Service, client, tool, tier string, arg
 	fn func(ctx context.Context) (T, error)) (Result[T], error) {
 	start := s.Now()
 	ctx, t := withTrace(ctx)
-	rec := policy.Record{Time: start, Caller: localUser(), Client: client, Tool: tool, Args: args}
+	rec := policy.Record{Time: start, Caller: firstNonEmpty(s.Principal, localUser()), Client: client, Tool: tool, Args: args}
 	finish := func(decision string, err error, n int) {
 		rec.Decision = decision
 		if err != nil {

@@ -138,6 +138,40 @@ Option for later (needs a cluster change, not done): `enable-oslogin-certificate
 login node lets bifrost use `signSshPublicKey` short-lived certificates instead of profile keys,
 which removes the propagation delay and the stored key entirely.
 
+### 2.5 C2 status (v0.5.0)
+
+`bifrost serve` (internal/server) is built and tested; it is not deployed yet.
+
+- MCP over Streamable HTTP at `/mcp` (stateless, JSON responses). A 401 includes
+  `WWW-Authenticate: Bearer resource_metadata=...` for discovery.
+- bifrost is the OAuth 2.1 authorization server: RFC 9728 protected-resource
+  metadata, RFC 8414 AS metadata, RFC 7591 dynamic client registration (public
+  clients, https or loopback redirects only), authorization code with PKCE
+  S256 (required), single-use 5-minute codes, rotating refresh tokens bound to
+  the client, RFC 7009 revocation, rate limits on register and token.
+- Sign-in hands off to Google (openid, email, cloud-platform, `hd=ucr.edu`,
+  PKCE). The ID token is verified against Google's keys (RS256, issuer,
+  audience, expiry, verified email, hosted domain). The person must be on
+  `users.yaml`, which is checked on every request, so removing someone takes
+  effect immediately.
+- No token passthrough. bifrost tokens never go to Google and Google tokens
+  never go to clients. The Google refresh token and each person's SSH key are
+  sealed with AES-256-GCM, with the record kind and owner as associated data so
+  a record cannot be swapped into another slot, and stored as 0600 files.
+- Per person: their own tiers (the MCP server only lists the tools they may
+  use), caps, ledger file and IAP backend with their own Google token. The
+  audit log names the person. `job_results` download is off on the server.
+- Sign-out (`POST /signout`) deletes the Google token and the SSH key from the
+  store and from OS Login. Revoking access in the Google account ends the
+  session on the next refresh.
+- Tests: fake Google (RS256 ID tokens, refresh, revocation), the full OAuth
+  flow with a real MCP client, two users kept apart, removal and tier changes,
+  code, PKCE, redirect and ID-token attacks, sealed storage. The mutation
+  check covers 13 server guards.
+- Deploy: Dockerfile (distroless, static), deploy/deploy.sh (plan/apply,
+  asks before each billable or IAM change), docs/DEPLOY.md. Manual step: the
+  Google OAuth client, because the IAP OAuth Admin API was shut down in March 2026.
+
 ## 3. Architecture
 
 ```
