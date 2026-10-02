@@ -535,3 +535,8 @@ backend (P4); Nexus joins (Q9); `squeue --start` estimates (constructor exists, 
 `bifrost serve`: MCP over HTTP with OAuth through Google sign-in. Each person
 reaches the cluster with their own identity, tiers, caps and ledger; see
 docs/CLOUD_PLAN.md section 2.5 and docs/DEPLOY.md. Not yet deployed.
+
+### v0.5.1 (C3): deployed
+Live on Cloud Run (docs/DEPLOY.md). `/health` replaces `/healthz` on run.app.
+deploy.sh loads the OAuth client secret from the downloaded JSON and checks the
+client ID matches the config. Hermes uses the hosted server.

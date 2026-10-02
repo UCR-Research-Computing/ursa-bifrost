@@ -178,9 +178,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/token", s.handleToken)
 	mux.HandleFunc("/revoke", s.handleRevoke)
 	mux.HandleFunc("/signout", s.handleSignout)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	// /healthz is reserved by Google's front end on run.app URLs (returns
+	// Google's 404), so the health check lives at /health; /healthz is kept for
+	// local runs.
+	health := func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "version": version.Version})
-	})
+	}
+	mux.HandleFunc("/health", health)
+	mux.HandleFunc("/healthz", health)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)

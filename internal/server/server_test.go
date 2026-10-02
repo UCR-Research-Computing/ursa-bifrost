@@ -326,6 +326,9 @@ users:
 
 func TestDiscoveryAndChallenge(t *testing.T) {
 	h := newHarness(t, twoUsers)
+	if r, _ := http.Get(h.ts.URL + "/health"); r.StatusCode != 200 {
+		t.Errorf("/health: %d", r.StatusCode)
+	}
 	resp, _ := http.Post(h.ts.URL+"/mcp", "application/json", strings.NewReader(`{}`))
 	if resp.StatusCode != 401 || !strings.Contains(resp.Header.Get("WWW-Authenticate"), "/.well-known/oauth-protected-resource") {
 		t.Fatalf("challenge: %d %q", resp.StatusCode, resp.Header.Get("WWW-Authenticate"))
