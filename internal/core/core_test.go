@@ -395,3 +395,77 @@ func TestModules(t *testing.T) {
 		t.Error("no pytorch recipe")
 	}
 }
+
+// The site's Lmod is hierarchical: hdf5/fftw only exist once an MPI is loaded.
+// module_show used to fail with "bash exited 1: no error text" for them (found
+// live 2026-10-01 on hdf5/1.14.6 and fftw).
+func TestModuleShowLoadsMPIFirst(t *testing.T) {
+	s, fx := newTestService(t)
+	fx.MPIOnly = []string{"hdf5", "fftw"}
+	ctx := context.Background()
+	r, err := s.ModuleShow(ctx, "hdf5/1.14.6", "")
+	if err != nil {
+		t.Fatalf("hdf5: %v", err)
+	}
+	if r.LoadedFirst != "openmpi" {
+		t.Errorf("loaded first %q, want openmpi (the default when the package is built for it)", r.LoadedFirst)
+	}
+	last := fx.Calls[len(fx.Calls)-1]
+	if !strings.Contains(last, "module load openmpi") || !strings.Contains(last, "module -t show hdf5/1.14.6") {
+		t.Errorf("command %q", last)
+	}
+	if len(r.BuiltFor) != 3 || len(r.Notes) == 0 || r.Show == "" {
+		t.Errorf("result %+v", r)
+	}
+	// a chosen build
+	r, err = s.ModuleShow(ctx, "fftw", "mpich")
+	if err != nil || r.LoadedFirst != "mpich" || !strings.Contains(fx.Calls[len(fx.Calls)-1], "module load mpich") {
+		t.Errorf("fftw under mpich: %+v %v", r, err)
+	}
+	// an MPI the package is not built for is refused before anything runs
+	n := len(fx.Calls)
+	if _, err := s.ModuleShow(ctx, "hdf5/1.14.6", "openmpi-fake"); err == nil || len(fx.Calls) != n {
+		t.Errorf("unknown mpi accepted: %v", err)
+	}
+	if _, err := s.ModuleShow(ctx, "gcc/13.5.0", "openmpi"); err == nil {
+		t.Error("mpi accepted for a core module")
+	}
+	// a core module is shown plainly
+	r, err = s.ModuleShow(ctx, "gcc/13.5.0", "")
+	if err != nil || r.LoadedFirst != "" || strings.Contains(fx.Calls[len(fx.Calls)-1], "module load") {
+		t.Errorf("core module: %+v %v", r, err)
+	}
+	// without the catalog a chosen mpi cannot be checked: say so, never guess
+	fx.Fail = map[string]string{"cat": "No such file or directory"}
+	s.cache = map[string]cacheEntry{}
+	if _, err := s.ModuleShow(ctx, "fftw", "mpich"); err == nil || !strings.Contains(err.Error(), "cannot check") {
+		t.Errorf("no catalog: %v", err)
+	}
+	fx.Fail = nil
+	s.cache = map[string]cacheEntry{}
+	// an unknown module gets a real message, not "no error text"
+	fx.MPIOnly = []string{"nosuchpkg"}
+	if _, err := s.ModuleShow(ctx, "nosuchpkg", ""); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("unknown module error: %v", err)
+	}
+}
+
+func TestJobsListDefaultPage(t *testing.T) {
+	s, _ := newTestService(t)
+	s.Cfg.Limits.ListRows = 200
+	all, err := s.JobsList(context.Background(), JobsListInput{Since: "now-30days", Limit: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) == 0 {
+		t.Fatal("no jobs in fixture")
+	}
+	if DefaultJobRows != 50 {
+		t.Errorf("default page %d", DefaultJobRows)
+	}
+	s.Cfg.Limits.ListRows = 3 // the config cap still wins over the default
+	got, _ := s.JobsList(context.Background(), JobsListInput{Since: "now-30days"})
+	if len(got) != 3 {
+		t.Errorf("cap 3: got %d", len(got))
+	}
+}

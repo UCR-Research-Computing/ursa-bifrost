@@ -37,6 +37,9 @@ type JobSummary struct {
 }
 
 // JobsListInput selects jobs.
+// DefaultJobRows is how many jobs a list returns when the caller gives no limit.
+const DefaultJobRows = 50
+
 type JobsListInput struct {
 	User  string // "" = caller
 	All   bool   // every user (R2)
@@ -56,7 +59,11 @@ func (s *Service) JobsList(ctx context.Context, in JobsListInput) ([]JobSummary,
 		in.Since = "now-7days"
 	}
 	limit := in.Limit
-	if limit <= 0 || limit > s.Cfg.Limits.ListRows {
+	if limit <= 0 {
+		// a default page, not the cap: 200 rows of a busy week was ~70 KB per call
+		limit = min(DefaultJobRows, s.Cfg.Limits.ListRows)
+	}
+	if limit > s.Cfg.Limits.ListRows {
 		limit = s.Cfg.Limits.ListRows
 	}
 	var qc, ac backend.Command

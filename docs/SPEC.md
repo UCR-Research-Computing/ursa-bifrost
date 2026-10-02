@@ -171,7 +171,7 @@ fields the assistant would read as instructions.
 |---|---|---|
 | `cluster_status` | none | Per partition: nodes by state (allocated, idle, powered-down, down, drained), queue depth pending/running, recent stockouts |
 | `partitions` | none | Limits, CPUs, memory, GPUs, max time, default partition, $/node-hour (from config) |
-| `jobs_list` | `state?`, `since?`, `limit?` | Caller's jobs: id, name, partition, state, reason, elapsed, nodes |
+| `jobs_list` | `state?`, `since?`, `limit?` | Caller's jobs: id, name, partition, state, reason, elapsed, nodes. 50 rows unless `limit` is given (cap 200 from config) |
 | `job_show` | `job_id` | Merged `scontrol` + `sacct`: request vs use (CPU efficiency, max RSS vs requested memory), exit code, signal, node list, timings |
 | `job_explain` | `job_id` | Deterministic diagnosis: `findings[]` with rule id, evidence and suggestion (section 8) |
 | `job_pending_reason` | `job_id` | Slurm reason decoded into plain words, estimated start (`--test-only` style), what would make it start sooner |
@@ -184,7 +184,7 @@ fields the assistant would read as instructions.
 | `env_check` | `modules[]`, `commands[]` | Loads modules on the login node and reports whether each loads, the resulting module list, and which `python3`, `gcc`, `mpirun`... you get, with versions (section 18.4) |
 | `interactive_help` | `partition`, `nodes?`, `cpus?`, `gpus?`, `time`, `memory?` | The exact `salloc`/`srun --pty` command for an interactive session, its hourly cost and how to reach the login node. Runs nothing (section 18.4) |
 | `modules_search` | `query` | Matching modules and versions; GPU/MPI variants flagged |
-| `module_show` | `name` | What the module sets (paths, dependencies, prerequisites) |
+| `module_show` | `name`, `mpi?` | What the module sets (paths, dependencies, prerequisites). MPI-built packages (hdf5, fftw, petsc...) exist only under an MPI in the site's hierarchical Lmod, so they are shown after `module load <mpi>` (openmpi by default, or the `mpi` given); the answer names the MPI loaded and every build available |
 | `recipes` | `query` | Known-good install recipes (from deep-research's install ladder and lessons) |
 | `script_check` | `script` | Static check of a batch script against the cluster: partition exists, limits fit, modules exist, GPU request matches partition, login-node misuse patterns. No submission |
 | `my_usage` | `period` | Caller's node-hours and estimated cost by partition |
@@ -198,7 +198,7 @@ fields the assistant would read as instructions.
 | `usage_report` | `group_by=user|account|partition|lab`, `period` | Node-hours, CPU-hours, GPU-hours, estimated cost; optional join to Nexus labs/grants (read only) |
 | `waste_report` | `period`, `threshold?` | Jobs with low CPU or memory efficiency, idle allocated nodes, long-idle warm workers, oversized requests |
 | `health` | none | Down/drained nodes with reasons, stockouts, backlog trend, stuck jobs (running far past typical) |
-| `ticket_draft` | `job_id`, `ticket_text?` | Ticket-ready summary: what happened, evidence, suggested fix, a reply draft. Never posted anywhere by the server |
+| `ticket_draft` | `job_id`, `ticket_text?` | Ticket-ready summary: what happened, evidence, suggested fix, a reply draft. A job that COMPLETED with exit code 0 and no error findings is reported as a success (the reply asks which output was unexpected), not as an unmatched failure. Never posted anywhere by the server |
 
 ### 7.3 Act tier A1 (own jobs, approval required)
 
@@ -624,6 +624,7 @@ for a shell from an assistant: disk space, browsing their files, checking a modu
 | Date | Version | Change |
 |---|---|---|
 | 2026-10-01 | Draft 1 | Spec and design (as `hpc-agent`) |
+| 2026-10-02 | v0.7.2 | Fixes from the 2026-10-01 tool sweep: `module_show` loads the package's MPI first (hierarchical Lmod; hdf5/fftw failed with "bash exited 1: no error text") and reports a real "not found"; `ticket_draft` calls a COMPLETED, exit-0 job a success instead of "could not match the failure" (job 307); `jobs_list` defaults to 50 rows (200-row default answers were ~70 KB). Six new mutation guards |
 | 2026-10-02 | v0.7.1 | SSH session limit: at most 8 commands at once per person's connection (login node MaxSessions is 10); a refused channel is retried without dropping the connection; transport errors no longer read as "does not exist". Found by a 30-call parallel burst (9 failed on v0.7.0) |
 | 2026-10-02 | v0.7.0 | Section 18: staged inputs pulled by the job, signed download links, paging for results/reads/logs, helper tools (storage_usage, files_list, files_read, env_check, interactive_help); no shell tool |
 | 2026-10-01 | Draft 2 / v0.1.0 | Renamed `ursa-bifrost`; P1 built and verified live; section 17 added |
@@ -688,3 +689,18 @@ Gemini agent (agent/, ADK) with a chat page and A2A, acting as the signed-in per
 bifrost; approvals enforced in code. Model calls through the AI gateway with key
 its-research-computing-ursa-agent. See docs/CLOUD_PLAN.md section 2.6.
 
+
+### v0.7.2: fixes from the tool sweep
+Found by touching every hosted tool on 2026-10-01 (v0.5.x) and re-checked on v0.7.1:
+- `module_show hdf5/1.14.6` (and `fftw`) failed with "bash exited 1: no error text". The
+  site's Lmod is hierarchical: MPI-built packages are only in the module path after an MPI
+  is loaded, and Lmod's warning went to the discarded stream. `module_show` now loads the
+  package's MPI first, from the catalog's `mpi_dependent` lists (openmpi when the package
+  is built for it, or the `mpi` argument, which must be one of its builds), says which MPI
+  it loaded and which builds exist, and turns Lmod's "Failed to find" into a plain "not
+  found" pointing at `modules_search`. CLI: `bifrost module [--mpi mpich] hdf5`.
+- `ticket_draft` on job 307 (COMPLETED, exit 0, a passing 3-hour run) wrote "I could not
+  match the failure to a known cause". A COMPLETED exit-0 job with no error findings is now
+  summarised as a success, and the reply asks which output was missing or unexpected.
+- `jobs_list` with no `limit` returned the 200-row cap (~70 KB). The default page is now
+  50 rows; `limit` still goes up to the configured cap.

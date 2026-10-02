@@ -34,6 +34,7 @@ bifrost job show 236              merged squeue + sacct record, efficiency, step
 bifrost job explain 236           deterministic diagnosis with evidence and a fix
 bifrost job log 236 [--stderr]    redacted log window (--start N to page, --grep RE to search)
 bifrost modules lammps            module search (versions, MPI prerequisite, GPU builds)
+bifrost module hdf5/1.14.6        what a module sets (MPI-built ones shown under their MPI; --mpi mpich)
 bifrost recipes pytorch           known-good recipes from the cluster catalog
 bifrost check job.sbatch          static check of a batch script + worst-case cost
 bifrost usage --since now-30days  node-hours, core-hours, efficiency, estimated cost

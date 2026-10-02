@@ -650,20 +650,84 @@ func loadedBefore(lines []string, mpi string) bool {
 
 // ---- modules ---------------------------------------------------------------------
 
-// ModuleShow returns what a module sets (Lmod output, trusted site content).
-func (s *Service) ModuleShow(ctx context.Context, name string) (string, error) {
-	c, err := backend.ModuleShow(name)
+// ModuleShowResult is what module_show returns.
+type ModuleShowResult struct {
+	Module string `json:"module"`
+	// LoadedFirst is the MPI module loaded before `module show` (MPI-built
+	// packages are only visible under an MPI); empty for core modules.
+	LoadedFirst string `json:"loaded_first,omitempty"`
+	// BuiltFor lists every `module load ...` under which the package exists.
+	BuiltFor []string `json:"built_for,omitempty"`
+	Show     string   `json:"show"`
+	Notes    []string `json:"notes,omitempty"`
+}
+
+// ModuleShow returns what a module sets (Lmod output, trusted site content). On this
+// cluster's hierarchical Lmod tree, packages built with MPI (hdf5, fftw, petsc...) are
+// invisible until an MPI is loaded, so ModuleShow loads one first: the requested mpi
+// when given (it must be one the package is built for), else openmpi when the package
+// is built for it, else the first choice.
+func (s *Service) ModuleShow(ctx context.Context, name, mpi string) (*ModuleShowResult, error) {
+	res := &ModuleShowResult{Module: name}
+	cat, cerr := s.Catalog(ctx) // optional for a plain show
+	if cerr != nil && mpi != "" {
+		// cannot check the choice without the catalog; never guess
+		return nil, fmt.Errorf("cannot check which MPI builds %s has: %w", name, cerr)
+	}
+	var choices []string
+	if cat != nil {
+		for _, r := range cat.ModuleRequires(name) {
+			choices = append(choices, strings.TrimSpace(strings.TrimPrefix(r, "module load ")))
+		}
+	}
+	for _, c := range choices {
+		res.BuiltFor = append(res.BuiltFor, "module load "+c)
+	}
+	switch {
+	case mpi != "":
+		ok := false
+		for _, c := range choices {
+			if c == mpi || strings.HasPrefix(c, mpi+"/") || strings.HasPrefix(mpi, c+"/") {
+				ok = true
+			}
+		}
+		if !ok {
+			if len(choices) == 0 {
+				return nil, fmt.Errorf("%s is not built against an MPI; call module_show without mpi", name)
+			}
+			return nil, fmt.Errorf("%s is not built for %s; choices: %s", name, mpi, strings.Join(choices, ", "))
+		}
+		res.LoadedFirst = mpi
+	case len(choices) > 0:
+		res.LoadedFirst = choices[0]
+		for _, c := range choices {
+			if c == "openmpi" || strings.HasPrefix(c, "openmpi/") {
+				res.LoadedFirst = c
+			}
+		}
+	}
+	c, err := backend.ModuleShowUnder(name, res.LoadedFirst)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	b, err := s.run(ctx, c)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	out := string(b)
+	if strings.Contains(out, "Failed to find the following module") {
+		return nil, fmt.Errorf("module %s was not found; modules_search lists what exists (MPI-built packages need their MPI, which module_show loads for known ones)", name)
+	}
+	if res.LoadedFirst != "" {
+		res.Notes = append(res.Notes, fmt.Sprintf("%s is built with MPI, so it was shown after `module load %s`; in a job script load that MPI before it.", name, res.LoadedFirst))
+		if len(choices) > 1 {
+			res.Notes = append(res.Notes, "Also built for: "+strings.Join(choices, ", ")+" (pass mpi to see another build).")
+		}
+	}
 	if len(out) > 8000 {
 		out = out[:8000]
 		markTruncated(ctx)
 	}
-	return out, nil
+	res.Show = out
+	return res, nil
 }
