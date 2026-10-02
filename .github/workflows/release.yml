@@ -1,0 +1,63 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: test
+        run: go test -race -count=1 ./...
+      - name: build
+        run: |
+          set -euo pipefail
+          V="${GITHUB_REF_NAME}"
+          mkdir -p dist
+          # No Windows build: internal/core/a1.go uses syscall.Flock (Unix only); use WSL.
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os=${target%/*}; arch=${target#*/}
+            name="bifrost_${V#v}_${os}_${arch}"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X github.com/UCR-Research-Computing/ursa-bifrost/internal/version.Version=${V}" \
+              -o "dist/$name/bifrost" ./cmd/bifrost
+            cp README.md docs/CLIENTS.md "dist/$name/"
+            tar -C dist -czf "dist/$name.tar.gz" "$name"
+          done
+          (cd dist && sha256sum *.tar.gz > SHA256SUMS)
+      - name: release notes from CHANGELOG
+        run: |
+          python3 - "${GITHUB_REF_NAME}" <<'EOF'
+          import sys
+          tag = sys.argv[1]
+          lines = open("CHANGELOG.md").read().splitlines()
+          out, on = [], False
+          for line in lines:
+              if line.startswith("## "):
+                  if on:
+                      break
+                  on = line[3:].split(" ")[0] == tag
+                  continue
+              if on:
+                  out.append(line)
+          text = "\n".join(out).strip() or f"Release {tag}. See CHANGELOG.md."
+          open("notes.md", "w").write(text + "\n\nInstall: download the archive for your platform, or `go install github.com/UCR-Research-Computing/ursa-bifrost/cmd/bifrost@" + tag + "`. Clients: docs/CLIENTS.md.\n")
+          EOF
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --title "$GITHUB_REF_NAME" --notes-file notes.md
+          fi
