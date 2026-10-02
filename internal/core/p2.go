@@ -489,7 +489,11 @@ func (s *Service) TicketDraft(ctx context.Context, in TicketDraftInput) (*Ticket
 	if ex.LogPath != "" {
 		t.Evidence = append(t.Evidence, "log: "+ex.LogPath)
 	}
+	completed := jobSucceeded(j)
 	switch {
+	case len(errs) == 0 && completed:
+		t.Confidence = "high"
+		t.Summary = fmt.Sprintf("Job %s completed successfully (exit code 0); nothing failed.", j.JobID)
 	case len(errs) == 0:
 		t.Confidence = "low"
 		t.Summary = fmt.Sprintf("Job %s: no known failure pattern found.", j.JobID)
@@ -519,6 +523,15 @@ func replyText(t *TicketDraft, errs []rules.Finding, ex *Explanation) string {
 	b.WriteString("Hi,\n\n")
 	b.WriteString("I looked at job " + t.JobID + " on Ursa Major. ")
 	b.WriteString(t.WhatHappened[0] + "\n\n")
+	if len(errs) == 0 && jobSucceeded(ex.Job) {
+		b.WriteString("The job finished normally: Slurm recorded it as COMPLETED with exit code 0, and nothing in the accounting record or the end of the log points to a failure. ")
+		if ex.LogPath != "" {
+			b.WriteString("Its output log is at " + ex.LogPath + ". ")
+		}
+		b.WriteString("If the results are not what you expected (missing or wrong output files), could you tell me which files you were looking for and what you expected them to contain?\n\n")
+		b.WriteString("Happy to take a closer look from there.\n")
+		return b.String()
+	}
 	if len(errs) == 0 || errs[0].Rule == "script-error" {
 		b.WriteString("I could not match the failure to a known cause from the accounting record and the end of the log. ")
 		if ex.LogPath != "" {
@@ -549,4 +562,9 @@ func replyText(t *TicketDraft, errs []rules.Finding, ex *Explanation) string {
 	}
 	b.WriteString("Let me know if it still fails after that and I will take another look.\n")
 	return b.String()
+}
+
+// jobSucceeded is true for a job Slurm recorded as COMPLETED with exit code 0.
+func jobSucceeded(j JobSummary) bool {
+	return j.State == "COMPLETED" && (j.ExitCode == "0" || j.ExitCode == "")
 }

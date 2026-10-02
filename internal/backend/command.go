@@ -225,10 +225,26 @@ func Tail(p string, n int) (Command, error) {
 
 // ModuleShow is `module show NAME` (needs a login shell for Lmod).
 func ModuleShow(name string) (Command, error) {
+	return ModuleShowUnder(name, "")
+}
+
+// ModuleShowUnder is `module show NAME` after `module load PREREQ`. The site's Lmod
+// tree is hierarchical: MPI-built packages (hdf5, fftw, petsc...) only exist in the
+// module path once an MPI is loaded, so showing them needs that MPI first. An empty
+// prereq is a plain `module show`.
+func ModuleShowUnder(name, prereq string) (Command, error) {
 	if !reModule.MatchString(name) {
 		return Command{}, fmt.Errorf("module name %q has unexpected characters", name)
 	}
-	return Command{argv: []string{"bash", "-lc", "module -t show " + name + " 2>&1"}, kind: KindModules}, nil
+	line := "module -t show " + name + " 2>&1"
+	if prereq != "" {
+		if !reModule.MatchString(prereq) {
+			return Command{}, fmt.Errorf("module name %q has unexpected characters", prereq)
+		}
+		line = "module load " + prereq + " >/dev/null 2>&1; " + line
+	}
+	// exit 1 is Lmod's "not found": its warning (on stdout via 2>&1) is the answer
+	return Command{argv: []string{"bash", "-lc", line}, kind: KindModules, okExit: []int{1}}, nil
 }
 
 // ---- quoting ----------------------------------------------------------------

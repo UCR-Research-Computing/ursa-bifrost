@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go"
+FILES="internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
@@ -13,13 +13,14 @@ trap restore EXIT
 mutate() { # name file python-replace(old,new)
   local name=$1 file=$2 old=$3 new=$4
   case " $FILES " in *" $file "*) ;; *) echo "ERROR $name: $file is not in FILES (would not be restored)"; exit 2;; esac
-  python3 - "$file" "$old" "$new" <<'EOF'
+  if python3 - "$file" "$old" "$new" <<'EOF'
 import sys
 p, old, new = sys.argv[1:]
 t = open(p).read()
 assert t.count(old) == 1, f"pattern not unique in {p}: {old!r}"
 open(p, "w").write(t.replace(old, new))
 EOF
+  then :; else echo "BROKEN    $name (pattern did not apply; nothing was tested)"; FAIL=1; restore; return; fi
   if go test -count=1 ./... >/dev/null 2>&1; then echo "SURVIVED  $name"; FAIL=1; else echo "killed    $name"; fi
   restore
 }
@@ -151,10 +152,21 @@ mutate "v071 ssh session slots"   internal/backend/iap.go '	release, err := b.ac
 		return nil, err
 	}
 	defer release()' ''
-mutate "v071 refused channel keeps conn" internal/backend/iap.go '			if errors.As(err, \&oce) {' '			if false \&\& errors.As(err, \&oce) {'
+mutate "v071 refused channel keeps conn" internal/backend/iap.go '			if errors.As(err, &oce) {' '			if false && errors.As(err, &oce) {'
 mutate "v071 unreachable not missing" internal/core/files.go '	if errors.Is(err, backend.ErrUnreachable) {
 		return "", err // a transport problem, not a missing file
 	}' ''
+mutate "v072 module_show loads MPI"   internal/core/cluster.go 'c, err := backend.ModuleShowUnder(name, res.LoadedFirst)' 'c, err := backend.ModuleShowUnder(name, "")'
+mutate "v072 module_show prereq validated" internal/backend/command.go '		if !reModule.MatchString(prereq) {' '		if false {'
+mutate "v072 module_show mpi must match" internal/core/cluster.go '		if !ok {
+			if len(choices) == 0 {' '		if false {
+			if len(choices) == 0 {'
+mutate "v072 completed job not a failure" internal/core/p2.go '	return j.State == "COMPLETED" && (j.ExitCode == "0" || j.ExitCode == "")' '	return false'
+mutate "v072 failed job not a success"   internal/core/p2.go '	return j.State == "COMPLETED" && (j.ExitCode == "0" || j.ExitCode == "")' '	return j.ExitCode == "0" || j.ExitCode == ""'
+mutate "v072 jobs_list config cap"       internal/core/jobs.go '	if limit > s.Cfg.Limits.ListRows {
+		limit = s.Cfg.Limits.ListRows
+	}
+	var qc' '	var qc'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

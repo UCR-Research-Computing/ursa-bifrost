@@ -195,12 +195,26 @@ func run(args []string, stdout, stderr io.Writer) int {
 			})
 		return out(stdout, stderr, g, r, err, func(w io.Writer) { printModules(w, r.Data) })
 	case "module":
-		if len(rest) != 1 {
-			return fail(stdout, stderr, g, errors.New("usage: bifrost module <name>"))
+		fs := newFlags("module")
+		mpi := fs.String("mpi", "", "for MPI-built packages: which MPI build (openmpi, mpich, intel-oneapi-mpi)")
+		if err := fs.Parse(rest); err != nil {
+			return fail(stdout, stderr, g, err)
 		}
-		r, err := core.Call(ctx, svc, "cli", "module_show", "R1", map[string]any{"name": rest[0]}, false,
-			func(ctx context.Context) (string, error) { return svc.ModuleShow(ctx, rest[0]) })
-		return out(stdout, stderr, g, r, err, func(w io.Writer) { fmt.Fprint(w, r.Data) })
+		if fs.NArg() != 1 {
+			return fail(stdout, stderr, g, errors.New("usage: bifrost module [--mpi openmpi] <name>"))
+		}
+		name := fs.Arg(0)
+		r, err := core.Call(ctx, svc, "cli", "module_show", "R1", map[string]any{"name": name, "mpi": *mpi}, false,
+			func(ctx context.Context) (*core.ModuleShowResult, error) { return svc.ModuleShow(ctx, name, *mpi) })
+		return out(stdout, stderr, g, r, err, func(w io.Writer) {
+			if r.Data == nil {
+				return
+			}
+			for _, n := range r.Data.Notes {
+				fmt.Fprintln(w, "# "+n)
+			}
+			fmt.Fprint(w, r.Data.Show)
+		})
 	case "recipes":
 		q := strings.Join(rest, " ")
 		r, err := core.Call(ctx, svc, "cli", "recipes", "R1", map[string]any{"query": q}, false,

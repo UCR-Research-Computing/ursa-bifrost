@@ -36,6 +36,9 @@ type Fixture struct {
 	Files map[string]map[string]string
 	// TestOnly is the fake `sbatch --test-only` answer ("" = a start estimate).
 	TestOnly string
+	// MPIOnly lists module names that `module show` only finds after a
+	// `module load <mpi>` (hierarchical Lmod), as on the real cluster.
+	MPIOnly []string
 	// Fail makes a program fail ("scancel": "Invalid job id").
 	Fail map[string]string
 	// Paths are fake files outside job folders (files_list/files_read): absolute
@@ -105,6 +108,20 @@ func (f *Fixture) Run(_ context.Context, c Command) ([]byte, error) {
 		return read(filepath.Join("logs", name))
 	case "bash":
 		if strings.Contains(a[2], "module -t show") {
+			// emulate the site's hierarchical Lmod: MPI-built packages are only
+			// in the module path after an MPI is loaded (Lmod prints a warning
+			// and exits 1 otherwise; bifrost runs it with 2>&1)
+			if f.MPIOnly != nil {
+				for _, m := range f.MPIOnly {
+					if strings.Contains(a[2], "show "+m) && !strings.Contains(a[2], "module load ") {
+						out := "Lmod Warning: Failed to find the following module(s): \"" + m + "\" in your\nMODULEPATH\n"
+						if okExit(c, 1) { // as the ssh/iap backends do
+							return []byte(out), nil
+						}
+						return []byte(out), fmt.Errorf("bash exited 1: no error text")
+					}
+				}
+			}
 			return read("module_show.txt")
 		}
 		switch a[2] {

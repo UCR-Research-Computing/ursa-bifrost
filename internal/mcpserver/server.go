@@ -63,7 +63,7 @@ type noInput struct{}
 type jobsListIn struct {
 	State string `json:"state,omitempty" jsonschema:"optional state filter: PENDING, RUNNING, COMPLETED, FAILED, TIMEOUT, CANCELLED, OUT_OF_MEMORY"`
 	Since string `json:"since,omitempty" jsonschema:"how far back in accounting: now-7days (default), now-12hours or YYYY-MM-DD"`
-	Limit int    `json:"limit,omitempty" jsonschema:"maximum rows (default and cap from config, 200)"`
+	Limit int    `json:"limit,omitempty" jsonschema:"maximum rows (default 50; cap from config, 200)"`
 }
 
 type jobsListAllIn struct {
@@ -97,8 +97,9 @@ type queryIn struct {
 	Query string `json:"query,omitempty" jsonschema:"text to search for (empty lists everything)"`
 }
 
-type moduleIn struct {
-	Name string `json:"name" jsonschema:"module name, optionally with version, e.g. gromacs or gcc/13.5.0"`
+type moduleShowIn struct {
+	Name string `json:"name" jsonschema:"module name, optionally with version, e.g. gromacs, hdf5/1.14.6"`
+	MPI  string `json:"mpi,omitempty" jsonschema:"for MPI-built packages: which MPI build to show (openmpi, mpich, intel-oneapi-mpi); default openmpi when available"`
 }
 
 type scriptIn struct {
@@ -322,11 +323,10 @@ func New(s *core.Service) *mcp.Server {
 		})
 
 	mcp.AddTool(srv, addR1("module_show", "Show module",
-		"What a module sets when loaded (paths, environment, dependencies), from `module show` on the login node."),
-		func(ctx context.Context, req *mcp.CallToolRequest, in moduleIn) (*mcp.CallToolResult, envelope, error) {
-			r, err := core.Call(ctx, s, clientName(req), "module_show", "R1", argsOf(in), true, func(ctx context.Context) (map[string]string, error) {
-				t, err := s.ModuleShow(ctx, in.Name)
-				return map[string]string{"module": in.Name, "show": t}, err
+		"What a module sets when loaded (paths, environment, dependencies), from `module show` on the login node. MPI-built packages (hdf5, fftw, petsc...) are shown after loading their MPI, which is named in the answer."),
+		func(ctx context.Context, req *mcp.CallToolRequest, in moduleShowIn) (*mcp.CallToolResult, envelope, error) {
+			r, err := core.Call(ctx, s, clientName(req), "module_show", "R1", argsOf(in), true, func(ctx context.Context) (*core.ModuleShowResult, error) {
+				return s.ModuleShow(ctx, in.Name, in.MPI)
 			})
 			return nil, toEnvelope(r), err
 		})

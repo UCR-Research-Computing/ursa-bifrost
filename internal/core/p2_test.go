@@ -231,9 +231,31 @@ func TestTicketDraft(t *testing.T) {
 		// 212 has the exit-signal finding, so it is not low
 		t.Errorf("212 should be explained by exit 139: %+v", td.Evidence)
 	}
+	// a job that completed with exit 0 is a success, not an unexplained failure
+	// (found live on job 307, a 3-hour GADGET-4 run that passed)
 	td, _ = s.TicketDraft(context.Background(), TicketDraftInput{JobID: "261", AnyUser: true})
-	if td.Confidence != "low" || !strings.Contains(td.Reply, "could not match") {
-		t.Errorf("completed job draft: %s / %s", td.Confidence, td.Reply)
+	if strings.Contains(td.Reply, "could not match the failure") || strings.Contains(td.Summary, "failure pattern") {
+		t.Errorf("completed job reads as a failure: %s / %s", td.Summary, td.Reply)
+	}
+	if !strings.Contains(td.Summary, "completed successfully") || !strings.Contains(td.Reply, "finished normally") || td.Confidence == "low" {
+		t.Errorf("completed job draft: %s / %s / %s", td.Confidence, td.Summary, td.Reply)
+	}
+	// a failed job with no matching rule still asks for details
+	td, _ = s.TicketDraft(context.Background(), TicketDraftInput{JobID: "253", AnyUser: true})
+	if strings.Contains(td.Reply, "finished normally") {
+		t.Errorf("TIMEOUT job called a success: %s", td.Reply)
+	}
+}
+
+func TestJobSucceeded(t *testing.T) {
+	for _, c := range []struct {
+		state, exit string
+		want        bool
+	}{{"COMPLETED", "0", true}, {"COMPLETED", "", true}, {"COMPLETED", "1", false}, {"FAILED", "0", false},
+		{"TIMEOUT", "0", false}, {"CANCELLED", "0", false}, {"COMPLETED", "signal 9 (KILL)", false}} {
+		if got := jobSucceeded(JobSummary{State: c.state, ExitCode: c.exit}); got != c.want {
+			t.Errorf("jobSucceeded(%s, %q) = %v", c.state, c.exit, got)
+		}
 	}
 }
 

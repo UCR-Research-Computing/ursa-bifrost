@@ -34,6 +34,12 @@ func TestConstructorsRejectInjection(t *testing.T) {
 	if _, err := ModuleShow("$(id)"); err == nil {
 		t.Error("ModuleShow accepted substitution")
 	}
+	if _, err := ModuleShowUnder("hdf5", "openmpi; id"); err == nil {
+		t.Error("ModuleShowUnder accepted an injected prerequisite")
+	}
+	if _, err := ModuleShowUnder("hdf5", "$(id)"); err == nil {
+		t.Error("ModuleShowUnder accepted a substituted prerequisite")
+	}
 	if _, err := Tail("/home/a/../../etc/shadow", 10); err == nil {
 		t.Error("Tail accepted a non-clean path")
 	}
