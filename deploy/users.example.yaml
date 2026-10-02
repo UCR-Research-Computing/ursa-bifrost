@@ -19,3 +19,20 @@ users:
   # - email: former@ucr.edu
   #   tiers: [R1]
   #   disabled: true
+
+# Optional: programs (not chat clients) that sign in as a person. A program's
+# tools are the person's tiers capped by its `tiers` (a ceiling, never a
+# grant); `calls_per_min` is its own budget, separate from the person's chat
+# clients (0 or absent = the global limit, max 600). The id is the OAuth
+# client_id the program uses; it cannot be registered by anyone else.
+# clients:
+#   - id: bifrost-ultra
+#     name: Ultra
+#     tiers: [R1, R2]          # read-only: no submit/cancel even for an A1 person
+#     calls_per_min: 120
+#     redirect_uris: ["http://127.0.0.1/callback"]
+#   - id: bifrost-retired
+#     name: Old dashboard
+#     tiers: [R1]
+#     redirect_uris: ["http://127.0.0.1/callback"]
+#     disabled: true

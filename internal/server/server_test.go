@@ -150,7 +150,8 @@ type harness struct {
 	tokens map[string]string // email -> google token the backend was given
 	mu     sync.Mutex
 
-	stopAtCode bool // signIn returns the auth code instead of exchanging it
+	stopAtCode bool   // signIn returns the auth code instead of exchanging it
+	clientID   string // signIn uses this client (a program) instead of registering one
 	jar        http.CookieJar
 	sawPage    bool // the last signIn showed bifrost's explanation page
 }
@@ -214,16 +215,22 @@ func (h *harness) signIn(email, hd string) (map[string]any, error) {
 	h.g.next.email, h.g.next.hd = email, hd
 	h.g.mu.Unlock()
 	base := h.ts.URL
-	reg, _ := json.Marshal(map[string]any{"redirect_uris": []string{"http://127.0.0.1:33418/callback"}, "client_name": "test client", "token_endpoint_auth_method": "none"})
-	resp, err := http.Post(base+"/register", "application/json", strings.NewReader(string(reg)))
-	if err != nil {
-		return nil, err
-	}
 	var c map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&c)
-	resp.Body.Close()
-	if resp.StatusCode != 201 {
-		return nil, fmt.Errorf("register: %d %v", resp.StatusCode, c)
+	var resp *http.Response
+	var err error
+	if h.clientID != "" {
+		c = map[string]any{"client_id": h.clientID}
+	} else {
+		reg, _ := json.Marshal(map[string]any{"redirect_uris": []string{"http://127.0.0.1:33418/callback"}, "client_name": "test client", "token_endpoint_auth_method": "none"})
+		resp, err = http.Post(base+"/register", "application/json", strings.NewReader(string(reg)))
+		if err != nil {
+			return nil, err
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&c)
+		resp.Body.Close()
+		if resp.StatusCode != 201 {
+			return nil, fmt.Errorf("register: %d %v", resp.StatusCode, c)
+		}
 	}
 	verifier := randToken("")
 	q := url.Values{"response_type": {"code"}, "client_id": {c["client_id"].(string)}, "redirect_uri": {"http://127.0.0.1:33418/callback"},
@@ -841,5 +848,249 @@ users:
 	oc := strings.Split(fs.signs[1], "/")[1]
 	if oa == oc || len(oa) != 20 {
 		t.Fatalf("owner keys: %q %q", oa, oc)
+	}
+}
+
+// ---- program clients (users.yaml clients:) -----------------------------------------
+
+const withPrograms = `domain: ucr.edu
+users:
+  - email: alice@ucr.edu
+    tiers: [R1, R2, A1]
+  - email: bob@ucr.edu
+    tiers: [R1]
+clients:
+  - id: bifrost-ultra
+    name: Ultra
+    tiers: [R1, R2]
+    calls_per_min: 5
+    redirect_uris: ["http://127.0.0.1/callback"]
+  - id: bifrost-off
+    name: Retired
+    tiers: [R1]
+    redirect_uris: ["http://127.0.0.1/callback"]
+    disabled: true
+`
+
+func (h *harness) whoami(tok string) (int, map[string]any) {
+	req, _ := http.NewRequest("GET", h.ts.URL+"/whoami", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	r, err := http.DefaultClient.Do(req)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	defer r.Body.Close()
+	var got map[string]any
+	_ = json.NewDecoder(r.Body).Decode(&got)
+	return r.StatusCode, got
+}
+
+// TestProgramTierCeiling: a program client gets the person's tiers capped by
+// its ceiling. Alice (R1, R2, A1) through Ultra (ceiling R1, R2) has no act
+// tools; Bob (R1) through Ultra stays R1 (a ceiling never grants); Alice's own
+// chat client still has A1.
+func TestProgramTierCeiling(t *testing.T) {
+	h := newHarness(t, withPrograms)
+	h.clientID = "bifrost-ultra"
+	a, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := h.signIn("bob@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.clientID = ""
+	own, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, _ := h.mcp(a["access_token"].(string))
+	ta := toolSet(t, ca)
+	if ta["job_submit"] || ta["job_cancel"] || !ta["health"] || !ta["jobs_list"] {
+		t.Errorf("alice via Ultra: want R1+R2 and no A1, got %v", ta)
+	}
+	// not listed, and refused when called by name anyway
+	if res, err := ca.CallTool(context.Background(), &mcp.CallToolParams{Name: "job_cancel", Arguments: map[string]any{"job_id": "1"}}); err == nil && !res.IsError {
+		t.Error("alice via Ultra could call an A1 tool")
+	}
+	cb, _ := h.mcp(b["access_token"].(string))
+	if tb := toolSet(t, cb); tb["health"] {
+		t.Error("ceiling granted bob R2")
+	}
+	co, _ := h.mcp(own["access_token"].(string))
+	if !toolSet(t, co)["job_submit"] {
+		t.Error("alice's own client lost A1")
+	}
+	if code, got := h.whoami(a["access_token"].(string)); code != 200 || fmt.Sprint(got["tiers"]) != "[R1 R2]" ||
+		got["program"] != "bifrost-ultra" || got["calls_per_min"] != float64(5) {
+		t.Errorf("whoami via Ultra: %d %v", code, got)
+	}
+	if _, got := h.whoami(own["access_token"].(string)); got["program"] != nil || fmt.Sprint(got["tiers"]) != "[R1 R2 A1]" {
+		t.Errorf("whoami own client: %v", got)
+	}
+}
+
+// TestProgramBudgetIsSeparate: the program's calls_per_min (5) is its own
+// budget; spending it does not touch the person's own clients.
+func TestProgramBudgetIsSeparate(t *testing.T) {
+	h := newHarness(t, withPrograms)
+	h.clientID = "bifrost-ultra"
+	a, _ := h.signIn("alice@ucr.edu", "ucr.edu")
+	h.clientID = ""
+	own, _ := h.signIn("alice@ucr.edu", "ucr.edu")
+	ca, _ := h.mcp(a["access_token"].(string))
+	var errs []bool
+	for i := 0; i < 7; i++ {
+		_, isErr := callJSON(t, ca, "partitions", nil)
+		errs = append(errs, isErr)
+	}
+	if fmt.Sprint(errs) != "[false false false false false true true]" {
+		t.Errorf("program budget: %v", errs)
+	}
+	co, _ := h.mcp(own["access_token"].(string))
+	if _, isErr := callJSON(t, co, "partitions", nil); isErr {
+		t.Error("the person's own client was starved by the program")
+	}
+	raw, _ := os.ReadFile(h.s.cfg.AuditPath)
+	if !strings.Contains(string(raw), `"client":"program:bifrost-ultra/mcp:test"`) {
+		t.Error("audit does not name the program")
+	}
+}
+
+// TestProgramSharesOneBackend: a program acting for a person uses the same
+// backend (one SSH connection, one OS Login key) as the person's own clients.
+func TestProgramSharesOneBackend(t *testing.T) {
+	h := newHarness(t, withPrograms)
+	built := 0
+	orig := h.s.newBackend
+	h.s.newBackend = func(email string) backend.Backend { built++; return orig(email) }
+	h.clientID = "bifrost-ultra"
+	a, _ := h.signIn("alice@ucr.edu", "ucr.edu")
+	h.clientID = ""
+	own, _ := h.signIn("alice@ucr.edu", "ucr.edu")
+	ca, _ := h.mcp(a["access_token"].(string))
+	callJSON(t, ca, "partitions", nil)
+	co, _ := h.mcp(own["access_token"].(string))
+	callJSON(t, co, "partitions", nil)
+	if built != 1 {
+		t.Errorf("backends built for one person: %d, want 1", built)
+	}
+}
+
+// TestProgramClientCannotBeRegisteredOrSpoofed: program ids come only from
+// users.yaml; a disabled program can neither sign in nor keep using tokens;
+// registration never yields a program id.
+func TestProgramClientCannotBeRegisteredOrSpoofed(t *testing.T) {
+	h := newHarness(t, withPrograms)
+	noFollow0 := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	q0 := url.Values{"response_type": {"code"}, "client_id": {"bifrost-off"}, "redirect_uri": {"http://127.0.0.1:33418/callback"},
+		"code_challenge": {"x"}, "code_challenge_method": {"S256"}}
+	if r, _ := noFollow0.Get(h.ts.URL + "/authorize?" + q0.Encode()); r.StatusCode != 400 {
+		t.Errorf("disabled program reached Google: /authorize returned %d", r.StatusCode)
+	}
+	h.clientID = "bifrost-off"
+	if _, err := h.signIn("alice@ucr.edu", "ucr.edu"); err == nil {
+		t.Error("disabled program signed in")
+	}
+	// an unregistered redirect for a program is refused before Google
+	q := url.Values{"response_type": {"code"}, "client_id": {"bifrost-ultra"}, "redirect_uri": {"https://evil.example/cb"},
+		"code_challenge": {"x"}, "code_challenge_method": {"S256"}}
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if r, _ := noFollow.Get(h.ts.URL + "/authorize?" + q.Encode()); r.StatusCode != 400 {
+		t.Errorf("program with foreign redirect: %d", r.StatusCode)
+	}
+	// disabling a program cuts off its live tokens and its refresh
+	h.clientID = "bifrost-ultra"
+	a, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	_ = os.WriteFile(h.users, []byte(strings.Replace(withPrograms, "    calls_per_min: 5\n", "    calls_per_min: 5\n    disabled: true\n", 1)), 0o600)
+	future := time.Now().Add(2 * time.Second)
+	_ = os.Chtimes(h.users, future, future)
+	if code, _ := h.whoami(a["access_token"].(string)); code != 401 {
+		t.Errorf("disabled program's token still works: %d", code)
+	}
+	if _, err := h.mcp(a["access_token"].(string)); err == nil {
+		t.Error("disabled program's token still reaches /mcp")
+	}
+	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {a["refresh_token"].(string)}, "client_id": {"bifrost-ultra"}}
+	if r, _ := http.PostForm(h.ts.URL+"/token", form); r.StatusCode == 200 {
+		t.Error("disabled program refreshed")
+	}
+}
+
+func TestUsersFileRejectsBadPrograms(t *testing.T) {
+	for name, bad := range map[string]string{
+		"no tiers":     strings.Replace(withPrograms, "    tiers: [R1, R2]\n", "", 1),
+		"bad tier":     strings.Replace(withPrograms, "tiers: [R1, R2]", "tiers: [R1, R9]", 1),
+		"budget":       strings.Replace(withPrograms, "calls_per_min: 5", "calls_per_min: 601", 1),
+		"redirect":     strings.Replace(withPrograms, `["http://127.0.0.1/callback"]`, `["http://evil.example/cb"]`, 1),
+		"bad id":       strings.Replace(withPrograms, "id: bifrost-ultra", "id: Bad_ID", 1),
+		"duplicate id": strings.Replace(withPrograms, "id: bifrost-off", "id: bifrost-ultra", 1),
+		"no redirect":  strings.Replace(withPrograms, "    calls_per_min: 5\n    redirect_uris: [\"http://127.0.0.1/callback\"]\n", "    calls_per_min: 5\n", 1),
+	} {
+		if bad == withPrograms {
+			t.Fatalf("%s: replacement did not apply", name)
+		}
+		f := filepath.Join(t.TempDir(), "u.yaml")
+		_ = os.WriteFile(f, []byte(bad), 0o600)
+		if _, err := LoadUsers(f); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	f := filepath.Join(t.TempDir(), "u.yaml")
+	_ = os.WriteFile(f, []byte(twoUsers), 0o600)
+	if _, err := LoadUsers(f); err != nil {
+		t.Errorf("file without clients refused: %v", err)
+	}
+}
+
+// TestProgramAndPersonInterleaved: the person's own client and a program for
+// the same person, used alternately, each keep their own tools and budget (one
+// shared connection slot would flip tiers or reset the budget on every call).
+func TestProgramAndPersonInterleaved(t *testing.T) {
+	h := newHarness(t, withPrograms)
+	h.clientID = "bifrost-ultra"
+	a, _ := h.signIn("alice@ucr.edu", "ucr.edu")
+	h.clientID = ""
+	own, _ := h.signIn("alice@ucr.edu", "ucr.edu")
+	ca, _ := h.mcp(a["access_token"].(string))
+	co, _ := h.mcp(own["access_token"].(string))
+	var progErrs []bool
+	for i := 0; i < 7; i++ {
+		_, isErr := callJSON(t, ca, "partitions", nil)
+		progErrs = append(progErrs, isErr)
+		if !toolSet(t, co)["job_submit"] {
+			t.Fatalf("round %d: the person's own client lost A1", i)
+		}
+		if toolSet(t, ca)["job_submit"] {
+			t.Fatalf("round %d: the program gained A1", i)
+		}
+	}
+	if fmt.Sprint(progErrs) != "[false false false false false true true]" {
+		t.Errorf("program budget reset by interleaving: %v", progErrs)
+	}
+}
+
+// TestProgramDisabledMidSignIn: a program disabled while its user is at Google
+// gets no tokens for the code it was issued.
+func TestProgramDisabledMidSignIn(t *testing.T) {
+	h := newHarness(t, withPrograms)
+	h.clientID, h.stopAtCode = "bifrost-ultra", true
+	got, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	_ = os.WriteFile(h.users, []byte(strings.Replace(withPrograms, "    calls_per_min: 5\n", "    calls_per_min: 5\n    disabled: true\n", 1)), 0o600)
+	future := time.Now().Add(2 * time.Second)
+	_ = os.Chtimes(h.users, future, future)
+	form := url.Values{"grant_type": {"authorization_code"}, "code": {got["code"].(string)}, "client_id": {"bifrost-ultra"},
+		"redirect_uri": {"http://127.0.0.1:33418/callback"}, "code_verifier": {got["verifier"].(string)}}
+	if r, _ := http.PostForm(h.ts.URL+"/token", form); r.StatusCode == 200 {
+		t.Error("disabled program exchanged its code for tokens")
 	}
 }

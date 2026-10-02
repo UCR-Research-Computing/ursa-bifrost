@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -36,11 +37,32 @@ type User struct {
 	Disabled         bool    `yaml:"disabled,omitempty"`
 }
 
+// ProgramClient is a pre-registered OAuth client for a program (Ultra, a
+// dashboard, a batch job) rather than a person's chat client. It signs in as a
+// person like any client, but bifrost narrows what it may do: its tools are
+// the person's tiers intersected with Tiers (a ceiling, never a grant), and it
+// gets its own call budget, so a busy program neither starves nor is starved
+// by the person's chat clients. Its audit records say "program:<id>".
+type ProgramClient struct {
+	ID           string   `yaml:"id"`
+	Name         string   `yaml:"name"`
+	Tiers        []string `yaml:"tiers"`         // ceiling: R1, R2, A1
+	CallsPerMin  int      `yaml:"calls_per_min"` // 0 = the global limit
+	RedirectURIs []string `yaml:"redirect_uris"`
+	Disabled     bool     `yaml:"disabled,omitempty"`
+}
+
+// MaxProgramCallsPerMin bounds a program client's calls_per_min.
+const MaxProgramCallsPerMin = 600
+
+var programIDRe = regexp.MustCompile(`^[a-z][a-z0-9-]{2,40}$`)
+
 // UsersFile is the allow-list file.
 type UsersFile struct {
 	// Domain every user must belong to (Google hd claim), e.g. ucr.edu.
-	Domain string `yaml:"domain"`
-	Users  []User `yaml:"users"`
+	Domain  string          `yaml:"domain"`
+	Users   []User          `yaml:"users"`
+	Clients []ProgramClient `yaml:"clients,omitempty"`
 }
 
 // Users is a reloadable allow-list. Edits to the file take effect on the next
@@ -91,8 +113,88 @@ func (u *Users) reload() error {
 			}
 		}
 	}
+	if err := checkClients(f.Clients); err != nil {
+		return err
+	}
 	u.f, u.mod = f, st.ModTime()
 	return nil
+}
+
+func checkClients(cs []ProgramClient) error {
+	seen := map[string]bool{}
+	for _, c := range cs {
+		if !programIDRe.MatchString(c.ID) {
+			return fmt.Errorf("users file: client id %q must be 3-41 of a-z, 0-9, - (starting with a letter)", c.ID)
+		}
+		if seen[c.ID] {
+			return fmt.Errorf("users file: client id %q is listed twice", c.ID)
+		}
+		seen[c.ID] = true
+		if len(c.Tiers) == 0 {
+			return fmt.Errorf("users file: client %s needs tiers (its ceiling)", c.ID)
+		}
+		for _, t := range c.Tiers {
+			if t != "R1" && t != "R2" && t != "A1" {
+				return fmt.Errorf("users file: client %s has unknown tier %q", c.ID, t)
+			}
+		}
+		if c.CallsPerMin < 0 || c.CallsPerMin > MaxProgramCallsPerMin {
+			return fmt.Errorf("users file: client %s calls_per_min must be 0-%d", c.ID, MaxProgramCallsPerMin)
+		}
+		if len(c.RedirectURIs) == 0 {
+			return fmt.Errorf("users file: client %s needs redirect_uris", c.ID)
+		}
+		for _, r := range c.RedirectURIs {
+			if !validRedirect(r) {
+				return fmt.Errorf("users file: client %s redirect URI must be https or http loopback: %s", c.ID, r)
+			}
+		}
+	}
+	return nil
+}
+
+// Program returns the enabled program client with this id, or nil (dynamic
+// clients, unknown ids and disabled programs).
+func (u *Users) Program(id string) *ProgramClient {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	_ = u.reload()
+	for _, c := range u.f.Clients {
+		if c.ID == id && !c.Disabled {
+			x := c
+			return &x
+		}
+	}
+	return nil
+}
+
+// isProgramID reports whether id is listed as a program client at all
+// (enabled or disabled), so a disabled program is refused rather than
+// looked up as a dynamic client.
+func (u *Users) isProgramID(id string) bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	_ = u.reload()
+	for _, c := range u.f.Clients {
+		if c.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// ceiling narrows a person's tiers to a program's ceiling (order kept).
+func ceiling(have, limit []string) []string {
+	out := []string{}
+	for _, t := range have {
+		for _, l := range limit {
+			if t == l {
+				out = append(out, t)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // Lookup returns the user entry for an email, or nil if not allowed.

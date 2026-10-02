@@ -253,8 +253,10 @@ occasionally be manipulated by text it reads.
 The hosted server adds Google sign-in restricted to ucr.edu and to the people in
 `users.yaml` (re-read on every request), OAuth 2.1 with PKCE and dynamic registration,
 rotating refresh tokens (30 days), sealed token storage, and per-user IAP tunnels and
-OS Login keys, so each person reaches the cluster as themselves.
-
+OS Login keys, so each person reaches the cluster as themselves. Programs (a dashboard,
+a workstation app) can use a pre-registered client from `users.yaml` with a tier ceiling
+and their own call budget, so a program never holds more than it needs
+([SPEC](docs/SPEC.md) 21).
 ## Architecture
 
 ```text

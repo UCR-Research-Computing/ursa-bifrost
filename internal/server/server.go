@@ -39,7 +39,10 @@ type Server struct {
 	logger *log.Logger
 
 	mu    sync.Mutex
-	conns map[string]*userConn // per signed-in email
+	conns map[string]*userConn // per signed-in email (+ "|program-id" for program clients)
+	// backends holds one backend (one SSH connection, one OS Login key) per
+	// person, shared by their own connection and any program acting for them.
+	backends map[string]backend.Backend
 
 	// newBackend builds a user's backend (tests replace it with fixtures).
 	newBackend func(email string) backend.Backend
@@ -79,7 +82,8 @@ func New(cfg config.Config, google *Google, secret string) (*Server, error) {
 	store := NewStore(dataDir, sealer)
 	s := &Server{cfg: cfg, base: strings.TrimRight(sc.BaseURL, "/"), users: users, store: store, google: google,
 		auth: newAuthState(), tokens: &tokenCache{g: google, store: store, m: map[string]cachedTok{}},
-		audits: audit, logger: log.New(os.Stderr, "bifrost-serve ", log.LstdFlags), conns: map[string]*userConn{}}
+		audits: audit, logger: log.New(os.Stderr, "bifrost-serve ", log.LstdFlags), conns: map[string]*userConn{},
+		backends: map[string]backend.Backend{}}
 	s.staging = core.NewStaging(cfg.Staging, os.Getenv("K_SERVICE") != "")
 	s.newBackend = func(email string) backend.Backend {
 		ic := cfg.IAP
@@ -118,30 +122,84 @@ func (s *Server) userConfig(u *User) config.Config {
 	return c
 }
 
-// conn returns the person's service + MCP server, building or rebuilding it.
-func (s *Server) conn(u *User) *userConn {
+// programConfig narrows a person's config for a program client: tiers are the
+// person's intersected with the program's ceiling, and the call budget is the
+// program's own (0 = the global limit).
+func programConfig(c config.Config, p *ProgramClient) config.Config {
+	c.Tiers = ceiling(c.Tiers, p.Tiers)
+	if p.CallsPerMin > 0 {
+		c.Limits.CallsPerMin = p.CallsPerMin
+	}
+	return c
+}
+
+// connKey names a person's connection, or a program's connection for them.
+func connKey(email string, p *ProgramClient) string {
+	if p == nil {
+		return email
+	}
+	return email + "|" + p.ID
+}
+
+// backendFor returns the person's backend, creating it once. Caller holds s.mu.
+func (s *Server) backendFor(email string) backend.Backend {
+	if b, ok := s.backends[email]; ok {
+		return b
+	}
+	b := s.newBackend(email)
+	s.backends[email] = b
+	return b
+}
+
+// conn returns the person's service + MCP server (or a program's, acting for
+// them), building or rebuilding it when their tiers or caps change.
+func (s *Server) conn(u *User, p *ProgramClient) *userConn {
 	cfg := s.userConfig(u)
-	sigB, _ := json.Marshal([]any{cfg.Tiers, cfg.Caps})
+	if p != nil {
+		cfg = programConfig(cfg, p)
+	}
+	sigB, _ := json.Marshal([]any{cfg.Tiers, cfg.Caps, cfg.Limits.CallsPerMin})
 	sig := string(sigB)
+	key := connKey(u.Email, p)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if c, ok := s.conns[u.Email]; ok && c.sig == sig {
+	if c, ok := s.conns[key]; ok && c.sig == sig {
 		c.last = time.Now()
 		return c
 	}
-	if old, ok := s.conns[u.Email]; ok {
-		_ = old.svc.Close()
-	}
-	svc := core.NewService(cfg, s.newBackend(u.Email), s.audits)
+	svc := core.NewService(cfg, s.backendFor(u.Email), s.audits)
 	svc.Principal = u.Email
 	svc.Remote = true
 	svc.Staging = s.staging
+	if p != nil {
+		svc.Program = p.ID
+	}
 	c := &userConn{svc: svc, srv: mcpserver.New(svc), sig: sig, last: time.Now()}
-	s.conns[u.Email] = c
+	s.conns[key] = c
 	return c
 }
 
 type ctxKey struct{}
+
+// caller is what requireAuth attaches to a request: the person and, for a
+// program client, the program.
+type caller struct {
+	user    *User
+	program *ProgramClient
+}
+
+// programFor resolves a token's client: nil for a dynamic client, the program
+// for an enabled program client, and an error for a disabled program.
+func (s *Server) programFor(clientID string) (*ProgramClient, error) {
+	if !s.users.isProgramID(clientID) {
+		return nil, nil
+	}
+	p := s.users.Program(clientID)
+	if p == nil {
+		return nil, fmt.Errorf("client %s is disabled", clientID)
+	}
+	return p, nil
+}
 
 // requireAuth checks the bearer token, then hands the request to the MCP
 // handler with the person attached. 401s carry the resource metadata URL so
@@ -159,8 +217,13 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			s.challenge(w, err.Error())
 			return
 		}
-		ctx := context.WithValue(r.Context(), ctxKey{}, u)
-		_ = a
+		p, err := s.programFor(a.ClientID)
+		if err != nil {
+			s.audit("mcp", u.Email, "denied", err.Error())
+			s.challenge(w, err.Error())
+			return
+		}
+		ctx := context.WithValue(r.Context(), ctxKey{}, caller{user: u, program: p})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -204,11 +267,11 @@ func (s *Server) Handler() http.Handler {
 		fmt.Fprintf(w, "ursa-bifrost %s: MCP server for the Ursa Major HPC cluster.\nMCP endpoint: %s/mcp (OAuth sign-in with your %s Google account)\n", version.Version, s.base, s.users.Domain())
 	})
 	mcpH := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
-		u, _ := r.Context().Value(ctxKey{}).(*User)
-		if u == nil {
+		c, ok := r.Context().Value(ctxKey{}).(caller)
+		if !ok || c.user == nil {
 			return nil
 		}
-		return s.conn(u).srv
+		return s.conn(c.user, c.program).srv
 	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	mux.Handle("/mcp", s.requireAuth(mcpH))
 	return securityHeaders(mux)
@@ -240,13 +303,19 @@ func (s *Server) handleSignout(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	s.mu.Lock()
-	c := s.conns[a.Email]
-	delete(s.conns, a.Email)
-	s.mu.Unlock()
-	if c != nil {
-		if iap, ok := c.svc.Backend.(*backend.IAP); ok {
-			_ = iap.Revoke(ctx)
+	b := s.backends[a.Email]
+	delete(s.backends, a.Email)
+	for k, c := range s.conns {
+		if k == a.Email || strings.HasPrefix(k, a.Email+"|") {
+			if b == nil {
+				b = c.svc.Backend
+			}
+			delete(s.conns, k)
 		}
+	}
+	s.mu.Unlock()
+	if iap, ok := b.(*backend.IAP); ok {
+		_ = iap.Revoke(ctx)
 	}
 	_ = s.store.Delete("session", a.Email)
 	s.tokens.drop(a.Email)
@@ -276,14 +345,7 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 				return
 			case <-t.C:
 				s.auth.gc()
-				s.mu.Lock()
-				for e, c := range s.conns {
-					if time.Since(c.last) > 30*time.Minute {
-						_ = c.svc.Close()
-						delete(s.conns, e)
-					}
-				}
-				s.mu.Unlock()
+				s.expireIdle(30 * time.Minute)
 			}
 		}
 	}()
@@ -301,6 +363,34 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	return err
 }
 
+// expireIdle drops connections unused for longer than idle, and closes a
+// person's backend (SSH connection) only once none of their connections, own
+// or program, is left.
+func (s *Server) expireIdle(idle time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, c := range s.conns {
+		if time.Since(c.last) > idle {
+			delete(s.conns, k)
+		}
+	}
+	for email, b := range s.backends {
+		inUse := false
+		for k := range s.conns {
+			if k == email || strings.HasPrefix(k, email+"|") {
+				inUse = true
+				break
+			}
+		}
+		if !inUse {
+			if c, ok := b.(interface{ Close() error }); ok {
+				_ = c.Close()
+			}
+			delete(s.backends, email)
+		}
+	}
+}
+
 // handleWhoami tells a client (e.g. the ursa-agent web app) who its bearer
 // token belongs to: the email and tiers. It reveals nothing the token holder
 // could not learn by calling tools, and nothing about anyone else.
@@ -310,10 +400,24 @@ func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
 		s.challenge(w, "")
 		return
 	}
-	_, u, err := s.verifyAccess(tok)
+	a, u, err := s.verifyAccess(tok)
 	if err != nil {
 		s.challenge(w, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"email": u.Email, "tiers": u.Tiers})
+	p, err := s.programFor(a.ClientID)
+	if err != nil {
+		s.challenge(w, err.Error())
+		return
+	}
+	if p == nil {
+		writeJSON(w, 200, map[string]any{"email": u.Email, "tiers": u.Tiers})
+		return
+	}
+	cpm := p.CallsPerMin
+	if cpm == 0 {
+		cpm = s.cfg.Limits.CallsPerMin
+	}
+	writeJSON(w, 200, map[string]any{"email": u.Email, "tiers": ceiling(u.Tiers, p.Tiers),
+		"program": p.ID, "calls_per_min": cpm})
 }

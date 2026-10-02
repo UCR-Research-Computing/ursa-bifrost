@@ -34,6 +34,10 @@ type Service struct {
 	Remote bool
 	// Staging is the private Cloud Storage staging area (nil = file tools off).
 	Staging staging.Client
+	// Program is the program client (users.yaml clients[].id) this service
+	// acts for, or empty for a person's own clients. Audit records then read
+	// "program:<id>/<mcp client>".
+	Program string
 
 	mu    sync.Mutex
 	cache map[string]cacheEntry
@@ -305,6 +309,9 @@ func Call[T any](ctx context.Context, s *Service, client, tool, tier string, arg
 	fn func(ctx context.Context) (T, error)) (Result[T], error) {
 	start := s.Now()
 	ctx, t := withTrace(ctx)
+	if s.Program != "" {
+		client = "program:" + s.Program + "/" + client
+	}
 	rec := policy.Record{Time: start, Caller: firstNonEmpty(s.Principal, localUser()), Client: client, Tool: tool, Args: args}
 	finish := func(decision string, err error, n int) {
 		rec.Decision = decision

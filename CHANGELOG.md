@@ -4,6 +4,16 @@ All notable changes. Versions follow [semver](https://semver.org); every release
 tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC.md).
 
 ## Unreleased
+
+## v0.9.0 - 2026-10-02
+- Program clients: pre-registered OAuth clients in `users.yaml` (`clients:`) for programs
+  such as Ultra. A program acts as the person who signed it in, with the person's tiers
+  capped by the program's `tiers` ceiling (never a grant) and its own `calls_per_min`
+  budget, separate from the person's chat clients. Program ids can't be registered or
+  claimed; a disabled program is refused at sign-in, code exchange, refresh and on every
+  request. Audit records read `program:<id>/<mcp client>`; `/whoami` shows the program,
+  capped tiers and budget. One SSH connection per person, shared by their own clients
+  and their programs. Files without `clients:` behave exactly as before.
 - MIT License.
 
 ## v0.8.2 - 2026-10-02
