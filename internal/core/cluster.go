@@ -161,6 +161,9 @@ func (s *Service) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 type PartitionInfo struct {
 	CatalogPartition
 	USD *float64 `json:"usd_per_node_hour,omitempty"`
+	// CPU is the instruction-set note people need before compiling (v0.9.10):
+	// "AVX2 (e2)" on standard/spot/check, "AVX-512" elsewhere on CPU partitions.
+	CPU string `json:"cpu,omitempty"`
 }
 
 // Partitions lists partitions from the catalog with configured prices.
@@ -171,7 +174,7 @@ func (s *Service) Partitions(ctx context.Context) ([]PartitionInfo, error) {
 	}
 	var out []PartitionInfo
 	for _, p := range cat.Partitions {
-		pi := PartitionInfo{CatalogPartition: p}
+		pi := PartitionInfo{CatalogPartition: p, CPU: cpuNote(p.Name)}
 		pi.CatalogPartition.USDPerNodeHr = nil
 		if v, ok := s.price(cat, p.Name); ok && s.Cfg.ShowCost {
 			v := v
@@ -645,6 +648,14 @@ func memMB(s string) (int64, bool) {
 }
 
 // slurmMinutes parses Slurm time formats: M, M:S, H:M:S, D-H, D-H:M, D-H:M:S.
+// cpuNote is what a partition's nodes can run: the e2 partitions stop at AVX2.
+func cpuNote(part string) string {
+	if avx2OnlyPartitions[part] {
+		return "AVX2 only (e2)"
+	}
+	return "AVX-512"
+}
+
 // avx2OnlyPartitions run on e2 hosts (x86-64-v3, no AVX-512) since 2026-10-03.
 var avx2OnlyPartitions = map[string]bool{"standard": true, "spot": true, "check": true}
 

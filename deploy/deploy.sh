@@ -20,7 +20,7 @@ SERVICE=bifrost-mcp
 SA=bifrost-mcp@${PROJECT}.iam.gserviceaccount.com
 REPO=${REGION}-docker.pkg.dev/${PROJECT}/bifrost
 BUCKET=${PROJECT}-bifrost-data
-VERSION=$(git describe --tags --always --dirty)
+VERSION=$(git describe --tags --always --dirty --match 'v[0-9]*')  # agent-v* tags share commits
 IMAGE=${REPO}/bifrost:${VERSION}
 
 say()  { printf '\n== %s\n' "$*"; }

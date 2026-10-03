@@ -304,6 +304,11 @@ mutate "v099 avx comments"         internal/core/cluster.go '			if m := reAVX512
 mutate "v099 mpi hint multinode"   internal/core/cluster.go '		if part == "standard" && nodes > 1 && reMPIRun.MatchString(codeOnly(script)) {' '		if part == "standard" && reMPIRun.MatchString(codeOnly(script)) {'
 mutate "v099 waste ch standard"    internal/core/p2.go '			if j.Partition == "computehigh" && cores <= 16 {' '			if j.Partition == "computehigh" && cores <= 0 {'
 mutate "v099 waste ch only"        internal/core/p2.go '			if j.Partition == "computehigh" && cores <= 16 {' '			if cores <= 16 {'
+mutate "v0910 sigill not crash"    internal/rules/rules.go '			if r.id == "tool-crash" && hasRule(out, "illegal-instruction") {' '			if false {'
+mutate "v0910 sigill exit quiet"   internal/rules/rules.go '"tool-crash", "illegal-instruction", "oom"' '"tool-crash", "oom"'
+mutate "v0910 cpu note"            internal/core/cluster.go '	if avx2OnlyPartitions[part] {
+		return "AVX2 only (e2)"' '	if false {
+		return "AVX2 only (e2)"'
 mutate "v095 background renew"     internal/backend/iap.go '		b.touch()
 		b.renewSoon()' '		b.touch()'
 mutate "v095 renew updates store"  internal/backend/iap.go '			k.Expires = exp

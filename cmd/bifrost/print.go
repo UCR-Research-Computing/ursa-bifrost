@@ -78,7 +78,7 @@ func printStatus(w io.Writer, s *core.ClusterStatus) {
 
 func printPartitions(w io.Writer, ps []core.PartitionInfo) {
 	t := tw(w)
-	fmt.Fprintln(t, "PARTITION\tNODES\tCORES\tMEM GB\tGPU\t$/NODE-H\tUSE FOR")
+	fmt.Fprintln(t, "PARTITION\tNODES\tCORES\tMEM GB\tGPU\tTIME LIMIT\tCPU\t$/NODE-H\tUSE FOR")
 	for _, p := range ps {
 		name := p.Name
 		if p.Default {
@@ -89,10 +89,14 @@ func printPartitions(w io.Writer, ps []core.PartitionInfo) {
 			gpu = fmt.Sprintf("%dx %s", p.GPUsPerNode, *p.GPUType)
 		}
 		use := p.UseFor
-		if len(use) > 70 {
-			use = use[:70] + "..."
+		if len(use) > 50 {
+			use = use[:50] + "..."
 		}
-		fmt.Fprintf(t, "%s\t%d\t%d\t%.0f\t%s\t%s\t%s\n", name, p.MaxNodes, p.CPUsPerNode, p.MemGBPerNode, gpu, money(p.USD), use)
+		limit := p.TimeLimit
+		if limit == "" || limit == "infinite" || limit == "UNLIMITED" {
+			limit = "none"
+		}
+		fmt.Fprintf(t, "%s\t%d\t%d\t%.0f\t%s\t%s\t%s\t%s\t%s\n", name, p.MaxNodes, p.CPUsPerNode, p.MemGBPerNode, gpu, limit, p.CPU, money(p.USD), use)
 	}
 	t.Flush()
 }
