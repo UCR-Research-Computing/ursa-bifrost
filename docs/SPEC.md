@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (Draft 7; built through bifrost v0.9.3 and ursa-agent 0.3.0) |
-| Status | bifrost v0.9.3, ursa-agent 0.3.0, 2026-10-02 (spec Draft 7). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
+| Document | Specification and design (Draft 7; built through bifrost v0.9.4 and ursa-agent 0.3.0) |
+| Status | bifrost v0.9.4, ursa-agent 0.3.0, 2026-10-02 (spec Draft 7). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -962,6 +962,7 @@ new mutation guards (128 in all, every one caught).
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-02 | v0.9.4 | script_check: a redirection after `module load` (`2>/dev/null`) is not a module name; it blocked the Lab harness's apptainer line |
 | 2026-10-02 | v0.9.3 | `jobs_list job_ids` (up to 100) and `restarts` on list rows; program clients with their own A1 caps and ledger (21.1); 13 mutation guards. For the deep-research Lab migration (B3, B4, A1/A3 of nexus 2026-10-02_Deep_Research_Next_Plan.md) |
 | 2026-10-02 | v0.9.2 | Scaling phase 2: in-flight cap 16 per caller (audited `busy`), accounting 4 at once server-wide; min-instances 1; 7 mutation guards |
 | 2026-10-02 | v0.9.1 | Scaling phase 1 (docs/SCALING.md): shared cache for public output and single-flight; 5 mutation guards |
