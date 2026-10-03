@@ -18,6 +18,10 @@ type StoredKey struct {
 	Line       string    `json:"line"`
 	User       string    `json:"user"`
 	Expires    time.Time `json:"expires"`
+	// Imported is when the key was added to OS Login (v0.9.5). The login node
+	// can take ~30 s or more to accept a new key, so a recent one is waited
+	// for rather than replaced. Zero for keys stored by older versions.
+	Imported time.Time `json:"imported,omitempty"`
 }
 
 // KeyStore keeps StoredKeys by Google email.

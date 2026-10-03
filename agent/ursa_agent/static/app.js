@@ -1,4 +1,4 @@
-/* Ursa Major dashboard (ursa-agent 0.3.0). Read-only panels over bifrost tools + the assistant.
+/* Ursa Major dashboard (ursa-agent 0.3.1). Read-only panels over bifrost tools + the assistant.
    Every value from the cluster is put on the page with textContent (never innerHTML): job
    names, users, paths and log text are untrusted. SPEC section 20. */
 'use strict';
@@ -103,7 +103,17 @@ async function loadPanel(p, force) {
   try {
     const r = await getJSON(p.url() + (force ? (p.url().includes('?') ? '&' : '?') + 'refresh=1' : ''));
     if (seq !== s.seq) return;  // a newer load started (range changed)
+    if (!r.ok && r.body.connecting) {
+      // bifrost is (re)connecting to the cluster: keep any data already shown, say so, retry
+      if (!body.dataset.filled) { const n = el('div', 'note connecting', r.body.error); n.title = r.body.detail || ''; body.replaceChildren(n); }
+      meta.textContent = 'connecting...';
+      s.retries = (s.retries || 0) + 1;
+      if (s.retries <= 8) setTimeout(() => { if (seq === s.seq) loadPanel(p, false); }, (r.body.retry_s || 15) * 1000);
+      else { body.replaceChildren(el('div', 'err', 'The cluster is not answering. ' + (r.body.detail || ''))); meta.textContent = ''; body.dataset.filled = ''; }
+      return;
+    }
     if (!r.ok) { body.replaceChildren(el('div', 'err', r.body.error || ('HTTP ' + r.status))); meta.textContent = ''; body.dataset.filled = ''; return; }
+    s.retries = 0;
     body.replaceChildren(); body.dataset.filled = '1';
     p.render(body, r.body.data, r.body);
     body.classList.toggle('scrolls', body.scrollHeight > body.clientHeight + 4);

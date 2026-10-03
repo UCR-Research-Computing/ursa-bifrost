@@ -167,3 +167,24 @@ async def test_parallel_refresh_uses_the_refresh_token_once(monkeypatch):
     toks = await asyncio.gather(*[web._fresh_token(w) for _ in range(6)])
     assert posts == ["r-1"], posts
     assert set(toks) == {"new-1"} and w["refresh"] == "r-2"
+
+
+def test_cluster_unreachable_is_503_connecting_not_raw_ssh(client, monkeypatch):
+    """v0.3.1: the 2026-10-03 outage showed every panel a raw SSH error."""
+
+    async def down(token, tool, args):
+        return {
+            "is_error": True,
+            "result": "cannot reach the cluster: ssh as x: ssh: handshake failed: unable to authenticate",
+        }
+
+    monkeypatch.setattr(web, "_call_bifrost", down)
+    r = client.get("/api/panel/pulse")
+    j = r.json()
+    assert r.status_code == 503 and j["connecting"] is True and j["retry_s"] > 0
+    assert j["error"] == web.CONNECTING and "handshake" in j["detail"]
+
+
+def test_other_tool_errors_stay_422(client):
+    r = client.get("/api/panel/job?job=404")
+    assert r.status_code == 422 and "connecting" not in r.json()

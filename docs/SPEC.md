@@ -962,6 +962,7 @@ new mutation guards (128 in all, every one caught).
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-03 | v0.9.5 | IAP key renewal: extend the OS Login key in place (PATCH) under 2 h left, in the background while busy; store a new key before its first login and wait for it instead of deleting and replacing it (2026-10-03 outage); ursa-agent 0.3.1 shows `connecting` and retries; 8 mutation guards |
 | 2026-10-02 | v0.9.4 | script_check: a redirection after `module load` (`2>/dev/null`) is not a module name; it blocked the Lab harness's apptainer line |
 | 2026-10-02 | v0.9.3 | `jobs_list job_ids` (up to 100) and `restarts` on list rows; program clients with their own A1 caps and ledger (21.1); 13 mutation guards. For the deep-research Lab migration (B3, B4, A1/A3 of nexus 2026-10-02_Deep_Research_Next_Plan.md) |
 | 2026-10-02 | v0.9.2 | Scaling phase 2: in-flight cap 16 per caller (audited `busy`), accounting 4 at once server-wide; min-instances 1; 7 mutation guards |
@@ -998,7 +999,11 @@ new mutation guards (128 in all, every one caught).
 ### v0.4.0 (C1): IAP backend
 `backend: iap`: per-user IAP tunnel and OS Login in Go (no gcloud per connection), pinned
 login-node host keys, one OS Login key per user reused across connections and processes
-(8 h expiry, replaced before it lapses, removed on sign-out). Live findings in
+(8 h expiry, removed on sign-out). Since v0.9.5 the key's expiry is extended in place
+(OS Login PATCH) once under 2 h is left, on reconnect and in the background while a
+connection is busy, and a new key is stored before its first login and waited for, never
+deleted for being slow (2026-10-03 outage: replacing a slow key restarted the login
+node's propagation wait each time). Live findings in
 docs/CLOUD_PLAN.md section 2.4.
 
 ### v0.5.0 (C2): hosted server
