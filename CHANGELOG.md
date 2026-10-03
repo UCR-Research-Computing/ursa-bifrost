@@ -5,6 +5,14 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## agent-v0.4.0 - 2026-10-03
+- ursa-agent keeps sign-ins across restarts: each sign-in is also written, sealed, to the
+  agent's own private bucket (`<project>-ursa-agent-data` at `/data`), so Cloud Run stopping
+  the idle service no longer signs everyone out. Rotated refresh tokens are saved at once;
+  sign-out and a refused refresh delete the record; records expire with the 12 h cookie.
+  Chats and pending approvals still start fresh after a restart (SPEC 20.6).
+- The bifrost OAuth client registration is kept as well (no new client per cold start).
+
 ## v0.9.5 - 2026-10-03
 - IAP backend: the per-user OS Login key is extended in place (PATCH expiry) once less
   than 2 h is left, both on reconnect and in the background while a connection is in

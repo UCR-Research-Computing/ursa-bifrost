@@ -808,7 +808,7 @@ The rule switches on by itself when Slurm reports a partition as shared (it did 
 against the allocated cores. deep-research v0.52.1 writes an explicit core request (default
 2) on shared partitions, so its jobs pass the rule.
 
-## 20. Dashboard (ursa-agent 0.3.0)
+## 20. Dashboard (ursa-agent 0.4.0)
 
 The ursa-agent web page becomes a personal, read-only view of the cluster: what is running,
 what my jobs did and cost, where my money and storage go, and (for staff) the whole cluster.
@@ -871,7 +871,7 @@ warm `cluster_status` about 6 s.
   bifrost call. At most 4 bifrost calls run at once per person.
 - Storage, waste and the staff panels load when they are opened, not on page load.
 - The page refreshes pulse and jobs every 60 s only while the tab is visible.
-- The cache lives in memory (like sessions) and is dropped at sign-out.
+- The cache lives in memory and is dropped at sign-out (and on a restart).
 
 ### 20.4 Safety
 
@@ -884,6 +884,28 @@ warm `cluster_status` about 6 s.
   `'unsafe-inline'` (`script-src 'self'; style-src 'self'`).
 - Errors from bifrost are shown per panel; one failing panel never blanks the page. An
   expired sign-in sends the person to `/login`.
+
+### 20.6 Sign-ins survive a restart (ursa-agent 0.4.0)
+
+The agent runs with min-instances 0: Cloud Run stops it about 15 minutes after the last
+request. Web sessions used to live only in memory, so every stop signed everyone out
+(2026-10-03). Each sign-in is now also kept in `agent/ursa_agent/store.py`'s store:
+
+- One file per sign-in in the agent's own private bucket
+  (`<project>-ursa-agent-data`, mounted at `/data`, `AGENT_DATA_DIR`; not bifrost's data
+  bucket), named by sha256 of the session id and sealed (Fernet) with a key derived from
+  `AGENT_SESSION_SECRET`. Bucket objects are deleted after a day; records older than the
+  12 h cookie are refused and swept at start-up.
+- Only email, tiers, the bifrost access and refresh tokens, their expiry and the OAuth
+  client id are written. A rotated refresh token is written at once, so the stored one is
+  always the newest. Sign-out and a refused refresh delete the file.
+- The OAuth client registration is kept too, so a restart does not register a new client.
+- Not kept: chat history and pending approvals (ADK sessions stay in memory). After a
+  restart the person is still signed in and starts a new chat. An approval card from
+  before a restart cannot be confirmed; the plan has to be made again.
+- Tests: `agent/tests/test_store.py` (restart keeps the sign-in, rotated token stored,
+  sign-out and refused refresh delete, sealed and hashed file, field allow-list, expiry,
+  forged cookie); 8 guards broken on purpose, all caught.
 
 ### 20.5 Chat
 
@@ -962,6 +984,7 @@ new mutation guards (128 in all, every one caught).
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-03 | agent 0.4.0 | ursa-agent keeps sign-ins across restarts in its own sealed bucket store (20.6); chats still start fresh |
 | 2026-10-03 | v0.9.5 | IAP key renewal: extend the OS Login key in place (PATCH) under 2 h left, in the background while busy; store a new key before its first login and wait for it instead of deleting and replacing it (2026-10-03 outage); ursa-agent 0.3.1 shows `connecting` and retries; 8 mutation guards |
 | 2026-10-02 | v0.9.4 | script_check: a redirection after `module load` (`2>/dev/null`) is not a module name; it blocked the Lab harness's apptainer line |
 | 2026-10-02 | v0.9.3 | `jobs_list job_ids` (up to 100) and `restarts` on list rows; program clients with their own A1 caps and ledger (21.1); 13 mutation guards. For the deep-research Lab migration (B3, B4, A1/A3 of nexus 2026-10-02_Deep_Research_Next_Plan.md) |

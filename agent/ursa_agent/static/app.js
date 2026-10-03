@@ -1,4 +1,4 @@
-/* Ursa Major dashboard (ursa-agent 0.3.1). Read-only panels over bifrost tools + the assistant.
+/* Ursa Major dashboard (ursa-agent 0.4.0). Read-only panels over bifrost tools + the assistant.
    Every value from the cluster is put on the page with textContent (never innerHTML): job
    names, users, paths and log text are untrusted. SPEC section 20. */
 'use strict';

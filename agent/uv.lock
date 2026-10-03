@@ -2381,10 +2381,11 @@ wheels = [
 
 [[package]]
 name = "ursa-agent"
-version = "0.3.1"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk" },
+    { name = "cryptography" },
     { name = "google-adk" },
     { name = "httpx" },
     { name = "itsdangerous" },
@@ -2404,6 +2405,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", specifier = ">=1.2,<2" },
+    { name = "cryptography", specifier = ">=44" },
     { name = "google-adk", specifier = ">=2.11,<3" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "itsdangerous", specifier = ">=2.2" },

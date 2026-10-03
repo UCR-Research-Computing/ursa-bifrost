@@ -6,8 +6,10 @@ bifrost's page; the agent gets a bifrost access token for that person and
 uses it on every MCP call. The agent never sees Google tokens and has no
 cluster access of its own.
 
-Sessions live in memory (Cloud Run min-instances 0: a cold start means signing
-in again). The browser holds only a signed session-id cookie.
+Sessions live in memory and, since 0.4.0, also in a sealed file per sign-in
+under AGENT_DATA_DIR (store.py), so a Cloud Run restart (min-instances 0) does
+not sign people out. Chat history is not kept across a restart. The browser
+holds only a signed session-id cookie.
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ from starlette.staticfiles import StaticFiles
 
 from . import __version__, approval, panels
 from .agent import TOKEN_KEY, build_agent
+from .store import SessionStore
 
 log = logging.getLogger("ursa_agent")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -55,10 +58,11 @@ CONNECTING = "Connecting to the cluster. This can take a minute after a quiet sp
 SECURE = BASE_URL.startswith("https://")
 signer = URLSafeTimedSerializer(os.environ["AGENT_SESSION_SECRET"], salt="ursa-agent-sid")
 
-# web sessions: sid -> {email, tiers, token, refresh, exp, adk_session, client_id, cache, lock}
+# web sessions: sid -> {email, tiers, token, refresh, exp, adk_session, client_id, sid, created, cache, lock}
 WEB: dict[str, dict[str, Any]] = {}
 PENDING_LOGIN: dict[str, dict[str, Any]] = {}  # state -> {verifier, sid, created}
-CLIENT: dict[str, str] = {}  # bifrost OAuth client registration (memory; re-registered on cold start)
+CLIENT: dict[str, str] = {}  # bifrost OAuth client registration (memory, and the store)
+STORE = SessionStore(os.environ.get("AGENT_DATA_DIR") or None, os.environ["AGENT_SESSION_SECRET"])
 
 sessions = InMemorySessionService()
 agent = build_agent()
@@ -71,6 +75,9 @@ runner = Runner(app_name=APP, agent=agent, session_service=sessions)
 async def _client_id(http: httpx.AsyncClient) -> str:
     if CLIENT.get("id"):
         return CLIENT["id"]
+    if cid := STORE.load_client(f"{BASE_URL}|{BIFROST_BASE}"):
+        CLIENT["id"] = cid
+        return cid
     r = await http.post(
         f"{BIFROST_BASE}/register",
         json={
@@ -81,6 +88,7 @@ async def _client_id(http: httpx.AsyncClient) -> str:
     )
     r.raise_for_status()
     CLIENT["id"] = r.json()["client_id"]
+    STORE.save_client(f"{BASE_URL}|{BIFROST_BASE}", CLIENT["id"])
     return CLIENT["id"]
 
 
@@ -100,7 +108,29 @@ def _sid(request: Request) -> str | None:
 
 def _web(request: Request) -> dict[str, Any] | None:
     sid = _sid(request)
-    return WEB.get(sid) if sid else None
+    if not sid:
+        return None
+    w = WEB.get(sid)
+    if w is None and (rec := STORE.load(sid)) is not None:
+        # signed in before a restart: bring the sign-in back (a new, empty chat)
+        w = WEB[sid] = {**rec, "sid": sid, "adk_session": None}
+        log.info("signin restored %s", w["email"])
+    return w
+
+
+def _forget(request: Request) -> None:
+    """Sign-in no longer valid (refresh refused): drop it everywhere."""
+    sid = _sid(request) or ""
+    WEB.pop(sid, None)
+    STORE.delete(sid)
+
+
+async def _adk_session(w: dict[str, Any]) -> str:
+    """The person's ADK chat session, created on first use (a restored sign-in has none)."""
+    if not w.get("adk_session"):
+        s = await sessions.create_session(app_name=APP, user_id=w["email"], state={TOKEN_KEY: w["token"]})
+        w["adk_session"] = s.id
+    return w["adk_session"]
 
 
 async def _fresh_token(w: dict[str, Any]) -> str:
@@ -129,7 +159,10 @@ async def _fresh_token(w: dict[str, Any]) -> str:
             raise PermissionError("sign-in expired")
         t = r.json()
         w.update(token=t["access_token"], refresh=t["refresh_token"], exp=time.time() + t["expires_in"])
-        await _set_state(w, {TOKEN_KEY: w["token"]})
+        if w.get("sid"):
+            STORE.save(w["sid"], w)  # refresh tokens rotate: the stored one must be the newest
+        if w.get("adk_session"):
+            await _set_state(w, {TOKEN_KEY: w["token"]})
         return w["token"]
 
 
@@ -137,7 +170,7 @@ async def _set_state(w: dict[str, Any], delta: dict[str, Any]) -> None:
     """Write into the ADK session state (token, cleared approvals)."""
     from google.adk.events import Event, EventActions
 
-    s = await sessions.get_session(app_name=APP, user_id=w["email"], session_id=w["adk_session"])
+    s = await sessions.get_session(app_name=APP, user_id=w["email"], session_id=await _adk_session(w))
     await sessions.append_event(s, Event(author="system", actions=EventActions(state_delta=delta)))
 
 
@@ -194,7 +227,10 @@ async def callback(request: Request) -> Response:
         "exp": time.time() + tok["expires_in"],
         "adk_session": s.id,
         "client_id": cid,
+        "sid": p["sid"],
+        "created": time.time(),
     }
+    STORE.save(p["sid"], WEB[p["sid"]])
     log.info("signin %s", email)
     resp = RedirectResponse("/", status_code=302)
     resp.set_cookie(
@@ -219,7 +255,10 @@ async def _whoami(token: str) -> str:
 
 async def logout(request: Request) -> Response:
     sid = _sid(request)
-    w = WEB.pop(sid, None) if sid else None
+    w = _web(request)
+    if sid:
+        WEB.pop(sid, None)
+        STORE.delete(sid)
     if w:
         if w.get("cache"):
             w["cache"].clear()
@@ -250,10 +289,13 @@ async def _run(w: dict[str, Any], text: str) -> dict[str, Any]:
     await _fresh_token(w)
     msg = genai_types.Content(role="user", parts=[genai_types.Part(text=text)])
     events = [
-        ev async for ev in runner.run_async(user_id=w["email"], session_id=w["adk_session"], new_message=msg)
+        ev
+        async for ev in runner.run_async(
+            user_id=w["email"], session_id=await _adk_session(w), new_message=msg
+        )
     ]
     reply, tools = _events_text(events)
-    s = await sessions.get_session(app_name=APP, user_id=w["email"], session_id=w["adk_session"])
+    s = await sessions.get_session(app_name=APP, user_id=w["email"], session_id=await _adk_session(w))
     return {"reply": reply, "tools": tools, "pending": approval.list_pending(s.state)}
 
 
@@ -268,7 +310,7 @@ async def chat(request: Request) -> Response:
     try:
         return JSONResponse(await _run(w, text))
     except PermissionError:
-        WEB.pop(_sid(request) or "", None)
+        _forget(request)
         return JSONResponse({"error": "sign-in expired", "login": "/login"}, status_code=401)
 
 
@@ -285,7 +327,7 @@ async def decide(request: Request) -> Response:
     action_id, verdict = str(body.get("id", "")), body.get("decision")
     if verdict not in ("approve", "reject"):
         return JSONResponse({"error": "decision must be approve or reject"}, status_code=400)
-    s = await sessions.get_session(app_name=APP, user_id=w["email"], session_id=w["adk_session"])
+    s = await sessions.get_session(app_name=APP, user_id=w["email"], session_id=await _adk_session(w))
     state = dict(s.state)
     pend = approval.take(state, action_id)
     if not pend:
@@ -348,7 +390,7 @@ async def upload(request: Request) -> Response:
         await _fresh_token(w)
         out = await _call_bifrost(w["token"], "upload_prepare", {"filename": name, "bytes": size})
     except PermissionError:
-        WEB.pop(_sid(request) or "", None)
+        _forget(request)
         return JSONResponse({"error": "sign-in expired", "login": "/login"}, status_code=401)
     if out["is_error"]:
         return JSONResponse({"error": str(out["result"].get("error", out["result"]))[:500]}, status_code=400)
@@ -362,7 +404,7 @@ async def me(request: Request) -> Response:
     w = _web(request)
     if not w:
         return JSONResponse({"signed_in": False})
-    s = await sessions.get_session(app_name=APP, user_id=w["email"], session_id=w["adk_session"])
+    s = await sessions.get_session(app_name=APP, user_id=w["email"], session_id=await _adk_session(w))
     return JSONResponse(
         {
             "signed_in": True,
@@ -400,7 +442,7 @@ async def panel(request: Request) -> Response:
             key, p.ttl, call, p.tool, args, force=request.query_params.get("refresh") == "1"
         )
     except PermissionError:
-        WEB.pop(_sid(request) or "", None)
+        _forget(request)
         return JSONResponse({"error": "sign-in expired", "login": "/login"}, status_code=401)
     except Exception as e:  # noqa: BLE001  bifrost unreachable or an MCP error: show it on this panel only
         root = e
@@ -675,6 +717,8 @@ A2A_INNER, A2A_APP = build_a2a_app()
 @asynccontextmanager
 async def lifespan(app: Starlette):
     log.info("ursa-agent %s at %s, bifrost %s", __version__, BASE_URL, BIFROST)
+    if STORE.enabled:
+        log.info("sign-ins kept across restarts in %s (%d expired removed)", STORE.dir, STORE.sweep())
     # the A2A sub-app attaches its routes in its own lifespan
     async with A2A_INNER.router.lifespan_context(A2A_INNER):
         yield
