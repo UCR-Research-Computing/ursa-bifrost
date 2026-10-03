@@ -88,6 +88,8 @@ func TestAllowListIsClosed(t *testing.T) {
 	lf, _ := ListFiles("/home/alice/bifrost-jobs/x")
 	hd, _ := Head("/home/alice/bifrost-jobs/x/a.txt", 100)
 	td, _ := TarDir("/home/alice/bifrost-jobs/x", nil)
+	sqj, _ := SqueueJobs([]string{"1", "2"})
+	saj, _ := SacctJobs([]string{"1", "2"})
 	writes := map[string]bool{}
 	for _, c := range []Command{sb, sc, ho, re} {
 		writes[c.String()] = true
@@ -95,12 +97,12 @@ func TestAllowListIsClosed(t *testing.T) {
 			t.Errorf("%v must be marked write", c.argv)
 		}
 	}
-	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), PartitionSharing(), Nodes(), cat, tl, ms, to, lf, hd, td} {
+	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), PartitionSharing(), Nodes(), cat, tl, ms, to, lf, hd, td, sqj, saj} {
 		if c.Write() {
 			t.Errorf("read command marked write: %v", c.argv)
 		}
 	}
-	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), Nodes(), cat, tl, ms, to, sb, sc, ho, re, lf, hd, td} {
+	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), Nodes(), cat, tl, ms, to, sb, sc, ho, re, lf, hd, td, sqj, saj} {
 		if !allowed[c.argv[0]] {
 			t.Errorf("unexpected program %q", c.argv[0])
 		}

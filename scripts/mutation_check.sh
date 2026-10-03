@@ -288,6 +288,13 @@ mutate "v096 env uses config"      internal/core/helpers.go '	c, err := backend.
 mutate "v096 env reports job"      internal/core/helpers.go '			r.JobID, r.Node = policy.CleanLabel(f[1], 20), policy.CleanLabel(f[2], 80)' '			_ = f'
 mutate "v096 env timeout"          internal/backend/files.go '	return Command{argv: argv, kind: KindNoCache, timeout: 200 * time.Second}, nil' '	return Command{argv: argv, kind: KindNoCache, timeout: 120 * time.Second}, nil'
 mutate "v096 config partition"     internal/config/config.go '	if !rePartitionName.MatchString(c.EnvPartition) {' '	if false {'
+mutate "v097 job_ids uncached"     internal/backend/command.go '	return Command{argv: []string{"squeue", "--json", "-j", list}, kind: KindNoCache, okExit: []int{1}}, nil' '	return Command{argv: []string{"squeue", "--json", "-j", list}, kind: KindQueue, okExit: []int{1}}, nil'
+mutate "v097 job_ids by id"        internal/core/jobs.go '	byID := len(want) > 0 && !in.All' '	byID := false'
+mutate "v097 own queue rows only"  internal/core/jobs.go '		if byID && j.UserName != who {' '		if false {'
+mutate "v097 own acct rows only"   internal/core/jobs.go '		if byID && j.User != who {' '		if false {'
+mutate "v097 job list validated"   internal/backend/command.go '		if err := ValidJobID(id); err != nil {
+			return "", err' '		if false {
+			return "", nil'
 mutate "v095 background renew"     internal/backend/iap.go '		b.touch()
 		b.renewSoon()' '		b.touch()'
 mutate "v095 renew updates store"  internal/backend/iap.go '			k.Expires = exp
