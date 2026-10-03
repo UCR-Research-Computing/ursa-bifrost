@@ -152,26 +152,30 @@ type CommandInfo struct {
 
 // EnvCheck is env_check's answer.
 type EnvCheck struct {
-	Modules  []ModuleLoad  `json:"modules"`
-	Loaded   []string      `json:"module_list"`
-	Commands []CommandInfo `json:"commands"`
-	Notes    []string      `json:"notes"`
+	Partition string        `json:"partition"`        // where the check job ran
+	JobID     string        `json:"job_id,omitempty"` // the one-core Slurm job
+	Node      string        `json:"node,omitempty"`
+	Modules   []ModuleLoad  `json:"modules"`
+	Loaded    []string      `json:"module_list"`
+	Commands  []CommandInfo `json:"commands"`
+	Notes     []string      `json:"notes"`
 }
 
-// EnvCheck loads modules on the login node and reports what you get.
+// EnvCheck loads modules in a one-core job on the check partition (never on
+// the login node) and reports what you get.
 func (s *Service) EnvCheck(ctx context.Context, modules, commands []string) (*EnvCheck, error) {
 	if len(modules) == 0 && len(commands) == 0 {
 		commands = []string{"python3", "gcc", "mpirun"}
 	}
-	c, err := backend.EnvCheck(modules, commands, versionCommands)
+	c, err := backend.EnvCheck(s.Cfg.EnvPartition, modules, commands, versionCommands)
 	if err != nil {
 		return nil, err
 	}
 	out, err := s.run(ctx, c)
 	if err != nil {
-		return nil, fmt.Errorf("env_check: %w", err)
+		return nil, fmt.Errorf("env_check (a one-core job on the %s partition): %w", s.Cfg.EnvPartition, err)
 	}
-	r := &EnvCheck{Modules: []ModuleLoad{}, Loaded: []string{}, Commands: []CommandInfo{}, Notes: []string{}}
+	r := &EnvCheck{Partition: s.Cfg.EnvPartition, Modules: []ModuleLoad{}, Loaded: []string{}, Commands: []CommandInfo{}, Notes: []string{}}
 	inList := false
 	for _, line := range strings.Split(string(out), "\n") {
 		if line == "" {
@@ -179,6 +183,8 @@ func (s *Service) EnvCheck(ctx context.Context, modules, commands []string) (*En
 		}
 		f := strings.Split(line, "\t")
 		switch {
+		case f[0] == "J" && len(f) >= 3:
+			r.JobID, r.Node = policy.CleanLabel(f[1], 20), policy.CleanLabel(f[2], 80)
 		case f[0] == "M" && len(f) >= 3:
 			ml := ModuleLoad{Module: f[1], Loaded: f[2] == "ok"}
 			if !ml.Loaded && len(f) >= 4 {
@@ -210,7 +216,7 @@ func (s *Service) EnvCheck(ctx context.Context, modules, commands []string) (*En
 			}
 		}
 	}
-	r.Notes = append(r.Notes, "Checked on the login node; compute nodes share /apps, so modules resolve the same in batch jobs.")
+	r.Notes = append(r.Notes, "Checked in a one-core job on a "+s.Cfg.EnvPartition+" compute node; every partition shares /apps, so modules resolve the same in batch jobs (GPU tools such as nvcc only run on gpul4).")
 	return r, nil
 }
 

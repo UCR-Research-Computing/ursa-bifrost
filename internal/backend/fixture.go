@@ -67,6 +67,16 @@ func (f *Fixture) Run(_ context.Context, c Command) ([]byte, error) {
 		return nil, fmt.Errorf("%s exited 1: %s", a[0], msg)
 	}
 	read := func(name string) ([]byte, error) { return os.ReadFile(filepath.Join(f.Dir, name)) }
+	if a[0] == "srun" {
+		// env_check's job wrapper: answer the wrapped bash template
+		for i, x := range a {
+			if x == "bash" {
+				c.argv = a[i:]
+				a = c.argv
+				break
+			}
+		}
+	}
 	switch a[0] {
 	case "id":
 		return []byte(f.User + "\n"), nil

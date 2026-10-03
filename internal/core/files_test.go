@@ -599,7 +599,7 @@ func hasPartial(fs []FolderUsage) bool {
 
 func TestEnvCheck(t *testing.T) {
 	s, fx := newTestService(t)
-	fx.Out = map[string]string{backend.EnvTemplateForTest(): "M\tgcc\tok\nM\tnosuch\tfail\tLmod has detected the following error: The following module(s) are unknown: \"nosuch\"\nL\ngcc/13.5.0\nC\tgcc\t/apps/gcc/13.5.0/bin/gcc\tgcc (UCR Ursa Major) 13.5.0\nC\tpython\t\t\nC\tmyprog\t/usr/bin/myprog\t\n"}
+	fx.Out = map[string]string{backend.EnvTemplateForTest(): "J\t475\tucrslurmcl-checknodeset-0\nM\tgcc\tok\nM\tnosuch\tfail\tLmod has detected the following error: The following module(s) are unknown: \"nosuch\"\nL\ngcc/13.5.0\nC\tgcc\t/apps/gcc/13.5.0/bin/gcc\tgcc (UCR Ursa Major) 13.5.0\nC\tpython\t\t\nC\tmyprog\t/usr/bin/myprog\t\n"}
 	r, err := s.EnvCheck(context.Background(), []string{"gcc", "nosuch"}, []string{"gcc", "python", "myprog"})
 	if err != nil {
 		t.Fatal(err)
@@ -612,6 +612,16 @@ func TestEnvCheck(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(r.Notes, " "), "no bare `python`") {
 		t.Errorf("notes: %v", r.Notes)
+	}
+	// it ran as a one-core job on the check partition, not on the login node
+	if r.Partition != "check" || r.JobID != "475" || r.Node != "ucrslurmcl-checknodeset-0" {
+		t.Errorf("job: partition=%q job=%q node=%q", r.Partition, r.JobID, r.Node)
+	}
+	if call := fx.Calls[len(fx.Calls)-1]; !strings.HasPrefix(call, "srun -p check ") {
+		t.Errorf("env_check did not run as a check-partition job: %s", call)
+	}
+	if strings.Contains(strings.Join(r.Notes, " "), "login node") {
+		t.Errorf("notes still say login node: %v", r.Notes)
 	}
 	// only known programs are asked for --version
 	last := fx.Calls[len(fx.Calls)-1]

@@ -166,16 +166,30 @@ func ValidCommandName(c string) error {
 }
 
 // envTemplate loads modules in a login shell, then reports the module list
-// and where each command resolves. M/L/C prefixes keep the parse simple.
-const envTemplate = `n=$1; shift; i=0; while [ "$i" -lt "$n" ]; do m=$1; shift; i=$((i+1)); if module load "$m" >/dev/null 2>&1; then printf 'M\t%s\tok\n' "$m"; else printf 'M\t%s\tfail\t%s\n' "$m" "$(module load "$m" 2>&1 | grep -v '^[[:space:]]*$' | grep -m 3 -i -E 'error|unknown|not found|cannot|conflict|requires|prereq' | tr '\n\t' '  ')"; fi; done; echo L; module -t list 2>&1 | grep -v '^[[:space:]]*$' | grep -v ':$'; for a in "$@"; do c=${a#?:}; p=$(command -v -- "$c" 2>/dev/null || true); v=''; if [ -n "$p" ] && [ "${a%%:*}" = v ]; then v=$(timeout 10 "$c" --version 2>&1 </dev/null | grep -v '^[[:space:]]*$' | head -n 1 | tr '\t' ' '); fi; printf 'C\t%s\t%s\t%s\n' "$c" "$p" "$v"; done`
+// and where each command resolves. M/L/C prefixes keep the parse simple; J
+// names the Slurm job and node it ran on.
+const envTemplate = `[ -n "${SLURM_JOB_ID:-}" ] && printf 'J\t%s\t%s\n' "$SLURM_JOB_ID" "$(hostname -s)"; n=$1; shift; i=0; while [ "$i" -lt "$n" ]; do m=$1; shift; i=$((i+1)); if module load "$m" >/dev/null 2>&1; then printf 'M\t%s\tok\n' "$m"; else printf 'M\t%s\tfail\t%s\n' "$m" "$(module load "$m" 2>&1 | grep -v '^[[:space:]]*$' | grep -m 3 -i -E 'error|unknown|not found|cannot|conflict|requires|prereq' | tr '\n\t' '  ')"; fi; done; echo L; module -t list 2>&1 | grep -v '^[[:space:]]*$' | grep -v ':$'; for a in "$@"; do c=${a#?:}; p=$(command -v -- "$c" 2>/dev/null || true); v=''; if [ -n "$p" ] && [ "${a%%:*}" = v ]; then v=$(timeout 10 "$c" --version 2>&1 </dev/null | grep -v '^[[:space:]]*$' | head -n 1 | tr '\t' ' '); fi; printf 'C\t%s\t%s\t%s\n' "$c" "$p" "$v"; done`
 
-// EnvCheck loads modules and resolves commands; version is asked only for the
-// commands in withVersion (a fixed list chosen by the caller).
-func EnvCheck(modules, commands []string, withVersion map[string]bool) (Command, error) {
+// EnvJobArgs is the srun prefix env_check runs under: one core for at most 3
+// minutes on the given partition (the always-on check partition), never on
+// the login node. --immediate gives up if no node is allocated within 2
+// minutes (a powered-down node booting counts as allocated).
+func EnvJobArgs(partition string) []string {
+	return []string{"srun", "-p", partition, "-N", "1", "-n", "1", "-c", "1", "-t", "3",
+		"--immediate=120", "--quiet", "-J", "bifrost-env-check"}
+}
+
+// EnvCheck loads modules and resolves commands inside a tiny Slurm job on
+// partition; version is asked only for the commands in withVersion (a fixed
+// list chosen by the caller).
+func EnvCheck(partition string, modules, commands []string, withVersion map[string]bool) (Command, error) {
+	if !rePartition.MatchString(partition) {
+		return Command{}, fmt.Errorf("env_check partition %q is not a partition name", partition)
+	}
 	if len(modules) > 10 || len(commands) > 15 {
 		return Command{}, fmt.Errorf("at most 10 modules and 15 commands")
 	}
-	argv := []string{"bash", "-lc", envTemplate, "bifrost", strconv.Itoa(len(modules))}
+	argv := append(EnvJobArgs(partition), "bash", "-lc", envTemplate, "bifrost", strconv.Itoa(len(modules)))
 	for _, m := range modules {
 		if !reModule.MatchString(m) {
 			return Command{}, fmt.Errorf("module name %q has unexpected characters", m)
@@ -192,7 +206,7 @@ func EnvCheck(modules, commands []string, withVersion map[string]bool) (Command,
 			argv = append(argv, "n:"+c)
 		}
 	}
-	return Command{argv: argv, kind: KindNoCache, timeout: 120 * time.Second}, nil
+	return Command{argv: argv, kind: KindNoCache, timeout: 200 * time.Second}, nil
 }
 
 var reSignedURL = regexp.MustCompile(`^https://storage\.googleapis\.com/[A-Za-z0-9._~%/?&=+-]+$`)

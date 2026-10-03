@@ -1,8 +1,10 @@
 package backend
 
 import (
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidJobID(t *testing.T) {
@@ -67,7 +69,7 @@ func TestAllowListIsClosed(t *testing.T) {
 	// Every constructor's program must be one of these. If you add a command,
 	// add it here deliberately.
 	allowed := map[string]bool{"id": true, "squeue": true, "sacct": true, "sinfo": true, "scontrol": true, "cat": true, "tail": true, "bash": true,
-		"sbatch": true, "scancel": true, "find": true, "head": true, "tar": true, "realpath": true, "df": true, "curl": true}
+		"sbatch": true, "scancel": true, "find": true, "head": true, "tar": true, "realpath": true, "df": true, "curl": true, "srun": true}
 	u, _ := SqueueUser("alice")
 	j, _ := SqueueJob("1")
 	st, _ := SqueueStart("1")
@@ -177,7 +179,7 @@ func TestNewTemplatesAreFixed(t *testing.T) {
 		{"listdir", func() (Command, error) { return ListDir("/home/alice") }},
 		{"du", func() (Command, error) { return DuTop("/home/alice", "/scratch/alice") }},
 		{"env", func() (Command, error) {
-			return EnvCheck([]string{"gcc"}, []string{"python3"}, map[string]bool{"python3": true})
+			return EnvCheck("check", []string{"gcc"}, []string{"python3"}, map[string]bool{"python3": true})
 		}},
 	}
 	fixed := map[string]bool{treeTemplate: true, readRangeTemplate: true, grepTemplate: true, logWindowTemplate: true, listDirTemplate: true, duTemplate: true, envTemplate: true}
@@ -186,8 +188,17 @@ func TestNewTemplatesAreFixed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
-		if cmd.argv[0] != "bash" || !fixed[cmd.argv[2]] || cmd.argv[3] != "bifrost" {
-			t.Errorf("%s: not a fixed template: %v", c.name, cmd.argv[:3])
+		argv := cmd.argv
+		if c.name == "env" {
+			// env_check runs inside a fixed one-core srun on the check partition
+			pre := EnvJobArgs("check")
+			if strings.Join(argv[:len(pre)], " ") != strings.Join(pre, " ") {
+				t.Fatalf("env: not wrapped in the check-partition srun: %v", argv)
+			}
+			argv = argv[len(pre):]
+		}
+		if argv[0] != "bash" || !fixed[argv[2]] || argv[3] != "bifrost" {
+			t.Errorf("%s: not a fixed template: %v", c.name, argv[:3])
 		}
 		if cmd.Write() {
 			t.Errorf("%s is marked write", c.name)
@@ -208,9 +219,11 @@ func TestNewTemplatesAreFixed(t *testing.T) {
 		func() (Command, error) { return GrepFile("/home/alice/x", "a", MaxGrepMatches+1, 2) },
 		func() (Command, error) { return LogWindow("/home/alice/x", 0, MaxWindowLines+1) },
 		func() (Command, error) { return ListDir("/") },
-		func() (Command, error) { return EnvCheck([]string{"gcc;id"}, nil, nil) },
-		func() (Command, error) { return EnvCheck(nil, []string{"/bin/sh"}, nil) },
-		func() (Command, error) { return EnvCheck(nil, []string{"-c"}, nil) },
+		func() (Command, error) { return EnvCheck("check", []string{"gcc;id"}, nil, nil) },
+		func() (Command, error) { return EnvCheck("check", nil, []string{"/bin/sh"}, nil) },
+		func() (Command, error) { return EnvCheck("check", nil, []string{"-c"}, nil) },
+		func() (Command, error) { return EnvCheck("check --uid=0", nil, nil, nil) },
+		func() (Command, error) { return EnvCheck("", nil, nil, nil) },
 		func() (Command, error) {
 			return PutFile("/home/alice/x", "https://evil.example.com/?X-Goog-Signature=00")
 		},
@@ -231,4 +244,33 @@ func TestNewTemplatesAreFixed(t *testing.T) {
 	if err != nil || pf.argv[0] != "curl" || pf.Write() {
 		t.Errorf("put: %v %v", pf.argv, err)
 	}
+}
+
+func TestEnvCheckRunsAsCheckJob(t *testing.T) {
+	c, err := EnvCheck("check", []string{"gcc"}, []string{"python3"}, map[string]bool{"python3": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := c.argv
+	if a[0] != "srun" || flagValue(a, "-p") != "check" || flagValue(a, "-c") != "1" || flagValue(a, "-n") != "1" || flagValue(a, "-t") != "3" {
+		t.Fatalf("env_check must be a one-core, 3-minute srun on check: %v", a)
+	}
+	if !slices.Contains(a, "--immediate=120") {
+		t.Errorf("env_check must give up when no node comes: %v", a)
+	}
+	if c.Write() || c.Kind() != KindNoCache {
+		t.Errorf("env_check is an uncached read: write=%v kind=%v", c.Write(), c.Kind())
+	}
+	if c.timeout < 150*time.Second {
+		t.Errorf("timeout %v is shorter than srun's own 2-minute wait", c.timeout)
+	}
+}
+
+func flagValue(a []string, f string) string {
+	for i := 0; i+1 < len(a); i++ {
+		if a[i] == f {
+			return a[i+1]
+		}
+	}
+	return ""
 }
