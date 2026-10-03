@@ -295,6 +295,8 @@ mutate "v097 own acct rows only"   internal/core/jobs.go '		if byID && j.User !=
 mutate "v097 job list validated"   internal/backend/command.go '		if err := ValidJobID(id); err != nil {
 			return "", err' '		if false {
 			return "", nil'
+mutate "v098 idle alt order"       internal/core/a1.go '	altPartitions     = []string{"standard", "spot", "computehigh", "nvmescratch", "highmem"}' '	altPartitions     = []string{"computehigh", "standard", "spot", "nvmescratch", "highmem"}'
+mutate "v098 cold alt order"       internal/core/a1.go '	altColdPartitions = []string{"standard", "spot", "computehigh"}' '	altColdPartitions = []string{"computehigh", "standard", "spot"}'
 mutate "v095 background renew"     internal/backend/iap.go '		b.touch()
 		b.renewSoon()' '		b.touch()'
 mutate "v095 renew updates store"  internal/backend/iap.go '			k.Expires = exp

@@ -70,7 +70,7 @@ var logRules = []logRule{
 	{
 		id: "tool-crash", severity: Error, title: "A program crashed (assertion or segfault)",
 		re:         regexp.MustCompile(`Assertion '.*' failed|Segmentation fault|core dumped|signal 11|\*\*\* Process received signal`),
-		suggestion: "Usually an input it did not expect (name or format), or code built for AVX-512 on the AMD standard/spot nodes. Check inputs; try computehigh (Intel) to rule out the CPU.",
+		suggestion: "Usually an input it did not expect (name or format), or code built for AVX-512 on the AVX2-only standard/spot nodes (e2). Check inputs; try computehigh (Intel, AVX-512) to rule out the CPU.",
 	},
 	{
 		id: "glibc", severity: Error, title: "Binary needs a newer glibc than the nodes have",
@@ -329,8 +329,8 @@ type signalExit struct{ title, meaning, fix string }
 
 // signalExits maps shell exit codes 128+N (and Slurm's "signal N") to causes.
 var signalExits = map[string]signalExit{
-	"139":              {"A program crashed (segmentation fault)", "128+11, SIGSEGV", "Usually an input it did not expect, a bug, or code built for AVX-512 running on the AMD standard/spot nodes (try computehigh). Run it under gdb or with core dumps to find where."},
-	"signal 11 (SEGV)": {"A program crashed (segmentation fault)", "SIGSEGV", "Usually an input it did not expect, a bug, or AVX-512 code on AMD nodes (try computehigh)."},
+	"139":              {"A program crashed (segmentation fault)", "128+11, SIGSEGV", "Usually an input it did not expect, a bug, or code built for AVX-512 running on the AVX2-only standard/spot nodes (try computehigh). Run it under gdb or with core dumps to find where."},
+	"signal 11 (SEGV)": {"A program crashed (segmentation fault)", "SIGSEGV", "Usually an input it did not expect, a bug, or AVX-512 code on the AVX2-only standard/spot nodes (try computehigh)."},
 	"137":              {"A program was killed (SIGKILL)", "128+9, SIGKILL", "Most often the out-of-memory killer: check peak memory and request more (--mem) or use highmem."},
 	"signal 9 (KILL)":  {"The job was killed (SIGKILL)", "SIGKILL", "Most often out of memory or a time limit; check job_show for peak memory and limits."},
 	"134":              {"A program aborted (SIGABRT)", "128+6, SIGABRT", "An assertion or a library detected a fatal error; read the lines just before the end of the log."},
