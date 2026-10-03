@@ -48,13 +48,21 @@ type fakeGoogle struct {
 	open        int
 	peak        int
 	slow        time.Duration
+	// acceptAfter: the SSH server refuses a key until this long after its
+	// import (the login node's key cache; live: 5-30 s, sometimes over a minute).
+	acceptAfter time.Duration
+	imported    map[string]time.Time // key id -> import time
+	expiry      map[string]string    // key id -> expirationTimeUsec
+	patches     int
+	failPatch   bool // PATCH answers 500 (extension unavailable)
 }
 
 func newFakeGoogle(t *testing.T) *fakeGoogle {
 	t.Helper()
 	_, hpriv, _ := ed25519.GenerateKey(rand.Reader)
 	hs, _ := ssh.NewSignerFromKey(hpriv)
-	f := &fakeGoogle{t: t, token: "tok-alice", email: "alice@ucr.edu", posix: "alice_ucr_edu", keys: map[string]string{}, hostKey: hs}
+	f := &fakeGoogle{t: t, token: "tok-alice", email: "alice@ucr.edu", posix: "alice_ucr_edu", keys: map[string]string{}, hostKey: hs,
+		imported: map[string]time.Time{}, expiry: map[string]string{}}
 	f.osl = httptest.NewServer(http.HandlerFunc(f.serveOSLogin))
 	f.relay = httptest.NewServer(http.HandlerFunc(f.serveRelay))
 	t.Cleanup(func() { f.osl.Close(); f.relay.Close() })
@@ -85,12 +93,42 @@ func (f *fakeGoogle) serveOSLogin(w http.ResponseWriter, r *http.Request) {
 			id = "other-" + id[:16]
 		}
 		f.keys[id] = body.Key
+		f.imported[id] = time.Now()
 		f.imports++
 		prof := map[string]any{"posixAccounts": []map[string]any{{"username": f.posix, "primary": true}}, "sshPublicKeys": map[string]any{}}
 		for id, k := range f.keys {
 			prof["sshPublicKeys"].(map[string]any)[id] = map[string]any{"key": k, "fingerprint": id}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"loginProfile": prof})
+	case r.Method == "GET" && strings.Contains(r.URL.Path, "/sshPublicKeys/"):
+		id := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		if _, ok := f.keys[id]; !ok {
+			http.Error(w, `{"error":{"code":404}}`, 404)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"key": f.keys[id], "fingerprint": id})
+	case r.Method == "PATCH":
+		id := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		f.patches++
+		if f.failPatch {
+			http.Error(w, `{"error":{"code":500}}`, 500)
+			return
+		}
+		if _, ok := f.keys[id]; !ok || r.URL.Query().Get("updateMask") != "expirationTimeUsec" {
+			http.Error(w, `{"error":{"code":404}}`, 404)
+			return
+		}
+		var body struct {
+			Key string
+			Exp string `json:"expirationTimeUsec"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Key != f.keys[id] {
+			http.Error(w, `{"error":{"code":400,"message":"key mismatch"}}`, 400)
+			return
+		}
+		f.expiry[id] = body.Exp
+		_ = json.NewEncoder(w).Encode(map[string]any{"key": body.Key, "expirationTimeUsec": body.Exp, "fingerprint": id})
 	case r.Method == "DELETE":
 		id := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 		delete(f.keys, id)
@@ -104,10 +142,10 @@ func (f *fakeGoogle) serveOSLogin(w http.ResponseWriter, r *http.Request) {
 func (f *fakeGoogle) keyAllowed(key ssh.PublicKey) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for _, line := range f.keys {
+	for id, line := range f.keys {
 		pk, _, _, _, err := ssh.ParseAuthorizedKey([]byte(line))
 		if err == nil && string(pk.Marshal()) == string(key.Marshal()) {
-			return true
+			return time.Since(f.imported[id]) >= f.acceptAfter
 		}
 	}
 	return false
@@ -351,8 +389,12 @@ func TestIAPReusesStoredKeyAcrossProcesses(t *testing.T) {
 	}
 }
 
+// TestIAPExpiringKeyIsReplaced: a key close to expiry that cannot be extended
+// (OS Login PATCH failing) is not used for a new connection: a new key is
+// imported and the old one removed.
 func TestIAPExpiringKeyIsReplaced(t *testing.T) {
 	f := newFakeGoogle(t)
+	f.failPatch = true
 	store := NewMemKeyStore()
 	b := f.backend()
 	b.Keys = store
@@ -583,4 +625,179 @@ func TestIAPRefusedChannelKeepsConnection(t *testing.T) {
 		t.Error("a refused channel tore down the shared connection")
 	}
 	_ = b.Revoke(context.Background())
+}
+
+// ---- v0.9.5: key renewal (outage 2026-10-03: an 8 h key lapsed overnight and
+// every replacement was deleted before the login node accepted it) ----------
+
+func storedKey(t *testing.T, s KeyStore, email string) *StoredKey {
+	t.Helper()
+	k, err := s.Get(email)
+	if err != nil || k == nil {
+		t.Fatalf("no stored key: %v", err)
+	}
+	return k
+}
+
+// A stored key close to expiry is extended in place (same key, no propagation
+// wait), not replaced by a new import.
+func TestIAPNearExpiryKeyIsExtendedNotReplaced(t *testing.T) {
+	f := newFakeGoogle(t)
+	store := NewMemKeyStore()
+	b := f.backend()
+	b.Keys = store
+	ctx := context.Background()
+	if _, err := b.Run(ctx, Whoami()); err != nil {
+		t.Fatal(err)
+	}
+	_ = b.Close()
+	k := storedKey(t, store, f.email)
+	k.Expires = time.Now().Add(30 * time.Minute) // inside RenewWindow
+	_ = store.Put(f.email, k)
+	if _, err := b.Run(ctx, Whoami()); err != nil {
+		t.Fatal(err)
+	}
+	if f.imports != 1 || f.patches != 1 {
+		t.Errorf("imports %d patches %d, want 1 and 1 (extended, not replaced)", f.imports, f.patches)
+	}
+	if left := time.Until(storedKey(t, store, f.email).Expires); left < 7*time.Hour {
+		t.Errorf("stored expiry not moved out: %v left", left)
+	}
+	if f.expiry[keyID(k.Line)] == "" {
+		t.Error("OS Login expiry not updated")
+	}
+	_ = b.Revoke(ctx)
+}
+
+// A key the login node is still slow to accept is kept (stored before the
+// first login, never deleted for being slow) and the next call waits for that
+// same key instead of importing another and restarting the wait.
+func TestIAPSlowNewKeyIsKeptAndReused(t *testing.T) {
+	f := newFakeGoogle(t)
+	f.acceptAfter = 2500 * time.Millisecond
+	store := NewMemKeyStore()
+	b := f.backend()
+	b.Keys = store
+	short, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err := b.Run(short, Whoami())
+	if err == nil {
+		t.Fatal("first call should fail while the key propagates")
+	}
+	if len(f.keys) != 1 || f.deletes != 0 {
+		t.Fatalf("slow key removed: %d keys on profile, %d deletes", len(f.keys), f.deletes)
+	}
+	if _, err := b.Run(context.Background(), Whoami()); err != nil {
+		t.Fatalf("second call did not wait for the same key: %v", err)
+	}
+	if f.imports != 1 {
+		t.Errorf("imports %d, want 1 (no replacement key)", f.imports)
+	}
+	_ = b.Revoke(context.Background())
+}
+
+// The error a caller sees while a new key propagates says so in plain words.
+func TestIAPSlowKeyErrorExplains(t *testing.T) {
+	f := newFakeGoogle(t)
+	f.acceptAfter = time.Hour
+	b := f.backend()
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	_, err := b.Run(ctx, Whoami())
+	if err == nil || !strings.Contains(err.Error(), "not accepted the new login key yet") {
+		t.Fatalf("error: %v", err)
+	}
+}
+
+// Parallel calls arriving while a new key propagates all succeed on one key.
+func TestIAPParallelCallsDuringPropagation(t *testing.T) {
+	f := newFakeGoogle(t)
+	f.acceptAfter = 1500 * time.Millisecond
+	b := f.backend()
+	b.Keys = NewMemKeyStore()
+	var wg sync.WaitGroup
+	errs := make(chan error, 5)
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := b.Run(context.Background(), Sinfo()); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+	if f.imports != 1 {
+		t.Errorf("imports %d, want 1", f.imports)
+	}
+	_ = b.Revoke(context.Background())
+}
+
+// A connection kept busy for hours renews its key in the background before
+// it lapses, so the reconnect after the next idle close needs no new key.
+func TestIAPLiveConnectionRenewsKeyInBackground(t *testing.T) {
+	f := newFakeGoogle(t)
+	store := NewMemKeyStore()
+	b := f.backend()
+	b.Keys = store
+	ctx := context.Background()
+	if _, err := b.Run(ctx, Whoami()); err != nil {
+		t.Fatal(err)
+	}
+	b.mu.Lock()
+	b.keyExp = time.Now().Add(time.Hour) // inside RenewWindow
+	b.mu.Unlock()
+	if _, err := b.Run(ctx, Sinfo()); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		b.mu.Lock()
+		left, busy := time.Until(b.keyExp), b.renewing
+		b.mu.Unlock()
+		if left > 7*time.Hour && !busy {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("not renewed: %v left, %d patches", left, f.patches)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if f.patches != 1 || f.imports != 1 {
+		t.Errorf("patches %d imports %d, want 1 and 1", f.patches, f.imports)
+	}
+	if time.Until(storedKey(t, store, f.email).Expires) < 7*time.Hour {
+		t.Error("stored key expiry not updated by the background renewal")
+	}
+	_ = b.Revoke(ctx)
+}
+
+// A stored key that has vanished from the profile (PATCH 404) is replaced.
+func TestIAPVanishedKeyOnExtendIsReplaced(t *testing.T) {
+	f := newFakeGoogle(t)
+	store := NewMemKeyStore()
+	b := f.backend()
+	b.Keys = store
+	ctx := context.Background()
+	if _, err := b.Run(ctx, Whoami()); err != nil {
+		t.Fatal(err)
+	}
+	_ = b.Close()
+	k := storedKey(t, store, f.email)
+	k.Expires = time.Now().Add(30 * time.Minute)
+	_ = store.Put(f.email, k)
+	f.mu.Lock()
+	f.keys = map[string]string{}
+	f.mu.Unlock()
+	if _, err := b.Run(ctx, Whoami()); err != nil {
+		t.Fatal(err)
+	}
+	if f.imports != 2 {
+		t.Errorf("imports %d, want 2", f.imports)
+	}
+	_ = b.Revoke(ctx)
 }

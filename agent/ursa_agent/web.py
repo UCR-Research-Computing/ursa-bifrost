@@ -48,6 +48,10 @@ BASE_URL = os.environ.get("AGENT_BASE_URL", "http://localhost:8080").rstrip("/")
 BIFROST = os.environ.get("BIFROST_MCP_URL", "https://bifrost-mcp-125853442225.us-central1.run.app/mcp")
 BIFROST_BASE = BIFROST.removesuffix("/mcp")
 COOKIE = "ursa_sid"
+# bifrost's error prefix when it cannot log in to the cluster (backend.ErrUnreachable)
+UNREACHABLE = "cannot reach the cluster"
+CONNECTING = "Connecting to the cluster. This can take a minute after a quiet spell; retrying."
+
 SECURE = BASE_URL.startswith("https://")
 signer = URLSafeTimedSerializer(os.environ["AGENT_SESSION_SECRET"], salt="ursa-agent-sid")
 
@@ -407,8 +411,17 @@ async def panel(request: Request) -> Response:
         return JSONResponse({"error": f"bifrost call failed: {type(e).__name__}"}, status_code=502)
     res = out.get("result")
     if out.get("is_error"):
-        msg = res if isinstance(res, str) else (res or {}).get("error", res)
-        return JSONResponse({"error": str(msg)[:600], "tool": p.tool}, status_code=422)
+        msg = str(res if isinstance(res, str) else (res or {}).get("error", res))
+        if msg.startswith(UNREACHABLE):
+            # bifrost could not log in to the cluster (connection being set up,
+            # new login key propagating, cluster down): a passing state, so
+            # say so plainly and let the page retry, instead of a raw SSH error
+            log.info("panel %s %s: cluster unreachable: %s", w["email"], name, msg[:300])
+            return JSONResponse(
+                {"error": CONNECTING, "connecting": True, "detail": msg[:600], "tool": p.tool, "retry_s": 15},
+                status_code=503,
+            )
+        return JSONResponse({"error": msg[:600], "tool": p.tool}, status_code=422)
     env = res if isinstance(res, dict) else {"data": res}
     return JSONResponse(
         {

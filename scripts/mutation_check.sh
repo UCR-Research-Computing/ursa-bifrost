@@ -60,7 +60,7 @@ mutate "iap host key pin"     internal/backend/iap.go 'if err == nil && bytes.Eq
 mutate "iap key id check"     internal/backend/iap.go 'if _, ok := r.LoginProfile.SSHPublicKeys[keyID(line)]; !ok {' 'if false {'
 mutate "iap single flight"    internal/backend/iap.go '	b.connMu.Lock()
 	defer b.connMu.Unlock()' '	// no lock'
-mutate "iap reuse margin"     internal/backend/iap.go 'time.Until(k.Expires) > 10*time.Minute' 'true'
+mutate "iap reuse margin"     internal/backend/iap.go 'if k != nil && time.Until(k.Expires) > keyMinLife {' 'if k != nil {'
 mutate "iap no write retry"   internal/backend/iap.go '		if c.write {
 			// never re-run' '		if false {
 			// never re-run'
@@ -272,6 +272,19 @@ mutate "v093 program caps as a set" internal/server/store.go '		if c.MaxSubmitsP
 mutate "v094 redirect ends module list" internal/core/cluster.go '		if strings.ContainsAny(w, "<>") {
 			break' '		if false {
 			break'
+mutate "v095 extend not replace"   internal/backend/iap.go '		if time.Until(k.Expires) < RenewWindow {' '		if false {'
+mutate "v095 keep slow new key"    internal/backend/iap.go '		// keep it: OS Login removes it at expiry, and the next call reuses it' '		_ = b.deleteKeyLine(context.Background(), line)'
+mutate "v095 store before login"   internal/backend/iap.go '	_ = b.keys().Put(b.Email, nk)' '	_ = nk'
+mutate "v095 wait for fresh key"   internal/backend/iap.go '				fresh := time.Since(k.Imported) < keyPropagation' '				fresh := false'
+mutate "v095 gone fresh key replaced" internal/backend/iap.go '	return err != nil || code != 404' '	return true'
+mutate "v095 fresh key retries"    internal/backend/iap.go '						client, err = b.handshake(ctx, k.User, signer, 13)' '						client, err = b.handshake(ctx, k.User, signer, 0)'
+mutate "v095 background renew"     internal/backend/iap.go '		b.touch()
+		b.renewSoon()' '		b.touch()'
+mutate "v095 renew updates store"  internal/backend/iap.go '			k.Expires = exp
+			_ = b.keys().Put(b.Email, k)
+		}
+	}()' '		}
+	}()'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

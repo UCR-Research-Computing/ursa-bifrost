@@ -5,6 +5,23 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.9.5 - 2026-10-03
+- IAP backend: the per-user OS Login key is extended in place (PATCH expiry) once less
+  than 2 h is left, both on reconnect and in the background while a connection is in
+  use, instead of being replaced by a new key. A new key needs the login node to pick
+  it up (seconds, sometimes over a minute); an extended key works with no gap
+  (measured live).
+- A newly imported key is stored before its first login and is never deleted for being
+  slow: callers wait for that same key (checking it is still on the profile) instead of
+  importing another and restarting the wait. Fixes the 2026-10-03 outage (11:19-11:33
+  UTC), where the overnight key lapsed and each replacement was deleted after ~40 s,
+  failing every hosted call for about 15 minutes.
+- The error while a new key propagates says so in plain words.
+- ursa-agent 0.3.1: a panel whose bifrost call cannot reach the cluster gets HTTP 503
+  `connecting` with a plain message and retries every 15 s (up to 8 times), keeping any
+  data already shown, instead of a raw SSH error.
+- 8 new mutation guards (v095), all killed.
+
 ## v0.9.4 - 2026-10-02
 - `script_check` (and so `job_submit`): a redirection after `module load` is not a module.
   `module load apptainer 2>/dev/null || true` (the deep-research Lab harness) was reported

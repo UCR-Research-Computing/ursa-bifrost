@@ -45,10 +45,12 @@ type IAP struct {
 	// Empty = trust on first use for this IAP value, then pinned.
 	HostKeys []string
 	// KeyTTL is the OS Login key lifetime (default 8 h). The key is reused
-	// across connections until 10 minutes before it expires, because the login
-	// node caches a user's key list: a key imported seconds after a lookup is
-	// rejected for ~5-30 s (measured live 2026-10-01). OS Login removes it at
-	// expiry even if bifrost never runs again.
+	// across connections, and its expiry is pushed out again (PATCH) once less
+	// than RenewWindow is left, because the login node caches a user's key
+	// list: a NEW key is rejected for ~5-30 s and sometimes over a minute
+	// (live 2026-10-01 and the 2026-10-03 outage), while an extended key keeps
+	// working with no gap (measured 2026-10-03). OS Login removes it at expiry
+	// even if bifrost never runs again.
 	KeyTTL time.Duration
 	// Keys stores the per-user key between connections and processes
 	// (laptop: FileKeyStore; server: encrypted store). Nil = in-memory only.
@@ -70,7 +72,9 @@ type IAP struct {
 	mu       sync.Mutex // guards the fields below
 	client   *ssh.Client
 	user     string
-	keyLine  string // the imported authorized_keys line (its sha256 is the key id)
+	keyLine  string    // the imported authorized_keys line (its sha256 is the key id)
+	keyExp   time.Time // when keyLine expires on OS Login (renewed while in use)
+	renewing bool      // a background renewal is running
 	lastUsed time.Time
 	timer    *time.Timer
 	pinned   ssh.PublicKey
@@ -196,6 +200,81 @@ func (b *IAP) deleteKeyLine(ctx context.Context, line string) error {
 		return fmt.Errorf("os login: delete key: HTTP %d", code)
 	}
 	return nil
+}
+
+const (
+	// RenewWindow: a key with less than this left is extended rather than replaced.
+	RenewWindow = 2 * time.Hour
+	// keyMinLife: a key that could not be extended is used only with this much left.
+	keyMinLife = 10 * time.Minute
+	// keyPropagation: how long a newly imported key is waited for (not replaced)
+	// while the login node picks it up.
+	keyPropagation = 3 * time.Minute
+)
+
+var errKeyGone = errors.New("key no longer on the OS Login profile")
+
+// keyOnProfile reports whether the key is still on the user's OS Login
+// profile. Unknown (API error) counts as present: waiting is safe, replacing
+// a key that is merely slow is what caused the 2026-10-03 outage.
+func (b *IAP) keyOnProfile(line string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	_, code, err := b.osloginDo(ctx, "GET", fmt.Sprintf("/v1/users/%s/sshPublicKeys/%s", url.PathEscape(b.Email), keyID(line)), nil)
+	return err != nil || code != 404
+}
+
+// extendKey moves the expiry of an existing OS Login key to now+KeyTTL. Same
+// key, same id, so there is no propagation wait on the login node.
+func (b *IAP) extendKey(ctx context.Context, line string) (time.Time, error) {
+	ttl := b.KeyTTL
+	if ttl <= 0 {
+		ttl = 8 * time.Hour
+	}
+	exp := time.Now().Add(ttl)
+	out, code, err := b.osloginDo(ctx, "PATCH",
+		fmt.Sprintf("/v1/users/%s/sshPublicKeys/%s?updateMask=expirationTimeUsec", url.PathEscape(b.Email), keyID(line)),
+		map[string]any{"key": line, "expirationTimeUsec": fmt.Sprint(exp.UnixMicro())})
+	if err != nil {
+		return time.Time{}, err
+	}
+	switch code {
+	case 200:
+		return exp, nil
+	case 404:
+		return time.Time{}, errKeyGone
+	}
+	return time.Time{}, fmt.Errorf("os login: extend key: HTTP %d: %s", code, oneLine(out))
+}
+
+// renewSoon extends the live connection's key in the background when it is
+// close to expiry, so a long-lived connection never reconnects onto a lapsed
+// key. Caller holds b.mu.
+func (b *IAP) renewSoon() {
+	if b.renewing || b.keyLine == "" || b.keyExp.IsZero() || time.Until(b.keyExp) > RenewWindow {
+		return
+	}
+	b.renewing = true
+	line := b.keyLine
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		exp, err := b.extendKey(ctx, line)
+		b.mu.Lock()
+		b.renewing = false
+		if err == nil && b.keyLine == line {
+			b.keyExp = exp
+		}
+		b.mu.Unlock()
+		if err != nil {
+			traceStep("background renew failed: "+err.Error(), time.Now())
+			return
+		}
+		if k, gerr := b.keys().Get(b.Email); gerr == nil && k != nil && k.Line == line {
+			k.Expires = exp
+			_ = b.keys().Put(b.Email, k)
+		}
+	}()
 }
 
 // ---- IAP relay ---------------------------------------------------------------
@@ -372,28 +451,58 @@ func (b *IAP) connect(ctx context.Context) (*ssh.Client, error) {
 	if b.client != nil {
 		c := b.client
 		b.touch()
+		b.renewSoon()
 		b.mu.Unlock()
 		return c, nil
 	}
 	b.mu.Unlock()
 
-	// Reuse the stored key when it has life left; it is already on the node.
-	if k, err := b.keys().Get(b.Email); err == nil && k != nil && time.Until(k.Expires) > 10*time.Minute {
-		if signer, err := ssh.ParsePrivateKey(k.PrivateKey); err == nil {
-			client, err := b.handshake(ctx, k.User, signer, 1)
-			if err == nil {
-				traceStep("reused key", t0)
-				b.mu.Lock()
-				b.client, b.user, b.keyLine = client, k.User, k.Line
-				b.touch()
-				b.mu.Unlock()
-				return client, nil
+	// Reuse the stored key: it is already on the node. Extend it when it is
+	// close to expiry (no propagation wait), and wait for a recently imported
+	// key instead of replacing it (a replacement starts the wait over).
+	old, _ := b.keys().Get(b.Email)
+	if k := old; k != nil {
+		if time.Until(k.Expires) < RenewWindow {
+			exp, err := b.extendKey(ctx, k.Line)
+			switch {
+			case err == nil:
+				k.Expires = exp
+				_ = b.keys().Put(b.Email, k)
+				traceStep("extended key", t0)
+			case errors.Is(err, errKeyGone):
+				k = nil
 			}
-			if errors.Is(err, errHostKey) || errors.Is(err, errDenied) {
-				return nil, fmt.Errorf("%w: %v", ErrUnreachable, err)
+		}
+		if k != nil && time.Until(k.Expires) > keyMinLife {
+			if signer, err := ssh.ParsePrivateKey(k.PrivateKey); err == nil {
+				fresh := time.Since(k.Imported) < keyPropagation
+				client, err := b.handshake(ctx, k.User, signer, 1)
+				// a recent key refused once is usually still propagating: if it is
+				// still on the profile, keep waiting for it rather than start over
+				gone := false
+				if err != nil && fresh && !errors.Is(err, errHostKey) && !errors.Is(err, errDenied) {
+					if gone = !b.keyOnProfile(k.Line); !gone {
+						client, err = b.handshake(ctx, k.User, signer, 13)
+					}
+				}
+				if err == nil {
+					traceStep("reused key", t0)
+					b.mu.Lock()
+					b.client, b.user, b.keyLine, b.keyExp = client, k.User, k.Line, k.Expires
+					b.touch()
+					b.mu.Unlock()
+					return client, nil
+				}
+				if errors.Is(err, errHostKey) || errors.Is(err, errDenied) {
+					return nil, fmt.Errorf("%w: %v", ErrUnreachable, err)
+				}
+				if fresh && !gone {
+					// still propagating: the next call waits again; never start over
+					return nil, fmt.Errorf("%w: %s", ErrUnreachable, notYet(err))
+				}
+				// key gone from the profile (revoked, expired early): import a new one
+				traceStep("stored key refused", t0)
 			}
-			// key gone from the profile (revoked, expired early): fall through and import a new one
-			traceStep("stored key refused", t0)
 		}
 	}
 
@@ -412,23 +521,41 @@ func (b *IAP) connect(ctx context.Context) (*ssh.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	client, err := b.handshake(ctx, user, signer, 14)
+	pemBlock, err := ssh.MarshalPrivateKey(priv, "ursa-bifrost")
 	if err != nil {
 		_ = b.deleteKeyLine(context.Background(), line)
-		return nil, fmt.Errorf("%w: %v", ErrUnreachable, err)
+		return nil, err
 	}
-	// replace any older stored key: remove it from the profile, then store the new one
-	if old, err := b.keys().Get(b.Email); err == nil && old != nil && old.Line != line {
+	// Store the new key BEFORE the first login: if the node is slow to accept
+	// it, the next call (or a caller queued behind this one) waits for this
+	// key instead of importing yet another one. The key it replaces is unusable
+	// (gone, refused or lapsing), so it comes off the profile now.
+	nk := &StoredKey{PrivateKey: pem.EncodeToMemory(pemBlock), Line: line, User: user, Expires: expires, Imported: time.Now()}
+	_ = b.keys().Put(b.Email, nk)
+	if old != nil && old.Line != line {
 		_ = b.deleteKeyLine(context.Background(), old.Line)
 	}
-	if pemBlock, err := ssh.MarshalPrivateKey(priv, "ursa-bifrost"); err == nil {
-		_ = b.keys().Put(b.Email, &StoredKey{PrivateKey: pem.EncodeToMemory(pemBlock), Line: line, User: user, Expires: expires})
+	client, err := b.handshake(ctx, user, signer, 14)
+	if err != nil {
+		if errors.Is(err, errHostKey) || errors.Is(err, errDenied) {
+			// no point keeping a key for a node we must not or cannot log in to
+			_ = b.deleteKeyLine(context.Background(), line)
+			_ = b.keys().Delete(b.Email)
+			return nil, fmt.Errorf("%w: %v", ErrUnreachable, err)
+		}
+		// keep it: OS Login removes it at expiry, and the next call reuses it
+		return nil, fmt.Errorf("%w: %s", ErrUnreachable, notYet(err))
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.client, b.user, b.keyLine = client, user, line
+	b.client, b.user, b.keyLine, b.keyExp = client, user, line, expires
 	b.touch()
 	return client, nil
+}
+
+// notYet explains a login that failed while a new key is still propagating.
+func notYet(err error) string {
+	return "the login node has not accepted the new login key yet (this can take a minute after a quiet spell); try again shortly (" + err.Error() + ")"
 }
 
 var (
@@ -502,7 +629,7 @@ func (b *IAP) touch() {
 func (b *IAP) Close() error {
 	b.mu.Lock()
 	c := b.client
-	b.client, b.keyLine = nil, ""
+	b.client, b.keyLine, b.keyExp = nil, "", time.Time{}
 	if b.timer != nil {
 		b.timer.Stop()
 		b.timer = nil
