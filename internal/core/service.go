@@ -41,10 +41,17 @@ type Service struct {
 	// acts for, or empty for a person's own clients. Audit records then read
 	// "program:<id>/<mcp client>".
 	Program string
+	// Gate caps work across everyone on the hosted server (accounting runs);
+	// nil = no cap (CLI, local).
+	Gate *Gate
+	// MaxInFlight caps this Service's calls running at once (0 = no cap; the
+	// hosted server sets core.MaxInFlight).
+	MaxInFlight int
 
-	mu    sync.Mutex
-	cache map[string]cacheEntry
-	user  string
+	flights inFlight
+	mu      sync.Mutex
+	cache   map[string]cacheEntry
+	user    string
 }
 
 // NewService builds a Service around an existing backend and audit log (the
@@ -243,10 +250,10 @@ func (s *Service) run(ctx context.Context, c backend.Command) ([]byte, error) {
 			fkey = "u:" + s.Principal + ":" + s.Program + ":" + key
 		}
 		b, err = s.Shared.do(ctx, fkey, public, func(ctx context.Context) ([]byte, error) {
-			return s.Backend.Run(ctx, c)
+			return s.runGated(ctx, c)
 		})
 	} else {
-		b, err = s.Backend.Run(ctx, c)
+		b, err = s.runGated(ctx, c)
 	}
 	if err != nil {
 		return nil, err
@@ -356,6 +363,14 @@ func Call[T any](ctx context.Context, s *Service, client, tool, tier string, arg
 		finish("denied", err, 0)
 		return zero, err
 	}
+	if s.MaxInFlight > 0 {
+		if !s.flights.acquire(s.MaxInFlight) {
+			err := fmt.Errorf("%w: %d of your calls are still running; wait for one to finish", ErrBusy, s.MaxInFlight)
+			finish("busy", err, 0)
+			return zero, err
+		}
+		defer s.flights.release()
+	}
 	if limit {
 		if err := s.Limiter.Allow(); err != nil {
 			finish("rate_limited", err, 0)
@@ -374,6 +389,21 @@ func Call[T any](ctx context.Context, s *Service, client, tool, tier string, arg
 	res := wrap(s, t, data)
 	finish("allowed", nil, approxSize(res))
 	return res, nil
+}
+
+// runGated runs c on the backend, taking a server-wide accounting slot first
+// for sacct (Gate). The wait is bounded by the command's own timeout.
+func (s *Service) runGated(ctx context.Context, c backend.Command) ([]byte, error) {
+	if c.Kind() == backend.KindAcct && s.Gate != nil {
+		wctx, cancel := context.WithTimeout(ctx, backend.Timeout(c))
+		release, err := s.Gate.acquireAcct(wctx)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+	}
+	return s.Backend.Run(ctx, c)
 }
 
 // ---- helpers ---------------------------------------------------------------------

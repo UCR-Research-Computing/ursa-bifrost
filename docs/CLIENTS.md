@@ -245,5 +245,7 @@ and let it do OAuth. Discovery starts from the `401` on `/mcp`, whose
 | Client says "SSE" or "invalid transport" | Choose Streamable HTTP / `http`. bifrost does not serve SSE. |
 | A tool you expected is missing | Tools follow your tier: R1 read, R2 staff, A1 submit/cancel. The tool list only shows what you may call. Through a program client, the program's tier ceiling also applies. |
 | `rate limited` | Over the call budget (default 60 a minute per person; a program client has its own). Wait a moment. |
+| `busy: 16 of your calls are still running` | More than 16 of your calls in flight at once. Wait for one to finish; keep parallelism at 8 or less (the SSH sessions per person). |
+| `busy: accounting is busy for everyone` | Every accounting slot (4 server-wide) stayed taken for the whole command timeout. Try again shortly. |
 | `job_submit` returns a token, nothing runs | That is the design: show the plan, then call `job_submit_confirm` with the token after you approve. Tokens expire in 10 minutes. |
 | Every read asks for approval (Hermes) | Hermes treats untrusted servers' tools as writes; see the Hermes section for `trust full`. |

@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/core/shared_cache.go internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go"
+FILES="internal/core/inflight.go internal/core/shared_cache.go internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
@@ -241,6 +241,13 @@ mutate "v091 per-person flight key"       internal/core/service.go '			fkey = "u
 mutate "v091 shared entry freshness"      internal/core/shared_cache.go '	if ok && c.now().Sub(e.at) < ttl {' '	if ok {'
 mutate "v091 errors not stored"           internal/core/shared_cache.go '	if store && f.err == nil {' '	if store {'
 mutate "v091 writes never coalesced"      internal/core/service.go '	if s.Shared != nil && ttl > 0 && !c.Write() {' '	if s.Shared != nil && !c.Write() || s.Shared != nil && c.Write() {'
+mutate "v092 in-flight cap enforced" internal/core/service.go '		if !s.flights.acquire(s.MaxInFlight) {' '		if false && !s.flights.acquire(s.MaxInFlight) {'
+mutate "v092 in-flight slot released" internal/core/service.go '		defer s.flights.release()' '		_ = 0'
+mutate "v092 in-flight cap exact" internal/core/inflight.go '	if f.n >= max {' '	if f.n > max {'
+mutate "v092 accounting gated" internal/core/service.go '	if c.Kind() == backend.KindAcct && s.Gate != nil {' '	if false && s.Gate != nil {'
+mutate "v092 accounting slot released" internal/core/inflight.go '		return func() { <-g.acct }, nil' '		return func() {}, nil'
+mutate "v092 hosted server sets cap" internal/server/server.go '	svc.MaxInFlight = core.MaxInFlight' '	svc.MaxInFlight = 0'
+mutate "v092 hosted server sets gate" internal/server/server.go '	svc.Gate = s.gate' '	svc.Gate = nil'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL
