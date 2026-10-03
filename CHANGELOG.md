@@ -4,6 +4,7 @@ All notable changes. Versions follow [semver](https://semver.org); every release
 tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC.md).
 
 ## Unreleased
+- Deploy: min-instances 1 by default (`MIN_INSTANCES`, docs/DEPLOY.md): always warm, about $10 a month idle.
 
 ## v0.9.1 - 2026-10-02
 - Scaling phase 1 (docs/SCALING.md): output that is the same for everyone (node state,
