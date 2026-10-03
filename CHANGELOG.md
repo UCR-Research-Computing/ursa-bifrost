@@ -5,6 +5,11 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## agent-v0.4.1 - 2026-10-03
+- ursa-agent's instructions point people at the always-on `check` partition: env_check (a
+  few-second job there) for "does this module load", and a short trial submit to `check`
+  before the real partition.
+
 ## v0.9.6 - 2026-10-03
 - env_check no longer runs on the login node. It runs its fixed template as a one-core,
   3-minute Slurm job (`srun -p check -c 1 -t 3 --immediate=120`) on the new always-on
