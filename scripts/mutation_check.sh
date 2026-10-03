@@ -269,6 +269,9 @@ mutate "v093 program day cap bound" internal/server/store.go '		if c.MaxCostPerD
 mutate "v093 program job cap within day" internal/server/store.go '		if c.MaxCostPerJobUSD < 0 || (c.MaxCostPerJobUSD > 0 && c.MaxCostPerJobUSD > c.MaxCostPerDayUSD) {' '		if false {'
 mutate "v093 program submits bound" internal/server/store.go '		if c.MaxSubmitsPerDay < 0 || c.MaxSubmitsPerDay > MaxProgramSubmitsDay {' '		if false {'
 mutate "v093 program caps as a set" internal/server/store.go '		if c.MaxSubmitsPerDay > 0 && c.MaxCostPerDayUSD == 0 {' '		if false {'
+mutate "v094 redirect ends module list" internal/core/cluster.go '		if strings.ContainsAny(w, "<>") {
+			break' '		if false {
+			break'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

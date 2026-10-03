@@ -224,6 +224,20 @@ func TestUsage(t *testing.T) {
 	}
 }
 
+// TestScriptCheckRedirectIsNotAModule: the Lab harness runs
+// `module load apptainer 2>/dev/null || true`; "2>/dev/null" is not a module.
+func TestScriptCheckRedirectIsNotAModule(t *testing.T) {
+	if got := moduleWords("apptainer 2>/dev/null "); strings.Join(got, ",") != "apptainer" {
+		t.Errorf("moduleWords: %v", got)
+	}
+	if got := moduleWords("gcc openmpi > /dev/null"); strings.Join(got, ",") != "gcc,openmpi" {
+		t.Errorf("moduleWords: %v", got)
+	}
+	if got := moduleWords("-q python-sci $EXTRA"); strings.Join(got, ",") != "python-sci" {
+		t.Errorf("moduleWords: %v", got)
+	}
+}
+
 func TestScriptCheck(t *testing.T) {
 	s, _ := newTestService(t)
 	good := "#!/bin/bash\n#SBATCH -p computehigh\n#SBATCH -N 2\n#SBATCH --ntasks-per-node=22\n#SBATCH -t 04:00:00\nmodule load openmpi gromacs/2026.1\nsrun gmx_mpi mdrun -deffnm md\n"

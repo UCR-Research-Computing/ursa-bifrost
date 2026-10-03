@@ -5,6 +5,12 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.9.4 - 2026-10-02
+- `script_check` (and so `job_submit`): a redirection after `module load` is not a module.
+  `module load apptainer 2>/dev/null || true` (the deep-research Lab harness) was reported
+  as "module \"2>/dev/null\" not found", an error that blocks submission. Found by running
+  `script_check` over 20 stored Lab scripts. 1 mutation guard.
+
 ## v0.9.3 - 2026-10-02
 - `jobs_list` takes `job_ids` (up to 100): one call returns just those of the caller's
   own jobs, so a watcher (the deep-research Lab) polls every active run in one call

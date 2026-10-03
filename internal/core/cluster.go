@@ -412,10 +412,7 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 			continue // a comment that mentions `module load x` loads nothing
 		}
 		for _, m := range reModLoad.FindAllStringSubmatch(raw, -1) {
-			for _, mod := range strings.Fields(m[1]) {
-				if strings.HasPrefix(mod, "-") || strings.Contains(mod, "$") {
-					continue
-				}
+			for _, mod := range moduleWords(m[1]) {
 				sc.Modules = append(sc.Modules, mod)
 				ok, _ := cat.ModuleExists(mod)
 				needs, satisfied := mpiSatisfied(lines[:i+1], cat.ModuleRequires(mod))
@@ -679,6 +676,23 @@ func mpiSatisfied(lines []string, reqs []string) (string, bool) {
 		return "module load " + names[0], false
 	}
 	return "module load " + strings.Join(names, "` or `module load "), false
+}
+
+// moduleWords is the module names in the text after `module load`: options,
+// variables and anything from a redirection on (`2>/dev/null`, `> log`) are not
+// modules. `module load apptainer 2>/dev/null || true` loads apptainer.
+func moduleWords(s string) []string {
+	var out []string
+	for _, w := range strings.Fields(s) {
+		if strings.ContainsAny(w, "<>") {
+			break // a redirection: the rest belongs to it
+		}
+		if strings.HasPrefix(w, "-") || strings.Contains(w, "$") {
+			continue
+		}
+		out = append(out, w)
+	}
+	return out
 }
 
 func loadedBefore(lines []string, mpi string) bool {
