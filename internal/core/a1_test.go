@@ -387,6 +387,33 @@ func TestSubmitWarnsOnStockout(t *testing.T) {
 	if !strings.Contains(w, "no capacity for computehigh") || !strings.Contains(w, "consider partition") {
 		t.Errorf("warnings: %v", p.Warnings)
 	}
+	// the cheap default (standard, e2 in any zone) is the first alternative offered (v0.9.8)
+	if !strings.Contains(w, "consider partition standard") {
+		t.Errorf("alternative should be standard first: %v", p.Warnings)
+	}
+	// and when standard itself is short, spot (same e2 nodes) comes before computehigh
+	dir2 := mutatedFixtures(t, "nodes.json", func(doc map[string]any) {
+		for _, x := range doc["nodes"].([]any) {
+			n := x.(map[string]any)
+			if n["name"] == "ucrslurmcl-c3nodeset-1" {
+				n["name"] = "ucrslurmcl-stdnodeset-1"
+				n["partitions"] = []string{"standard"}
+				n["state"] = []string{"DOWN", "CLOUD", "NOT_RESPONDING", "POWERING_UP"}
+				n["reason"] = "GCP Error: ZONE_RESOURCE_POOL_EXHAUSTED_WITH_DETAILS"
+			}
+		}
+	})
+	s3 := serviceAt(t, dir2, "R1", "A1")
+	s3.Cfg.StatePath = filepath.Join(t.TempDir(), "a1.json")
+	std := strings.Replace(goodScript, "-p computehigh", "-p standard", 1)
+	p3, err := s3.PrepareSubmit(context.Background(), SubmitInput{Script: std})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w3 := strings.Join(p3.Warnings, "|"); !strings.Contains(w3, "no capacity for standard") ||
+		!strings.Contains(w3, "consider partition spot") {
+		t.Errorf("standard short: alternative should be spot: %v", p3.Warnings)
+	}
 	// a healthy partition gets no such warning
 	s2, _ := a1Service(t)
 	p, _ = s2.PrepareSubmit(context.Background(), SubmitInput{Script: goodScript})
@@ -527,5 +554,17 @@ func TestStateLockIsHonored(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("confirm still blocked after the lock was released")
+	}
+}
+
+// TestAlternativeOrder: standard (cheap e2, any zone) is offered first, then spot (same
+// nodes), then the specialist partitions (v0.9.8).
+func TestAlternativeOrder(t *testing.T) {
+	want := []string{"standard", "spot", "computehigh", "nvmescratch", "highmem"}
+	if strings.Join(altPartitions, ",") != strings.Join(want, ",") {
+		t.Errorf("altPartitions = %v, want %v", altPartitions, want)
+	}
+	if strings.Join(altColdPartitions, ",") != "standard,spot,computehigh" {
+		t.Errorf("altColdPartitions = %v", altColdPartitions)
 	}
 }

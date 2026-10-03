@@ -475,14 +475,14 @@ func (s *Service) partitionTrouble(ctx context.Context, part string) string {
 		why = fmt.Sprintf("GCP has no capacity for %s right now (%d node(s) failed with ZONE_RESOURCE_POOL_EXHAUSTED); the job may wait a long time", part, bad)
 	}
 	alt := ""
-	for _, p := range []string{"computehigh", "standard", "spot", "nvmescratch", "highmem"} {
+	for _, p := range altPartitions {
 		if p != part && upIdle[p] {
 			alt = p + " (a node is already up and idle)"
 			break
 		}
 	}
 	if alt == "" {
-		for _, p := range []string{"computehigh", "standard", "spot"} {
+		for _, p := range altColdPartitions {
 			if p != part && !troubled[p] {
 				alt = p
 				break
@@ -494,6 +494,14 @@ func (s *Service) partitionTrouble(ctx context.Context, part string) string {
 	}
 	return why
 }
+
+// altPartitions: where a stocked-out job is pointed when a node is already up and idle;
+// altColdPartitions: where it is pointed otherwise. standard (e2 in any us-central1
+// zone, the cheapest) first, then spot (same nodes), then the specialists (v0.9.8).
+var (
+	altPartitions     = []string{"standard", "spot", "computehigh", "nvmescratch", "highmem"}
+	altColdPartitions = []string{"standard", "spot", "computehigh"}
+)
 
 func contains(xs []string, v string) bool {
 	for _, x := range xs {

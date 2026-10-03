@@ -986,6 +986,7 @@ new mutation guards (128 in all, every one caught).
 |---|---|---|
 | 2026-10-03 | agent 0.4.0 | ursa-agent keeps sign-ins across restarts in its own sealed bucket store (20.6); chats still start fresh |
 | 2026-10-03 | v0.9.7 | `jobs_list job_ids` reads `squeue -j`/`sacct -j` for just those jobs, uncached, own rows only (a finished job shows at once; was up to the 20 s + 60 s cache); 5 mutation guards |
+| 2026-10-03 | v0.9.8 | Ursa Major standard and spot moved to e2-standard-32 in any us-central1 zone (cluster change the same day). Stockout alternatives now offer standard, then spot, then computehigh (`altPartitions`, `altColdPartitions`); segfault hints name the AVX2-only e2 nodes; 2 mutation guards |
 | 2026-10-03 | v0.9.6 | env_check runs as a one-core `srun` job on the always-on `check` partition (config `env_check_partition`), never on the login node, and reports the job and node; 8 mutation guards |
 | 2026-10-03 | v0.9.5 | IAP key renewal: extend the OS Login key in place (PATCH) under 2 h left, in the background while busy; store a new key before its first login and wait for it instead of deleting and replacing it (2026-10-03 outage); ursa-agent 0.3.1 shows `connecting` and retries; 8 mutation guards |
 | 2026-10-02 | v0.9.4 | script_check: a redirection after `module load` (`2>/dev/null`) is not a module name; it blocked the Lab harness's apptainer line |
