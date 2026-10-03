@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft 1, 2026-10-02. Phase 1 live (v0.9.1); min 1 live (phase 2, first step). |
+| Status | Draft 1, 2026-10-02. Phase 1 live (v0.9.1); phase 2 caps and min 1 live (v0.9.2). |
 | Target (Chuck, 2026-10-02) | 20 people at once with heavy harness use plus programs and scripts: plan for **1,000+ calls a minute** to the hosted server, bursts above that. Budget raised as needed. |
 | Sibling | Nexus `2026-10-02_MCP_Scaling_Plan.md` (same phases) |
 
@@ -54,10 +54,12 @@ More vCPUs do not help: Go already uses every core, and the work is remote.
 - **min 1** (always warm; ~$10/month at 512 MiB): no cold start; the shared cache,
   sign-in state and OS Login key survive between calls (SSH connections still close
   after 5 min idle). Config only. **Live 2026-10-02.**
-- **Per-person in-flight cap** in front of the 8 SSH sessions, refusing with a clear
-  "busy, retry" instead of queueing behind a runaway script.
-- **Global accounting budget**: cap concurrent `sacct` runs across all people (e.g.
-  4), since slurmdbd is shared; queue the rest briefly.
+- **Per-caller in-flight cap** (v0.9.2): 16 calls running at once per person (or
+  program for one person); the 17th is refused at once ("busy") instead of queueing
+  behind a runaway script. The 8 SSH sessions per person queue anything between.
+- **Global accounting budget** (v0.9.2): at most 4 `sacct` at once across everyone,
+  since slurmdbd is shared; the rest wait their turn within the command timeout.
+  Node state, the queue and file reads are not held behind it.
 - Longer TTLs where the data allows (accounting summaries for past days do not
   change: cache by day).
 
@@ -81,3 +83,4 @@ the cluster, not bifrost.
 |---|---|
 | 2026-10-02 | Draft 1: limits, phases; Phase 1 (shared cache + single-flight) in v0.9.1 |
 | 2026-10-02 | min-instances 1 (deploy.sh default `MIN_INSTANCES=1`) |
+| 2026-10-02 | v0.9.2: in-flight cap 16 per caller, accounting 4 at once server-wide |

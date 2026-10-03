@@ -4,7 +4,14 @@ All notable changes. Versions follow [semver](https://semver.org); every release
 tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC.md).
 
 ## Unreleased
+
+## v0.9.2 - 2026-10-02
 - Deploy: min-instances 1 by default (`MIN_INSTANCES`, docs/DEPLOY.md): always warm, about $10 a month idle.
+- Scaling phase 2 (docs/SCALING.md): at most 16 calls in flight per caller (a person,
+  or a program for one person) on the hosted server; the 17th is refused at once with
+  "16 of your calls are still running" and audited as `busy`. Accounting (sacct) runs
+  at most 4 at once across everyone, since slurmdbd is shared; the rest wait their
+  turn within the command timeout. 7 mutation guards.
 
 ## v0.9.1 - 2026-10-02
 - Scaling phase 1 (docs/SCALING.md): output that is the same for everyone (node state,

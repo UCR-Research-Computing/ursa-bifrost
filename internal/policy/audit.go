@@ -17,7 +17,7 @@ type Record struct {
 	Client     string         `json:"client"` // mcp client name or "cli"
 	Tool       string         `json:"tool"`
 	Args       map[string]any `json:"args,omitempty"`
-	Decision   string         `json:"decision"` // allowed | denied | error | rate_limited
+	Decision   string         `json:"decision"` // allowed | denied | error | rate_limited | busy
 	Reason     string         `json:"reason,omitempty"`
 	Commands   []string       `json:"commands,omitempty"`
 	Bytes      int            `json:"bytes"`

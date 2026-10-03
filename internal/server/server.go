@@ -50,6 +50,8 @@ type Server struct {
 	staging staging.Client
 	// shared caches output that is the same for every user (core.SharedCache).
 	shared *core.SharedCache
+	// gate caps work across everyone (accounting runs at once).
+	gate *core.Gate
 }
 
 type userConn struct {
@@ -85,7 +87,7 @@ func New(cfg config.Config, google *Google, secret string) (*Server, error) {
 	s := &Server{cfg: cfg, base: strings.TrimRight(sc.BaseURL, "/"), users: users, store: store, google: google,
 		auth: newAuthState(), tokens: &tokenCache{g: google, store: store, m: map[string]cachedTok{}},
 		audits: audit, logger: log.New(os.Stderr, "bifrost-serve ", log.LstdFlags), conns: map[string]*userConn{},
-		backends: map[string]backend.Backend{}, shared: core.NewSharedCache()}
+		backends: map[string]backend.Backend{}, shared: core.NewSharedCache(), gate: core.NewGate()}
 	s.staging = core.NewStaging(cfg.Staging, os.Getenv("K_SERVICE") != "")
 	s.newBackend = func(email string) backend.Backend {
 		ic := cfg.IAP
@@ -174,6 +176,8 @@ func (s *Server) conn(u *User, p *ProgramClient) *userConn {
 	svc.Remote = true
 	svc.Staging = s.staging
 	svc.Shared = s.shared
+	svc.Gate = s.gate
+	svc.MaxInFlight = core.MaxInFlight
 	if p != nil {
 		svc.Program = p.ID
 	}

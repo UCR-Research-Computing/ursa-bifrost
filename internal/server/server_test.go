@@ -27,6 +27,7 @@ import (
 
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/backend"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/config"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/core"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/staging"
 )
 
@@ -1092,5 +1093,33 @@ func TestProgramDisabledMidSignIn(t *testing.T) {
 		"redirect_uri": {"http://127.0.0.1:33418/callback"}, "code_verifier": {got["verifier"].(string)}}
 	if r, _ := http.PostForm(h.ts.URL+"/token", form); r.StatusCode == 200 {
 		t.Error("disabled program exchanged its code for tokens")
+	}
+}
+
+// TestHostedServicesShareGateAndCapInFlight: every person's and program's
+// Service on the hosted server gets the in-flight cap and the one server-wide
+// accounting gate (scaling phase 2).
+func TestHostedServicesShareGateAndCapInFlight(t *testing.T) {
+	h := newHarness(t, withPrograms)
+	h.clientID = "bifrost-ultra"
+	a, _ := h.signIn("alice@ucr.edu", "ucr.edu")
+	h.clientID = ""
+	b, _ := h.signIn("bob@ucr.edu", "ucr.edu")
+	for _, tok := range []map[string]any{a, b} {
+		c, _ := h.mcp(tok["access_token"].(string))
+		callJSON(t, c, "partitions", nil)
+	}
+	h.s.mu.Lock()
+	defer h.s.mu.Unlock()
+	if len(h.s.conns) < 2 {
+		t.Fatalf("conns: %d", len(h.s.conns))
+	}
+	for k, c := range h.s.conns {
+		if c.svc.MaxInFlight != core.MaxInFlight {
+			t.Errorf("%s: MaxInFlight %d, want %d", k, c.svc.MaxInFlight, core.MaxInFlight)
+		}
+		if c.svc.Gate == nil || c.svc.Gate != h.s.gate {
+			t.Errorf("%s: not on the shared accounting gate", k)
+		}
 	}
 }
