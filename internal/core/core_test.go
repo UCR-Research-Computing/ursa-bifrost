@@ -647,3 +647,19 @@ func TestScriptCheckClusterLayout(t *testing.T) {
 		t.Errorf("single-node MPI needs no hint: %s", issues(sc))
 	}
 }
+
+// TestPartitionsCarryCPUNote: partitions say which nodes stop at AVX2 (v0.9.10).
+func TestPartitionsCarryCPUNote(t *testing.T) {
+	s, _ := newTestService(t)
+	ps, err := s.Partitions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, p := range ps {
+		got[p.Name] = p.CPU
+	}
+	if got["standard"] != "AVX2 only (e2)" || got["spot"] != "AVX2 only (e2)" || got["computehigh"] != "AVX-512" {
+		t.Errorf("cpu notes: %v", got)
+	}
+}

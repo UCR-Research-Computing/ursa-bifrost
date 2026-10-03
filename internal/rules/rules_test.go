@@ -151,24 +151,25 @@ func TestCompletedHealthyHasNoFindings(t *testing.T) {
 
 func TestEachLogRuleFires(t *testing.T) {
 	samples := map[string]string{
-		"install-ladder":    "[ERROR] no install method produced a working environment",
-		"container":         "FATAL:   While pulling image",
-		"tool-crash":        "Segmentation fault (core dumped)",
-		"glibc":             "/lib64/libc.so.6: version `GLIBC_2.34' not found",
-		"module-missing":    "Lmod has detected the following error: The following module(s) are unknown: \"foo\"",
-		"python-import":     "ModuleNotFoundError: No module named 'scipy'",
-		"tls":               "ssl.SSLCertVerificationError: CERTIFICATE_VERIFY_FAILED",
-		"download":          "urllib.error.HTTPError: HTTP Error 429: Too Many Requests",
-		"bad-arguments":     "prog: error: unrecognized arguments: --fast",
-		"api-change":        "AttributeError: 'Table' object has no attribute 'colname'",
-		"syntax":            "  File \"x.py\", line 3\nSyntaxError: invalid syntax",
-		"numerical":         "ZeroDivisionError: float division by zero",
-		"missing-feature":   "ERROR: Unrecognized pair style 'reaxff' is part of the REAXFF package which is not enabled",
-		"cuda":              "torch.cuda.OutOfMemoryError: CUDA out of memory.",
-		"disk-full":         "OSError: [Errno 28] No space left on device",
-		"permission":        "bash: ./run.sh: Permission denied",
-		"command-not-found": "line 4: gmx_mpi: command not found",
-		"python-error":      "Traceback (most recent call last):\n  File \"r.py\", line 222\nNameError: name 'd3_fp32_mlups' is not defined. Did you mean: 'fp32_mlups'?",
+		"install-ladder":      "[ERROR] no install method produced a working environment",
+		"container":           "FATAL:   While pulling image",
+		"illegal-instruction": "/var/spool/slurmd/job00517/slurm_script: line 9: 41231 Illegal instruction     (core dumped) ./a.out",
+		"tool-crash":          "Segmentation fault (core dumped)",
+		"glibc":               "/lib64/libc.so.6: version `GLIBC_2.34' not found",
+		"module-missing":      "Lmod has detected the following error: The following module(s) are unknown: \"foo\"",
+		"python-import":       "ModuleNotFoundError: No module named 'scipy'",
+		"tls":                 "ssl.SSLCertVerificationError: CERTIFICATE_VERIFY_FAILED",
+		"download":            "urllib.error.HTTPError: HTTP Error 429: Too Many Requests",
+		"bad-arguments":       "prog: error: unrecognized arguments: --fast",
+		"api-change":          "AttributeError: 'Table' object has no attribute 'colname'",
+		"syntax":              "  File \"x.py\", line 3\nSyntaxError: invalid syntax",
+		"numerical":           "ZeroDivisionError: float division by zero",
+		"missing-feature":     "ERROR: Unrecognized pair style 'reaxff' is part of the REAXFF package which is not enabled",
+		"cuda":                "torch.cuda.OutOfMemoryError: CUDA out of memory.",
+		"disk-full":           "OSError: [Errno 28] No space left on device",
+		"permission":          "bash: ./run.sh: Permission denied",
+		"command-not-found":   "line 4: gmx_mpi: command not found",
+		"python-error":        "Traceback (most recent call last):\n  File \"r.py\", line 222\nNameError: name 'd3_fp32_mlups' is not defined. Did you mean: 'fp32_mlups'?",
 	}
 	for _, r := range logRules {
 		s, ok := samples[r.id]
@@ -241,4 +242,37 @@ func TestCommandNotFoundAdvice(t *testing.T) {
 func TestExit127WithoutLog(t *testing.T) {
 	fs := Explain(Facts{State: "FAILED", ExitCode: "127", LogReadable: false})
 	want(t, fs, "command-not-found")
+}
+
+// TestIllegalInstruction: SIGILL on the AVX2-only e2 nodes is named for what it is, by log
+// line or exit code, and the generic crash/exit findings stay quiet (v0.9.10).
+func TestIllegalInstruction(t *testing.T) {
+	fs := Explain(Facts{State: "FAILED", ExitCode: "132", Log: "./sim: line 3: 991 Illegal instruction (core dumped) ./sim\n", LogReadable: true})
+	want(t, fs, "illegal-instruction")
+	for _, f := range fs {
+		if f.Rule == "tool-crash" || f.Rule == "exit-signal" {
+			t.Errorf("duplicate finding %s alongside illegal-instruction", f.Rule)
+		}
+		if f.Rule == "illegal-instruction" && !strings.Contains(f.Suggestion, "x86-64-v3") {
+			t.Errorf("suggestion should name the portable target: %s", f.Suggestion)
+		}
+	}
+	// exit code alone (no readable log): the 132 exit-signal entry explains it
+	fs = Explain(Facts{State: "FAILED", ExitCode: "132"})
+	found := false
+	for _, f := range fs {
+		if f.Rule == "exit-signal" && strings.Contains(f.Title, "CPU instruction") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("exit 132 should explain SIGILL: %+v", fs)
+	}
+	// a segfault is still a crash, not an illegal instruction
+	fs = Explain(Facts{State: "FAILED", ExitCode: "139", Log: "Segmentation fault (core dumped)\n", LogReadable: true})
+	for _, f := range fs {
+		if f.Rule == "illegal-instruction" {
+			t.Error("segfault misread as illegal instruction")
+		}
+	}
 }

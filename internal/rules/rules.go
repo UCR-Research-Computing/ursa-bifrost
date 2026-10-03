@@ -68,6 +68,11 @@ var logRules = []logRule{
 		suggestion: "Local .sif files are run directly (`apptainer exec /apps/containers/x.sif ...`), not pulled; for registry images use docker://name:tag. List /apps/containers for prebuilt images.",
 	},
 	{
+		id: "illegal-instruction", severity: Error, title: "A program used a CPU instruction this node does not have",
+		re:         regexp.MustCompile(`Illegal instruction|illegal hardware instruction|SIGILL|signal 4\b|requires AVX-?512|AVX512\w* (?:is )?not supported|This TensorFlow binary is optimized to use available CPU instructions|CPU does not support (?:AVX|the required)`),
+		suggestion: "The program was built for a newer CPU (usually AVX-512, or -march=native on another machine). standard, spot and check run e2 nodes with AVX2 only. Rebuild with -march=x86-64-v3 (what the site software uses), use the site module or a container, or run on computehigh (Intel Sapphire Rapids, AVX-512).",
+	},
+	{
 		id: "tool-crash", severity: Error, title: "A program crashed (assertion or segfault)",
 		re:         regexp.MustCompile(`Assertion '.*' failed|Segmentation fault|core dumped|signal 11|\*\*\* Process received signal`),
 		suggestion: "Usually an input it did not expect (name or format), or code built for AVX-512 on the AVX2-only standard/spot nodes (e2). Check inputs; try computehigh (Intel, AVX-512) to rule out the CPU.",
@@ -214,6 +219,10 @@ func Explain(f Facts) []Finding {
 			if len(locs) == 0 {
 				continue
 			}
+			// an illegal instruction also "dumps core": one finding, the specific one
+			if r.id == "tool-crash" && hasRule(out, "illegal-instruction") {
+				continue
+			}
 			last := locs[len(locs)-1]
 			ev := []string{"log: " + clip(lineAt(tail, last[0]), 240)}
 			if len(locs) > 1 {
@@ -245,7 +254,7 @@ func Explain(f Facts) []Finding {
 	// Exit codes that mean a signal killed the program (128+N), when no log rule
 	// already explained it.
 	if st == "FAILED" || st == "OUT_OF_MEMORY" {
-		if sig, ok := signalExits[f.ExitCode]; ok && !hasRule(out, "tool-crash", "oom", "oom-log", "memory-near-limit") {
+		if sig, ok := signalExits[f.ExitCode]; ok && !hasRule(out, "tool-crash", "illegal-instruction", "oom", "oom-log", "memory-near-limit") {
 			add(Finding{Rule: "exit-signal", Severity: Error, Title: sig.title,
 				Evidence: []string{"exit code " + f.ExitCode + " = " + sig.meaning}, Suggestion: sig.fix})
 		}
@@ -336,6 +345,8 @@ var signalExits = map[string]signalExit{
 	"134":              {"A program aborted (SIGABRT)", "128+6, SIGABRT", "An assertion or a library detected a fatal error; read the lines just before the end of the log."},
 	"signal 6 (ABRT)":  {"A program aborted (SIGABRT)", "SIGABRT", "An assertion or a library detected a fatal error; read the end of the log."},
 	"135":              {"A program crashed (bus error)", "128+7, SIGBUS", "Often a file truncated while being read (memory-mapped) or a full disk."},
+	"132":              {"A program used a CPU instruction this node does not have", "128+4, SIGILL", "Usually code built for AVX-512 or -march=native running on the AVX2-only standard/spot/check nodes (e2): rebuild with -march=x86-64-v3, or run on computehigh."},
+	"signal 4 (ILL)":   {"A program used a CPU instruction this node does not have", "SIGILL", "Code built for AVX-512 or another CPU, on the AVX2-only e2 nodes: rebuild with -march=x86-64-v3 or use computehigh."},
 	"143":              {"The job was terminated (SIGTERM)", "128+15, SIGTERM", "Sent by scancel, a time limit or node shutdown (spot reclaim)."},
 }
 

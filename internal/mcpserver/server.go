@@ -256,7 +256,7 @@ func New(s *core.Service) *mcp.Server {
 		})
 
 	mcp.AddTool(srv, addR1("partitions", "Partitions",
-		"Partitions from the cluster catalog: nodes, cores and memory per node, GPUs, $/node-hour, spot, what each is for, and the default."),
+		"Partitions from the cluster catalog: nodes, cores and memory per node, GPUs, time limit, CPU instruction set (standard/spot/check are AVX2-only e2 nodes), $/node-hour, spot, what each is for, and the default."),
 		func(ctx context.Context, req *mcp.CallToolRequest, _ noInput) (*mcp.CallToolResult, envelope, error) {
 			r, err := core.Call(ctx, s, clientName(req), "partitions", "R1", nil, true, s.Partitions)
 			return nil, toEnvelope(r), err

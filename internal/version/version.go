@@ -2,4 +2,4 @@
 package version
 
 // Version is set by scripts/install.sh via -ldflags "-X ...version.Version=vX.Y.Z".
-var Version = "0.9.9"
+var Version = "0.9.10"
