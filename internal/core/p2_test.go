@@ -79,6 +79,15 @@ func TestWasteKinds(t *testing.T) {
 	if _, ok := kinds["low-cpu:261"]; ok {
 		t.Error("warm worker also counted as low-cpu")
 	}
+	// low-CPU advice says ask for fewer cores; only computehigh points at standard
+	for _, it := range r.Items {
+		if it.Kind == "low-cpu" && !strings.Contains(it.Suggestion, "Ask for fewer cores") {
+			t.Errorf("low-cpu advice should say ask for fewer cores: %+v", it)
+		}
+		if it.Kind == "low-cpu" && it.Partition != "computehigh" && strings.Contains(it.Suggestion, "cheaper on standard") {
+			t.Errorf("only computehigh gets the standard hint: %+v", it)
+		}
+	}
 	if _, ok := kinds["allocated-idle-node:ucrslurmcl-c3nodeset-0"]; !ok {
 		t.Errorf("warm node not reported: %v", keys(kinds))
 	}
@@ -265,4 +274,40 @@ func keys(m map[string]WasteItem) []string {
 		k = append(k, x)
 	}
 	return k
+}
+
+// TestWasteComputehighPointsAtStandard: a low-CPU job on a few computehigh cores is told
+// standard (e2) is cheaper; a whole-node (22-core) one is not, since it may be MPI (v0.9.9).
+func TestWasteComputehighPointsAtStandard(t *testing.T) {
+	dir := mutatedFixtures(t, "sacct_jobs.json", func(doc map[string]any) {
+		for _, j := range doc["jobs"].([]any) {
+			m := j.(map[string]any)
+			if m["job_id"].(float64) == 45 { // a low-cpu job on 8 cores: move it to computehigh
+				m["partition"] = "computehigh"
+				tm := m["time"].(map[string]any)
+				tm["elapsed"] = 4 * 3600.0 // long enough to clear the min node-hours
+				if tot, ok := tm["total"].(map[string]any); ok {
+					tot["seconds"] = 0.2 * 8 * 4 * 3600.0 // still 20% CPU
+					tot["microseconds"] = 0.0
+				}
+			}
+		}
+	})
+	s := serviceAt(t, dir)
+	r, err := s.Waste(context.Background(), WasteInput{Since: "now-30days"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, it := range r.Items {
+		if it.Kind == "low-cpu" && it.JobID == "45" {
+			found = true
+			if !strings.Contains(it.Suggestion, "cheaper on standard ($1.45/node-hour vs $1.87)") {
+				t.Errorf("8-core computehigh job should point at standard: %q", it.Suggestion)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("job 45 not reported as low-cpu: %+v", r.Items)
+	}
 }

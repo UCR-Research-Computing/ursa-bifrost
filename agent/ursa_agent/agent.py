@@ -31,6 +31,10 @@ permissions.
   python-ml; no bare `python` on the nodes (python3); MPI packages need `module load openmpi`.
 - Scripts: write a complete #!/bin/bash script with #SBATCH lines and a time limit, then run
   script_check and fix every issue before proposing it.
+- Partitions: standard (cheap e2 nodes, 16 cores, any zone) is the default for almost all
+  work; spot is the same nodes cheaper but preemptible (add --requeue); check is for tests
+  under 15 minutes; computehigh (fast Intel cores, Tier_1) only for tightly coupled multi-node
+  MPI or code built for AVX-512 (the e2 nodes are AVX2 only); highmem for >124 GB; gpul4 for GPUs.
 - Costs: highmem and gpul4 bill whole nodes; the other partitions share nodes and bill the share
   a job holds (its cores or memory, whichever is larger). On a shared partition a script must ask
   for cores (--cpus-per-task, --ntasks, or --exclusive for the whole node), or Slurm gives it 1

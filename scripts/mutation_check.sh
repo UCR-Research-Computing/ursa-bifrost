@@ -297,6 +297,13 @@ mutate "v097 job list validated"   internal/backend/command.go '		if err := Vali
 			return "", nil'
 mutate "v098 idle alt order"       internal/core/a1.go '	altPartitions     = []string{"standard", "spot", "computehigh", "nvmescratch", "highmem"}' '	altPartitions     = []string{"computehigh", "standard", "spot", "nvmescratch", "highmem"}'
 mutate "v098 cold alt order"       internal/core/a1.go '	altColdPartitions = []string{"standard", "spot", "computehigh"}' '	altColdPartitions = []string{"computehigh", "standard", "spot"}'
+mutate "v099 time over MaxTime"     internal/core/cluster.go '		if maxMin, ok := slurmMinutes(p.TimeLimit); ok && hasTime && maxMin > 0 && mins > maxMin {' '		if maxMin, ok := slurmMinutes(p.TimeLimit); false && ok && hasTime && maxMin > 0 && mins > maxMin {'
+mutate "v099 time unlimited ok"    internal/core/cluster.go '		if maxMin, ok := slurmMinutes(p.TimeLimit); ok && hasTime && maxMin > 0 && mins > maxMin {' '		if maxMin, ok := slurmMinutes(p.TimeLimit); hasTime && mins > maxMin && ok || p.TimeLimit == "infinite" {'
+mutate "v099 avx partitions"       internal/core/cluster.go '		if avx2OnlyPartitions[part] {' '		if true {'
+mutate "v099 avx comments"         internal/core/cluster.go '			if m := reAVX512.FindString(codeOnly(script)); m != "" {' '			if m := reAVX512.FindString(script); m != "" {'
+mutate "v099 mpi hint multinode"   internal/core/cluster.go '		if part == "standard" && nodes > 1 && reMPIRun.MatchString(codeOnly(script)) {' '		if part == "standard" && reMPIRun.MatchString(codeOnly(script)) {'
+mutate "v099 waste ch standard"    internal/core/p2.go '			if j.Partition == "computehigh" && cores <= 16 {' '			if j.Partition == "computehigh" && cores <= 0 {'
+mutate "v099 waste ch only"        internal/core/p2.go '			if j.Partition == "computehigh" && cores <= 16 {' '			if cores <= 16 {'
 mutate "v095 background renew"     internal/backend/iap.go '		b.touch()
 		b.renewSoon()' '		b.touch()'
 mutate "v095 renew updates store"  internal/backend/iap.go '			k.Expires = exp
