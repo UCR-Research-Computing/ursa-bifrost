@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (Draft 7; built through bifrost v0.9.2 and ursa-agent 0.3.0) |
-| Status | bifrost v0.9.2, ursa-agent 0.3.0, 2026-10-02 (spec Draft 7). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
+| Document | Specification and design (Draft 7; built through bifrost v0.9.3 and ursa-agent 0.3.0) |
+| Status | bifrost v0.9.3, ursa-agent 0.3.0, 2026-10-02 (spec Draft 7). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and docs/CLOUD_PLAN.md record what was built; open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -179,7 +179,7 @@ fields the assistant would read as instructions.
 |---|---|---|
 | `cluster_status` | none | Per partition: nodes by state (powered up, allocated, idle, booting, down), queue depth running/pending, $/hour being spent now |
 | `partitions` | none | Limits, CPUs, memory, GPUs, max time, default partition, $/node-hour (from the cluster catalog, overridable in config) |
-| `jobs_list` | `state?`, `since?`, `limit?` | Caller's jobs (queue plus recent accounting, newest first): id, name, partition, state, reason, elapsed, nodes, exit code. 50 rows unless `limit` is given (cap `limits.list_rows`, 200) |
+| `jobs_list` | `state?`, `since?`, `limit?`, `job_ids[]?` | Caller's jobs (queue plus recent accounting, newest first): id, name, partition, state, reason, elapsed, nodes, exit code, `restarts` (requeues). 50 rows unless `limit` is given (cap `limits.list_rows`, 200). `job_ids` (up to 100, v0.9.3) keeps only those of the caller's jobs: one call per watcher round |
 | `job_show` | `job_id`, `include_script?` | Merged `squeue` + `sacct`: request vs use (CPU efficiency, peak memory vs requested), exit code, signal, node list, timings, steps, log paths; for a pending job the reason decoded into plain words with advice (there is no separate pending-reason tool) |
 | `job_explain` | `job_id`, `lines?` | Deterministic diagnosis: `findings[]` with rule id, severity, evidence and suggestion (section 8), plus the redacted log tail as untrusted data |
 | `job_log_tail` | `job_id`, `stream=stdout|stderr`, `lines<=1000`, `start_line?`, `grep?` | Redacted window of the log in `untrusted`: the tail, a page from `start_line`, or matching lines (with line numbers and context). Returns `total_lines`, `first_line`, `last_line` for paging. Path resolved from the job record, never from user input (section 18.3) |
@@ -914,6 +914,27 @@ Checked when the file loads: id `^[a-z][a-z0-9-]{2,40}$` and unique, at least on
 known tiers, budget 0-600, at least one redirect URI, each https or http loopback. A file
 without `clients:` behaves exactly as before.
 
+Own A1 caps (v0.9.3), for a program that confirms its own submit tokens after a person's
+action in that program approved the work (the deep-research Lab: pressing Submit on a
+reviewed plan; deep-research then confirms the pilot, its fixes and the full run itself,
+guarded by a script-hash match and a per-run budget on its side):
+
+```yaml
+  - id: bifrost-deep-research
+    name: deep-research
+    tiers: [R1, A1]
+    calls_per_min: 120
+    max_cost_usd_per_day: 75     # its own day cap and its own ledger (0-500)
+    max_cost_usd_per_job: 10     # optional; never above the day cap
+    max_submits_per_day: 200     # optional (0-1000); needs max_cost_usd_per_day
+    redirect_uris: ["http://127.0.0.1/callback"]
+```
+
+With `max_cost_usd_per_day` set, the program submits against its own ledger
+(`<ledger>-<id>.json`) and these caps; the person's own clients keep the person's caps and
+ledger, and neither uses up the other's day. Without it, the program shares the person's
+caps and ledger as in v0.9.0. `/whoami` shows `own_caps`.
+
 ### 21.2 Rules
 
 | Rule | Where |
@@ -941,6 +962,7 @@ new mutation guards (128 in all, every one caught).
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-02 | v0.9.3 | `jobs_list job_ids` (up to 100) and `restarts` on list rows; program clients with their own A1 caps and ledger (21.1); 13 mutation guards. For the deep-research Lab migration (B3, B4, A1/A3 of nexus 2026-10-02_Deep_Research_Next_Plan.md) |
 | 2026-10-02 | v0.9.2 | Scaling phase 2: in-flight cap 16 per caller (audited `busy`), accounting 4 at once server-wide; min-instances 1; 7 mutation guards |
 | 2026-10-02 | v0.9.1 | Scaling phase 1 (docs/SCALING.md): shared cache for public output and single-flight; 5 mutation guards |
 | 2026-10-02 | v0.9.0 | Section 21, program clients: pre-registered clients in users.yaml with a tier ceiling and their own call budget, audited as `program:<id>`; one SSH connection per person shared by their clients and programs. 13 new mutation guards (128). Draft 7 |

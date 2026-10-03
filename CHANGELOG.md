@@ -5,6 +5,21 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.9.3 - 2026-10-02
+- `jobs_list` takes `job_ids` (up to 100): one call returns just those of the caller's
+  own jobs, so a watcher (the deep-research Lab) polls every active run in one call
+  instead of one `job_show` each. Ids are validated; it never widens the query beyond
+  the caller's jobs.
+- `jobs_list` rows carry `restarts` (Slurm's requeue count after node failures or
+  preemption), from the live queue and from accounting; `job_show` takes the live
+  count when it is higher.
+- Program clients can have their own A1 caps (`max_cost_usd_per_day`, optional
+  `max_cost_usd_per_job` and `max_submits_per_day`). A program with its own caps submits
+  against its own ledger, so its spending and submission count never use up the
+  person's, and the person's clients never use up the program's. Caps are bounded
+  ($500/day, 1000 submits) and come as a set (a job cap or submit cap needs a day cap).
+  `/whoami` shows `own_caps`. Built for `bifrost-deep-research`. 13 new mutation guards.
+
 ## v0.9.2 - 2026-10-02
 - Deploy: min-instances 1 by default (`MIN_INSTANCES`, docs/DEPLOY.md): always warm, about $10 a month idle.
 - Scaling phase 2 (docs/SCALING.md): at most 16 calls in flight per caller (a person,

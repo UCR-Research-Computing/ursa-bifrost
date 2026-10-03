@@ -50,7 +50,21 @@ type ProgramClient struct {
 	CallsPerMin  int      `yaml:"calls_per_min"` // 0 = the global limit
 	RedirectURIs []string `yaml:"redirect_uris"`
 	Disabled     bool     `yaml:"disabled,omitempty"`
+	// Own A1 caps (v0.9.3). When MaxCostPerDayUSD is set the program submits
+	// against its own ledger and these caps instead of the person's, so a
+	// program that confirms its own tokens (the deep-research Lab after a
+	// Submit click) has a hard server-side budget and the person's own clients
+	// keep theirs. Unset = the person's caps and ledger, as before.
+	MaxCostPerDayUSD float64 `yaml:"max_cost_usd_per_day,omitempty"`
+	MaxCostPerJobUSD float64 `yaml:"max_cost_usd_per_job,omitempty"`
+	MaxSubmitsPerDay int     `yaml:"max_submits_per_day,omitempty"`
 }
+
+// Bounds on a program's own caps (a typo must not mean an unlimited program).
+const (
+	MaxProgramDayUSD     = 500
+	MaxProgramSubmitsDay = 1000
+)
 
 // MaxProgramCallsPerMin bounds a program client's calls_per_min.
 const MaxProgramCallsPerMin = 600
@@ -140,6 +154,18 @@ func checkClients(cs []ProgramClient) error {
 		}
 		if c.CallsPerMin < 0 || c.CallsPerMin > MaxProgramCallsPerMin {
 			return fmt.Errorf("users file: client %s calls_per_min must be 0-%d", c.ID, MaxProgramCallsPerMin)
+		}
+		if c.MaxCostPerDayUSD < 0 || c.MaxCostPerDayUSD > MaxProgramDayUSD {
+			return fmt.Errorf("users file: client %s max_cost_usd_per_day must be 0-%d", c.ID, MaxProgramDayUSD)
+		}
+		if c.MaxCostPerJobUSD < 0 || (c.MaxCostPerJobUSD > 0 && c.MaxCostPerJobUSD > c.MaxCostPerDayUSD) {
+			return fmt.Errorf("users file: client %s max_cost_usd_per_job needs max_cost_usd_per_day and must not exceed it", c.ID)
+		}
+		if c.MaxSubmitsPerDay < 0 || c.MaxSubmitsPerDay > MaxProgramSubmitsDay {
+			return fmt.Errorf("users file: client %s max_submits_per_day must be 0-%d", c.ID, MaxProgramSubmitsDay)
+		}
+		if c.MaxSubmitsPerDay > 0 && c.MaxCostPerDayUSD == 0 {
+			return fmt.Errorf("users file: client %s max_submits_per_day needs max_cost_usd_per_day (own caps come as a set)", c.ID)
 		}
 		if len(c.RedirectURIs) == 0 {
 			return fmt.Errorf("users file: client %s needs redirect_uris", c.ID)

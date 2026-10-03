@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/backend"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/config"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/policy"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/slurm"
 )
 
 // newTestService returns a Service over the recorded fixtures, acting as the
@@ -447,6 +449,60 @@ func TestModuleShowLoadsMPIFirst(t *testing.T) {
 	fx.MPIOnly = []string{"nosuchpkg"}
 	if _, err := s.ModuleShow(ctx, "nosuchpkg", ""); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("unknown module error: %v", err)
+	}
+}
+
+// TestJobsListByIDs: a watcher asks for its active jobs in one call (v0.9.3, B4).
+func TestJobsListByIDs(t *testing.T) {
+	s, fx := newTestService(t)
+	ctx := context.Background()
+	js, err := s.JobsList(ctx, JobsListInput{JobIDs: []string{"229", "260", "999"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{}
+	for _, j := range js {
+		got = append(got, j.JobID)
+	}
+	if strings.Join(got, ",") != "260,229" {
+		t.Fatalf("job_ids filter: got %v", got)
+	}
+	// restarts ride along on the list rows (229 was requeued 11 times)
+	if js[1].Restarts != 11 {
+		t.Errorf("restarts on the list row: %+v", js[1])
+	}
+	// still the caller's own queue and accounting: no -a, no other user
+	for _, c := range fx.Calls {
+		if strings.Contains(c, " -a") || strings.Contains(c, "--allusers") {
+			t.Errorf("job_ids widened the query: %s", c)
+		}
+	}
+	if _, err := s.JobsList(ctx, JobsListInput{JobIDs: []string{"260; rm -rf ~"}}); err == nil {
+		t.Error("a bad job id was accepted")
+	}
+	many := make([]string, MaxJobIDs+1)
+	for i := range many {
+		many[i] = fmt.Sprint(i + 1)
+	}
+	if _, err := s.JobsList(ctx, JobsListInput{JobIDs: many}); err == nil {
+		t.Error("more than MaxJobIDs ids accepted")
+	}
+	if _, err := s.JobsList(ctx, JobsListInput{JobIDs: many[:MaxJobIDs]}); err != nil {
+		t.Errorf("exactly MaxJobIDs refused: %v", err)
+	}
+}
+
+// TestQueueRowsCarryRestarts: a pending job requeued after a node failure shows
+// its count in the list, before accounting has it (the Lab's partition switch).
+func TestQueueRowsCarryRestarts(t *testing.T) {
+	s, _ := newTestService(t)
+	var j slurm.QueueJob
+	if err := json.Unmarshal([]byte(`{"job_id": 77, "user_name": "alice_ucr_edu", "partition": "computehigh",
+		"job_state": ["PENDING"], "restart_cnt": {"set": true, "infinite": false, "number": 2}}`), &j); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.queueSummary(j, nil); got.Restarts != 2 {
+		t.Errorf("queue row restarts: %+v", got)
 	}
 }
 

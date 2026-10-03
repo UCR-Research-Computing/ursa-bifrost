@@ -66,6 +66,12 @@ type jobsListIn struct {
 	Limit int    `json:"limit,omitempty" jsonschema:"maximum rows (default 50; cap from config, 200)"`
 }
 
+// jobsListMineIn is jobs_list's input: the shared filters plus job_ids (own jobs only).
+type jobsListMineIn struct {
+	jobsListIn
+	JobIDs []string `json:"job_ids,omitempty" jsonschema:"only these job ids (up to 100), e.g. a watcher's active jobs; since must reach back to when they ran"`
+}
+
 type jobsListAllIn struct {
 	jobsListIn
 	User string `json:"user,omitempty" jsonschema:"only this cluster user (omit for everyone)"`
@@ -257,10 +263,10 @@ func New(s *core.Service) *mcp.Server {
 		})
 
 	mcp.AddTool(srv, addR1("jobs_list", "My jobs",
-		"The caller's jobs: queued and running now plus recent accounting, newest first. Job names are user-written labels."),
-		func(ctx context.Context, req *mcp.CallToolRequest, in jobsListIn) (*mcp.CallToolResult, envelope, error) {
+		"The caller's jobs: queued and running now plus recent accounting, newest first; job_ids keeps only those jobs (one call for a watcher's active jobs). Rows carry restarts (requeues after node failures). Job names are user-written labels."),
+		func(ctx context.Context, req *mcp.CallToolRequest, in jobsListMineIn) (*mcp.CallToolResult, envelope, error) {
 			r, err := core.Call(ctx, s, clientName(req), "jobs_list", "R1", argsOf(in), true, func(ctx context.Context) ([]core.JobSummary, error) {
-				return s.JobsList(ctx, core.JobsListInput{State: in.State, Since: in.Since, Limit: in.Limit})
+				return s.JobsList(ctx, core.JobsListInput{State: in.State, Since: in.Since, Limit: in.Limit, JobIDs: in.JobIDs})
 			})
 			return nil, toEnvelope(r), err
 		})
