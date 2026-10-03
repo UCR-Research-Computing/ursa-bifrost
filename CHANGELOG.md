@@ -5,6 +5,12 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.9.6 - 2026-10-03
+- env_check no longer runs on the login node. It runs its fixed template as a one-core,
+  3-minute Slurm job (`srun -p check -c 1 -t 3 --immediate=120`) on the new always-on
+  `check` partition and reports the job id and node it ran on. About 3 s on the warm node.
+  The partition is config `env_check_partition` (default `check`).
+
 ## agent-v0.4.0 - 2026-10-03
 - ursa-agent keeps sign-ins across restarts: each sign-in is also written, sealed, to the
   agent's own private bucket (`<project>-ursa-agent-data` at `/data`), so Cloud Run stopping

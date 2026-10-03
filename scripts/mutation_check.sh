@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/core/inflight.go internal/core/shared_cache.go internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go"
+FILES="internal/core/inflight.go internal/core/shared_cache.go internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go internal/config/config.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
@@ -278,6 +278,16 @@ mutate "v095 store before login"   internal/backend/iap.go '	_ = b.keys().Put(b.
 mutate "v095 wait for fresh key"   internal/backend/iap.go '				fresh := time.Since(k.Imported) < keyPropagation' '				fresh := false'
 mutate "v095 gone fresh key replaced" internal/backend/iap.go '	return err != nil || code != 404' '	return true'
 mutate "v095 fresh key retries"    internal/backend/iap.go '						client, err = b.handshake(ctx, k.User, signer, 13)' '						client, err = b.handshake(ctx, k.User, signer, 0)'
+mutate "v096 env in a job"         internal/backend/files.go '	argv := append(EnvJobArgs(partition), "bash", "-lc", envTemplate, "bifrost", strconv.Itoa(len(modules)))' '	argv := []string{"bash", "-lc", envTemplate, "bifrost", strconv.Itoa(len(modules))}'
+mutate "v096 env one core"         internal/backend/files.go '"-N", "1", "-n", "1", "-c", "1", "-t", "3",' '"-N", "1", "-n", "1", "-t", "3",'
+mutate "v096 env gives up"         internal/backend/files.go '		"--immediate=120", "--quiet", "-J", "bifrost-env-check"}' '		"--quiet", "-J", "bifrost-env-check"}'
+mutate "v096 env partition checked" internal/backend/files.go '	if !rePartition.MatchString(partition) {
+		return Command{}, fmt.Errorf("env_check partition' '	if false {
+		return Command{}, fmt.Errorf("env_check partition'
+mutate "v096 env uses config"      internal/core/helpers.go '	c, err := backend.EnvCheck(s.Cfg.EnvPartition, modules, commands, versionCommands)' '	c, err := backend.EnvCheck("standard", modules, commands, versionCommands)'
+mutate "v096 env reports job"      internal/core/helpers.go '			r.JobID, r.Node = policy.CleanLabel(f[1], 20), policy.CleanLabel(f[2], 80)' '			_ = f'
+mutate "v096 env timeout"          internal/backend/files.go '	return Command{argv: argv, kind: KindNoCache, timeout: 200 * time.Second}, nil' '	return Command{argv: argv, kind: KindNoCache, timeout: 120 * time.Second}, nil'
+mutate "v096 config partition"     internal/config/config.go '	if !rePartitionName.MatchString(c.EnvPartition) {' '	if false {'
 mutate "v095 background renew"     internal/backend/iap.go '		b.touch()
 		b.renewSoon()' '		b.touch()'
 mutate "v095 renew updates store"  internal/backend/iap.go '			k.Expires = exp

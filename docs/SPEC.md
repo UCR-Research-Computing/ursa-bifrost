@@ -188,7 +188,7 @@ fields the assistant would read as instructions.
 | `storage_usage` | none | Space used in your home and scratch folders (largest folders first) and how full each filesystem is (section 18.4) |
 | `files_list` | `path?`, `pattern?`, `offset?`, `limit?` | One folder under your home or scratch; hidden and credential-like entries are never shown (section 18.4) |
 | `files_read` | `path`, `offset?`, `bytes?`, `grep?` | One text file under your home or scratch, in chunks or searched; same deny rules (section 18.4) |
-| `env_check` | `modules[]?`, `commands[]?` | Loads modules on the login node and reports whether each loads, the resulting module list, and which `python3`, `gcc`, `mpirun`... you get, with versions (section 18.4) |
+| `env_check` | `modules[]?`, `commands[]?` | Loads modules in a one-core job on the always-on `check` partition (never the login node) and reports whether each loads, the resulting module list, and which `python3`, `gcc`, `mpirun`... you get, with versions (section 18.4) |
 | `interactive_help` | `partition?`, `nodes?`, `cpus?`, `gpus?`, `time?`, `memory?` | The exact `srun --pty`/`salloc` command for an interactive session, its hourly and worst-case cost (share of the node on shared partitions) and how to reach the login node. Runs no job (section 18.4) |
 | `modules_search` | `query?` | Matching modules and versions with their MPI prerequisite and GPU builds, plus matching prebuilt containers and recipes |
 | `module_show` | `name`, `mpi?` | What the module sets (paths, environment, dependencies). MPI-built packages (hdf5, fftw, petsc...) exist only under an MPI in the site's hierarchical Lmod, so they are shown after `module load <mpi>` (openmpi by default, or the `mpi` given, which must be one of the package's builds); the answer names the MPI loaded and every build available |
@@ -724,7 +724,7 @@ boundary and the line numbers say exactly what was returned, so paging never ski
 | `storage_usage` | `df -P -B1` on home and scratch; `du -x -d 1` on the person's two folders | Fixed paths; 150-second limit per folder; cached 5 minutes. Top-level folder names and sizes only, including hidden ones such as `.cache` and `.conda` (often the cause of a full home); credential-like names are left out |
 | `files_list` | `realpath -e`, then `find <dir> -mindepth 1 -maxdepth 1 -printf ...` | Path under `/home/<user>/` or `/scratch/<user>/` (or `~/...`), clean and absolute; every component checked, before and after symlinks are resolved. Commands run as the person, so file permissions are theirs |
 | `files_read` | `stat`, `dd` (byte window) or `grep -n` | Same path rule; text only; redacted; untrusted |
-| `env_check` | A fixed `bash -lc` template: `module load` each given module (with Lmod's message when it fails), `module list`, then `command -v` for each command; versions only for a known list (python3, gcc, mpirun, nvcc, cmake, R, julia, java, apptainer...) | Module and command names validated; at most 10 modules and 15 commands; each version probe under `timeout 10` |
+| `env_check` | `srun -p check -N1 -n1 -c1 -t3 --immediate=120 --quiet -J bifrost-env-check` around a fixed `bash -lc` template: `module load` each given module (with Lmod's message when it fails), `module list`, then `command -v` for each command; versions only for a known list (python3, gcc, mpirun, nvcc, cmake, R, julia, java, apptainer...) | Module and command names validated; at most 10 modules and 15 commands; each version probe under `timeout 10`; the partition comes from config `env_check_partition` (default `check`, validated) |
 | `interactive_help` | Nothing but reads: the catalog and `sinfo -h -o %R\|%h` (sharing, v0.8.0) | Validated against partitions and caps |
 
 Hidden entries (any path component starting with `.`: `.ssh`, `.config`, `.aws`,
@@ -985,6 +985,7 @@ new mutation guards (128 in all, every one caught).
 | Date | Version | Change |
 |---|---|---|
 | 2026-10-03 | agent 0.4.0 | ursa-agent keeps sign-ins across restarts in its own sealed bucket store (20.6); chats still start fresh |
+| 2026-10-03 | v0.9.6 | env_check runs as a one-core `srun` job on the always-on `check` partition (config `env_check_partition`), never on the login node, and reports the job and node; 8 mutation guards |
 | 2026-10-03 | v0.9.5 | IAP key renewal: extend the OS Login key in place (PATCH) under 2 h left, in the background while busy; store a new key before its first login and wait for it instead of deleting and replacing it (2026-10-03 outage); ursa-agent 0.3.1 shows `connecting` and retries; 8 mutation guards |
 | 2026-10-02 | v0.9.4 | script_check: a redirection after `module load` (`2>/dev/null`) is not a module name; it blocked the Lab harness's apptainer line |
 | 2026-10-02 | v0.9.3 | `jobs_list job_ids` (up to 100) and `restarts` on list rows; program clients with their own A1 caps and ledger (21.1); 13 mutation guards. For the deep-research Lab migration (B3, B4, A1/A3 of nexus 2026-10-02_Deep_Research_Next_Plan.md) |
@@ -1128,6 +1129,14 @@ over on its own. Live checks found three wording and parsing bugs, fixed here:
 Section 21. Programs sign in through a client listed in users.yaml, capped by its tier
 ceiling and limited by their own call budget; audit records name the program. Built so Ultra
 can read cluster facts without holding Chuck's submit and cancel rights.
+
+### v0.9.6: env_check off the login node
+Ursa Major got a `check` partition on 2026-10-03: one e2-standard-4 node that never powers
+down, up to three more under load (an hour's idle time), shared, 15-minute limit. env_check
+now runs its fixed template inside `srun -p check -c 1 -t 3 --immediate=120`, so nothing runs
+on the login node and the answer comes from a real compute node (job and node in the
+reply). Measured live: about 3 s end to end on the warm node (job 476). `--immediate=120`
+fails fast if Slurm cannot place the job at all; bifrost's own timeout (200 s) covers a boot.
 
 ### ursa-agent 0.3.0: dashboard
 Section 20. The chat page becomes a read-only dashboard over bifrost tools (12 panels, 4 of them

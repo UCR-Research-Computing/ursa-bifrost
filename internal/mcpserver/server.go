@@ -422,7 +422,7 @@ func New(s *core.Service) *mcp.Server {
 			return nil, toEnvelope(r), err
 		})
 	mcp.AddTool(srv, addR1("env_check", "Check modules and tools",
-		"Loads the given modules on the login node and reports whether each loads (with Lmod's message if not), the resulting module list, and where each program resolves with its version (python3, gcc, mpirun, nvcc, cmake, R, ...). Changes nothing."),
+		"Loads the given modules in a one-core job (a few seconds) on the always-on check partition, never on the login node, and reports whether each loads (with Lmod's message if not), the resulting module list, and where each program resolves with its version (python3, gcc, mpirun, nvcc, cmake, R, ...), with the job and node it ran on. Changes no files."),
 		func(ctx context.Context, req *mcp.CallToolRequest, in envIn) (*mcp.CallToolResult, envelope, error) {
 			r, err := core.Call(ctx, s, clientName(req), "env_check", "R1", argsOf(in), true, func(ctx context.Context) (*core.EnvCheck, error) {
 				return s.EnvCheck(ctx, in.Modules, in.Commands)

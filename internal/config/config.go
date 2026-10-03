@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -119,8 +120,10 @@ type Config struct {
 	StatePath   string             `yaml:"state_path"`  // A1 plans, tokens and spend ledger
 	ResultsDir  string             `yaml:"results_dir"` // local folder for downloaded results
 	JobsRoot    string             `yaml:"jobs_root"`   // remote folder under $HOME for submitted jobs
-	Staging     Staging            `yaml:"staging"`
-	Path        string             `yaml:"-"`
+	// EnvPartition is where env_check runs its one-core job (never the login node).
+	EnvPartition string  `yaml:"env_check_partition"`
+	Staging      Staging `yaml:"staging"`
+	Path         string  `yaml:"-"`
 }
 
 // Duration is a time.Duration that reads "20s" / "10m" in YAML.
@@ -138,6 +141,9 @@ func (d *Duration) UnmarshalYAML(n *yaml.Node) error {
 
 // MarshalYAML writes the duration as a string.
 func (d Duration) MarshalYAML() (any, error) { return d.String(), nil }
+
+// rePartitionName matches a Slurm partition name.
+var rePartitionName = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
 
 // Default returns a configuration with every default filled in (no SSH target).
 func Default() Config {
@@ -163,10 +169,11 @@ func Default() Config {
 			UntrustedCh: 16000,
 			CallsPerMin: 60,
 		},
-		AuditPath:  "~/.local/share/ursa-bifrost/audit.jsonl",
-		StatePath:  "~/.local/share/ursa-bifrost/a1.json",
-		ResultsDir: "~/ursa-results",
-		JobsRoot:   "bifrost-jobs",
+		AuditPath:    "~/.local/share/ursa-bifrost/audit.jsonl",
+		StatePath:    "~/.local/share/ursa-bifrost/a1.json",
+		ResultsDir:   "~/ursa-results",
+		JobsRoot:     "bifrost-jobs",
+		EnvPartition: "check",
 		Caps: Caps{MaxNodes: 4, MaxHours: 24, MaxCostPerJobUSD: 25, MaxCostPerDayUSD: 50,
 			MaxSubmitsPerDay: 20, ConfirmTTLMinutes: 10},
 		Staging: Staging{UploadMinutes: 15, LinkMinutes: 60, MaxUploadBytes: 5 << 30,
@@ -227,6 +234,9 @@ func (c Config) Validate() error {
 		}
 	default:
 		return fmt.Errorf("config: unknown backend %q (ssh, iap or fixture)", c.Backend)
+	}
+	if !rePartitionName.MatchString(c.EnvPartition) {
+		return errors.New("config: env_check_partition must be a partition name (default check)")
 	}
 	if c.JobsRoot != "bifrost-jobs" {
 		return errors.New("config: jobs_root must be bifrost-jobs (other folders are not supported yet)")

@@ -15,6 +15,7 @@ log_roots: ["/home/{user}/", "/scratch/{user}/"]
 show_cost: true
 audit_path: "-"            # stdout -> Cloud Logging
 jobs_root: bifrost-jobs
+env_check_partition: check  # env_check runs a one-core job here (never on the login node)
 caps:
   max_nodes: 4
   max_hours: 24
