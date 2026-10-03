@@ -8,6 +8,7 @@
 #   PROJECT=ucr-ursa-major-hpc-cluster  REGION=us-central1
 #   CONFIG=path/to/config.yaml  USERS=path/to/users.yaml
 #   CLIENT_JSON=path/to/oauth-client.json   (downloaded when creating the Web OAuth client; see docs/DEPLOY.md)
+#   MIN_INSTANCES=1   (default 1: always warm, ~$10/month idle; 0 = no idle cost, cold starts)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 MODE=${1:-plan}
@@ -98,7 +99,7 @@ run docker push "$IMAGE"
 
 say "7. Deploy Cloud Run (public URL; every MCP request needs a bifrost token from Google sign-in)"
 ask "deploy $SERVICE?" && run gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --image "$IMAGE" \
-  --service-account "$SA" --allow-unauthenticated --min-instances 0 --max-instances 1 --concurrency 40 \
+  --service-account "$SA" --allow-unauthenticated --min-instances "${MIN_INSTANCES:-1}" --max-instances 1 --concurrency 40 \
   --cpu 1 --memory 512Mi --timeout 900 --execution-environment gen2 \
   --set-secrets "BIFROST_SECRET_KEY=bifrost-secret-key:latest,BIFROST_GOOGLE_CLIENT_SECRET=bifrost-google-client-secret:latest,/config/config.yaml=bifrost-config:latest,/users/users.yaml=bifrost-users:latest" \
   --add-volume "name=data,type=cloud-storage,bucket=$BUCKET" --add-volume-mount "volume=data,mount-path=/data"

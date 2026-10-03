@@ -55,8 +55,11 @@ deploy/deploy.sh plan      # read-only: shows what is missing
 deploy/deploy.sh apply     # asks before each billable or IAM change
 ```
 
-Cost when idle is zero: min-instances 0, a few MB in Cloud Storage, and Secret
-Manager versions. While in use: one small Cloud Run instance (1 vCPU, 512 MiB).
+One instance is kept warm (min-instances 1, since v0.9.1 scaling phase 2): no cold
+start, and the shared cache and sign-in state survive between calls. Idle cost is
+about $10 a month (1 vCPU, 512 MiB, CPU billed only during requests) plus a few MB
+in Cloud Storage and Secret Manager versions. `MIN_INSTANCES=0 deploy/deploy.sh
+apply` returns to zero idle cost with cold starts.
 
 ## Connect a client
 

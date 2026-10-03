@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft 1, 2026-10-02. Phase 1 built (v0.9.1). |
+| Status | Draft 1, 2026-10-02. Phase 1 live (v0.9.1); min 1 live (phase 2, first step). |
 | Target (Chuck, 2026-10-02) | 20 people at once with heavy harness use plus programs and scripts: plan for **1,000+ calls a minute** to the hosted server, bursts above that. Budget raised as needed. |
 | Sibling | Nexus `2026-10-02_MCP_Scaling_Plan.md` (same phases) |
 
@@ -51,8 +51,9 @@ More vCPUs do not help: Go already uses every core, and the work is remote.
 
 ### Phase 2: protect the cluster, then warm
 
-- **min 1** (always warm; ~$10-20/month at 512 MiB): no cold start, SSH connections
-  and caches survive between calls. Config only.
+- **min 1** (always warm; ~$10/month at 512 MiB): no cold start; the shared cache,
+  sign-in state and OS Login key survive between calls (SSH connections still close
+  after 5 min idle). Config only. **Live 2026-10-02.**
 - **Per-person in-flight cap** in front of the 8 SSH sessions, refusing with a clear
   "busy, retry" instead of queueing behind a runaway script.
 - **Global accounting budget**: cap concurrent `sacct` runs across all people (e.g.
@@ -79,3 +80,4 @@ the cluster, not bifrost.
 | Date | Change |
 |---|---|
 | 2026-10-02 | Draft 1: limits, phases; Phase 1 (shared cache + single-flight) in v0.9.1 |
+| 2026-10-02 | min-instances 1 (deploy.sh default `MIN_INSTANCES=1`) |
