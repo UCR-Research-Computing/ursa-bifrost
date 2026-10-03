@@ -5,6 +5,13 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.9.7 - 2026-10-03
+- `jobs_list` with `job_ids` asks Slurm for just those jobs (`squeue -j` / `sacct -j`),
+  uncached, and keeps only the caller's own rows. A program watching its jobs (the
+  deep-research Lab) now sees a finished job on its next call instead of after the
+  queue/accounting cache ran out: a 2-second check job on the always-on `check`
+  partition took about 85 s to show as done, most of it cache.
+
 ## agent-v0.4.1 - 2026-10-03
 - ursa-agent's instructions point people at the always-on `check` partition: env_check (a
   few-second job there) for "does this module load", and a short trial submit to `check`

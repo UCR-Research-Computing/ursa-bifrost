@@ -544,3 +544,46 @@ func TestJobsListDefaultPage(t *testing.T) {
 		t.Errorf("limit 100 with cap 3: got %d", len(got))
 	}
 }
+
+// TestJobsListByIDsIsFresh: a program watching its own jobs gets Slurm's answer for
+// just those jobs on every call (no queue/accounting cache), so a job that ended is seen
+// at once (v0.9.7; the Lab's check jobs waited ~80 s for the cache before).
+func TestJobsListByIDsIsFresh(t *testing.T) {
+	s, fx := newTestService(t)
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		if _, err := s.JobsList(ctx, JobsListInput{JobIDs: []string{"260", "229"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var sq, sa int
+	for _, c := range fx.Calls {
+		if strings.HasPrefix(c, "squeue --json -j 229,260") {
+			sq++
+		}
+		if strings.HasPrefix(c, "sacct --json -j 229,260") {
+			sa++
+		}
+		if strings.Contains(c, " -u ") || strings.Contains(c, " -a") {
+			t.Errorf("job_ids listed a whole user or everyone: %s", c)
+		}
+	}
+	if sq != 2 || sa != 2 {
+		t.Fatalf("each call must ask Slurm (uncached) for just these jobs: squeue %d sacct %d in %v", sq, sa, fx.Calls)
+	}
+	// someone else's job with a requested id is never returned
+	fx.User = "bob_ucr_edu"
+	s2, fx2 := newTestService(t)
+	fx2.User = "bob_ucr_edu"
+	s2.Cfg.ClusterUser = "bob_ucr_edu"
+	js, err := s2.JobsList(ctx, JobsListInput{JobIDs: []string{"260"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(js) != 0 {
+		t.Errorf("another user's job 260 was returned: %+v", js)
+	}
+	if _, err := backend.SqueueJobs([]string{"260", "1;id"}); err == nil {
+		t.Error("a bad id reached squeue -j")
+	}
+}

@@ -89,7 +89,22 @@ func (s *Service) JobsList(ctx context.Context, in JobsListInput) ([]JobSummary,
 		limit = s.Cfg.Limits.ListRows
 	}
 	var qc, ac backend.Command
-	if in.All {
+	byID := len(want) > 0 && !in.All
+	if byID {
+		// a program watching its own jobs (the Lab's watcher): ask Slurm for just
+		// these jobs, uncached, so a job that ended shows as ended on the next call
+		// instead of after the queue/accounting cache (up to 80 s) runs out. The rows
+		// are filtered to the caller's own user below.
+		ids := make([]string, 0, len(want))
+		for id := range want {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		qc, err = backend.SqueueJobs(ids)
+		if err == nil {
+			ac, err = backend.SacctJobs(ids)
+		}
+	} else if in.All {
 		qc = backend.SqueueAll()
 		ac, err = backend.SacctAll(in.Since, "")
 	} else {
@@ -121,6 +136,9 @@ func (s *Service) JobsList(ctx context.Context, in JobsListInput) ([]JobSummary,
 	seen := map[string]bool{}
 	var out []JobSummary
 	for _, j := range q.Jobs {
+		if byID && j.UserName != who {
+			continue // only the caller's own jobs, as with squeue -u
+		}
 		js := s.queueSummary(j, cat)
 		seen[js.JobID] = true
 		out = append(out, js)
@@ -128,6 +146,9 @@ func (s *Service) JobsList(ctx context.Context, in JobsListInput) ([]JobSummary,
 	for _, j := range a.Jobs {
 		id := fmt.Sprint(j.JobID)
 		if seen[id] {
+			continue
+		}
+		if byID && j.User != who {
 			continue
 		}
 		seen[id] = true

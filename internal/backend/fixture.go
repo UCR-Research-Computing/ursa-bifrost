@@ -274,10 +274,13 @@ func filterJobs(b []byte, id, key string) ([]byte, error) {
 	if err := json.Unmarshal(doc["jobs"], &jobs); err != nil {
 		return nil, err
 	}
-	want := strings.SplitN(id, "_", 2)[0]
+	want := map[string]bool{}
+	for _, x := range strings.Split(id, ",") {
+		want[strings.SplitN(x, "_", 2)[0]] = true
+	}
 	var keep []map[string]json.RawMessage
 	for _, j := range jobs {
-		if strings.TrimSpace(string(j[key])) == want {
+		if want[strings.TrimSpace(string(j[key]))] {
 			keep = append(keep, j)
 		}
 	}

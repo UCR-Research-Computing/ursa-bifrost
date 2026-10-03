@@ -157,6 +157,38 @@ func SqueueStart(id string) (Command, error) {
 	return Command{argv: []string{"squeue", "--json", "--start", "-j", id}, kind: KindQueue, okExit: []int{1}}, nil
 }
 
+// SqueueJobs is the live queue rows of the given jobs, never cached: a program
+// watching its own jobs must see a finished job at once (job_ids). Callers filter
+// the rows to their own user.
+func SqueueJobs(ids []string) (Command, error) {
+	list, err := jobList(ids)
+	if err != nil {
+		return Command{}, err
+	}
+	return Command{argv: []string{"squeue", "--json", "-j", list}, kind: KindNoCache, okExit: []int{1}}, nil
+}
+
+// SacctJobs is the accounting rows of the given jobs, never cached (see SqueueJobs).
+func SacctJobs(ids []string) (Command, error) {
+	list, err := jobList(ids)
+	if err != nil {
+		return Command{}, err
+	}
+	return Command{argv: []string{"sacct", "--json", "-j", list}, kind: KindNoCache}, nil
+}
+
+func jobList(ids []string) (string, error) {
+	if len(ids) == 0 || len(ids) > 100 {
+		return "", fmt.Errorf("1 to 100 job ids, got %d", len(ids))
+	}
+	for _, id := range ids {
+		if err := ValidJobID(id); err != nil {
+			return "", err
+		}
+	}
+	return strings.Join(ids, ","), nil
+}
+
 // SacctJob is the accounting record of one job.
 func SacctJob(id string) (Command, error) {
 	if err := ValidJobID(id); err != nil {
