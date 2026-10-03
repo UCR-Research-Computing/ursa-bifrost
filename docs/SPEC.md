@@ -98,12 +98,16 @@ Partitions (from `sinfo`):
 
 | Partition | Nodes | CPUs/node | Memory/node | GPU | Note |
 |---|---|---|---|---|---|
-| standard (default in Slurm) | 32 | 16 | 124 GB | | GCP stockouts seen 2026-09-29 |
-| computehigh | 16 | 22 | 85 GB | | deep-research default; always-on warm node |
+| standard (default in Slurm) | 48 | 16 | 124 GB | | e2-standard-32 in any us-central1 zone since 2026-10-03 (was c2d, 32 nodes); AVX2 only |
+| spot | 48 | 16 | 124 GB | | same e2 nodes, preemptible |
+| check | 1 always on + 3 | 2 | 15 GB | | e2-standard-4; 15-minute MaxTime; env_check and trial runs |
+| computehigh | 4 | 22 | 85 GB | | c3-highcpu-44 (was 16 nodes): fast cores + Tier_1 for multi-node MPI |
 | highmem | 8 | 32 | 497 GB | | |
 | gpul4 | 8 | 8 | 62 GB | 1x L4 | |
-| nvmescratch | 8 | 8 | 62 GB | | |
-| spot | 32 | 16 | 124 GB | | preemptible |
+| nvmescratch | 2 | 8 | 62 GB | | (was 8) |
+
+The `lab` partition (2026-10-02) was removed on 2026-10-03; deep-research uses check for
+pilots and standard for runs.
 
 Existing open-source Slurm MCP servers seen on GitHub (not yet evaluated): mila-iqia
 `slurm_mcp`, WenzhuoXu `slurm-mcp` (SSH from Claude Code), Charlie-Z-work
@@ -987,6 +991,7 @@ new mutation guards (128 in all, every one caught).
 | 2026-10-03 | agent 0.4.0 | ursa-agent keeps sign-ins across restarts in its own sealed bucket store (20.6); chats still start fresh |
 | 2026-10-03 | v0.9.7 | `jobs_list job_ids` reads `squeue -j`/`sacct -j` for just those jobs, uncached, own rows only (a finished job shows at once; was up to the 20 s + 60 s cache); 5 mutation guards |
 | 2026-10-03 | v0.9.8 | Ursa Major standard and spot moved to e2-standard-32 in any us-central1 zone (cluster change the same day). Stockout alternatives now offer standard, then spot, then computehigh (`altPartitions`, `altColdPartitions`); segfault hints name the AVX2-only e2 nodes; 2 mutation guards |
+| 2026-10-03 | v0.9.9 | Checks that follow the new cluster layout: script_check refuses a --time over the partition's MaxTime (check's 15 min; Slurm would hold the job as PartitionTimeLimit), warns when code is compiled for AVX-512 or the build host (-march=native, -mavx512*, -xHost) on the AVX2-only e2 partitions (standard, spot, check), and notes that tightly coupled multi-node MPI on standard scales better on computehigh. waste_report low-cpu advice says ask for fewer cores, and points single-node computehigh work at standard. 7 mutation guards |
 | 2026-10-03 | v0.9.6 | env_check runs as a one-core `srun` job on the always-on `check` partition (config `env_check_partition`), never on the login node, and reports the job and node; 8 mutation guards |
 | 2026-10-03 | v0.9.5 | IAP key renewal: extend the OS Login key in place (PATCH) under 2 h left, in the background while busy; store a new key before its first login and wait for it instead of deleting and replacing it (2026-10-03 outage); ursa-agent 0.3.1 shows `connecting` and retries; 8 mutation guards |
 | 2026-10-02 | v0.9.4 | script_check: a redirection after `module load` (`2>/dev/null`) is not a module name; it blocked the Lab harness's apptainer line |

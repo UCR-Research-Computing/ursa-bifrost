@@ -587,3 +587,63 @@ func TestJobsListByIDsIsFresh(t *testing.T) {
 		t.Error("a bad id reached squeue -j")
 	}
 }
+
+// TestScriptCheckClusterLayout: the checks that follow the 2026-10-03 cluster layout
+// (e2 standard/spot/check, computehigh as the MPI specialist) (v0.9.9).
+func TestScriptCheckClusterLayout(t *testing.T) {
+	dir := mutatedFixtures(t, "catalog.json", func(doc map[string]any) {
+		parts := doc["partitions"].([]any)
+		check := map[string]any{}
+		for k, v := range parts[0].(map[string]any) {
+			check[k] = v
+		}
+		check["name"], check["time_limit"], check["default"] = "check", "15:00", false
+		check["cpus_per_node"], check["max_nodes"] = 2, 4
+		doc["partitions"] = append(parts, check)
+	})
+	s := serviceAt(t, dir)
+	ctx := context.Background()
+
+	// 1. --time over the partition's MaxTime is an error that names the limit
+	long := "#!/bin/bash\n#SBATCH -p check\n#SBATCH -c 1\n#SBATCH -t 01:00:00\necho hi\n"
+	sc, err := s.ScriptCheck(ctx, long)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sc.OK || !strings.Contains(issues(sc), "over check's limit of 0 h 15 min") || !strings.Contains(issues(sc), "standard") {
+		t.Errorf("1 h on check should be refused with the limit and where to go: %s", issues(sc))
+	}
+	short := strings.Replace(long, "01:00:00", "00:10:00", 1)
+	if sc, _ = s.ScriptCheck(ctx, short); strings.Contains(issues(sc), "limit of") {
+		t.Errorf("10 min on check falsely refused: %s", issues(sc))
+	}
+	// unlimited partitions never trip it
+	std := "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -c 4\n#SBATCH -t 7-00:00:00\necho hi\n"
+	if sc, _ = s.ScriptCheck(ctx, std); strings.Contains(issues(sc), "limit of") {
+		t.Errorf("standard has no time limit: %s", issues(sc))
+	}
+
+	// 2. AVX-512 builds on the e2 partitions warn; on computehigh they do not
+	avx := "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -c 4\n#SBATCH -t 10\ngcc -O3 -march=native x.c -o x\n./x\n"
+	if sc, _ = s.ScriptCheck(ctx, avx); !strings.Contains(issues(sc), "AVX2 only") {
+		t.Errorf("-march=native on standard should warn: %s", issues(sc))
+	}
+	if sc, _ = s.ScriptCheck(ctx, strings.Replace(avx, "-p standard", "-p computehigh", 1)); strings.Contains(issues(sc), "AVX2 only") {
+		t.Errorf("computehigh has AVX-512: %s", issues(sc))
+	}
+	if sc, _ = s.ScriptCheck(ctx, strings.Replace(avx, "-march=native", "-march=x86-64-v3", 1)); strings.Contains(issues(sc), "AVX2 only") {
+		t.Errorf("x86-64-v3 is the site target: %s", issues(sc))
+	}
+	if sc, _ = s.ScriptCheck(ctx, strings.Replace(avx, "gcc -O3", "# old: gcc -mavx512f\ngcc -O3", 1)); strings.Contains(issues(sc), "-mavx512f") {
+		t.Errorf("a commented-out flag runs nothing: %s", issues(sc))
+	}
+
+	// 3. multi-node MPI on standard gets the computehigh hint; single-node does not
+	mpi := "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -N 2\n#SBATCH --ntasks-per-node=16\n#SBATCH -t 60\nmodule load openmpi\nsrun ./a.out\n"
+	if sc, _ = s.ScriptCheck(ctx, mpi); !strings.Contains(issues(sc), "scale better on computehigh") {
+		t.Errorf("multi-node MPI on standard should mention computehigh: %s", issues(sc))
+	}
+	if sc, _ = s.ScriptCheck(ctx, strings.Replace(mpi, "-N 2", "-N 1", 1)); strings.Contains(issues(sc), "scale better on computehigh") {
+		t.Errorf("single-node MPI needs no hint: %s", issues(sc))
+	}
+}

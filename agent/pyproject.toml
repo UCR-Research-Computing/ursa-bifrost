@@ -1,6 +1,6 @@
 [project]
 name = "ursa-agent"
-version = "0.4.1"
+version = "0.4.2"
 description = "Ursa Major dashboard + Gemini agent: read-only cluster panels, chat, A2A; cluster tools via bifrost MCP as the signed-in user"
 requires-python = ">=3.12"
 dependencies = [

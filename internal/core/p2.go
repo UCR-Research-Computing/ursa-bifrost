@@ -127,7 +127,12 @@ func (s *Service) Waste(ctx context.Context, in WasteInput) (*WasteReport, error
 		}
 		if eff < in.CPUThreshold {
 			kind := "low-cpu"
-			sug := "Most cores sat idle. Use the program's threading/MPI options (OMP_NUM_THREADS, -ntomp, srun -n) or a smaller partition (nvmescratch 8 cores, gpul4 8 cores)."
+			sug := "Most cores sat idle. Ask for fewer cores (--cpus-per-task): on shared partitions you pay for the cores you hold. Or use the program's threading/MPI options (OMP_NUM_THREADS, -ntomp, srun -n)."
+			if j.Partition == "computehigh" && cores <= 16 {
+				// computehigh is the fast-core MPI specialist (2026-10-03); single-node work
+				// that leaves cores idle is cheaper on standard (e2, the cheapest cores)
+				sug += fmt.Sprintf(" Single-node work like this is cheaper on standard (%s/node-hour vs %s).", priceText(s, cat, "standard"), priceText(s, cat, "computehigh"))
+			}
 			if isWarmWorker(j) {
 				kind = "warm-worker"
 				sug = "A keep-warm job that holds a node so later work starts without a boot wait. Its idle time is the price of that latency: compare it with ~2-5 min cold boots and shorten or stop it when nothing is queued."

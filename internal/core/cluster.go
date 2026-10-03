@@ -370,6 +370,10 @@ type ScriptCheck struct {
 var (
 	// idioms that count the whole node's cores rather than the job's
 	reAllCores = regexp.MustCompile(`os\.cpu_count\(\)|multiprocessing\.cpu_count\(\)|nproc\s+--all|/proc/cpuinfo`)
+	// compiler flags that emit AVX-512 (or tune for a host that has it); the e2 nodes
+	// behind standard/spot/check run AVX2 only, so such a binary dies with SIGILL
+	reMPIRun   = regexp.MustCompile(`\b(srun|mpirun|mpiexec)\b`)
+	reAVX512   = regexp.MustCompile(`-mavx512\w*|-march=(?:native|skylake-avx512|icelake\w*|sapphirerapids|cascadelake|cooperlake|tigerlake|znver4|znver5|x86-64-v4)\b|-xCORE-AVX512|-xHost\b`)
 	reSbatch   = regexp.MustCompile(`^#SBATCH\s+(.*)$`)
 	reModLoad  = regexp.MustCompile(`\bmodule\s+(?:load|add)\s+([^;&|#\n]+)`)
 	reMemValue = regexp.MustCompile(`^(\d+)([KMGT]?)B?$`)
@@ -451,6 +455,12 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 		if sc.Request["partition"] == "" {
 			add("info", 0, "no partition given; Slurm will use the default (%s)", part)
 		}
+		// the partition's MaxTime (catalog time_limit, e.g. check's 15:00): a longer
+		// --time is held by Slurm forever with reason PartitionTimeLimit (v0.9.9)
+		if maxMin, ok := slurmMinutes(p.TimeLimit); ok && hasTime && maxMin > 0 && mins > maxMin {
+			add("error", 0, "--time %s is over %s's limit of %s; Slurm would hold the job (PartitionTimeLimit). Lower --time%s",
+				sc.Request["time"], part, minutesText(maxMin), partitionTimeHint(part))
+		}
 		nodes := atoiDefault(sc.Request["nodes"], 1)
 		if nodes > p.MaxNodes {
 			add("error", 0, "%d nodes requested; %s has %d", nodes, part, p.MaxNodes)
@@ -481,6 +491,14 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 			// a job with no core request gets 1 core on a shared node and is held
 			// there; refuse rather than let it run 20x slower than its author meant
 			add("error", 0, "%s shares nodes between jobs: this script %s. Ask for the cores it needs (#SBATCH --cpus-per-task=N, or --ntasks-per-node=N for MPI ranks), or #SBATCH --exclusive for the whole node", part, cr.DefaultNote)
+		}
+		if part == "standard" && nodes > 1 && reMPIRun.MatchString(codeOnly(script)) {
+			add("info", 0, "multi-node MPI on standard (e2 nodes, standard networking, any zone): fine for loosely coupled work; tightly coupled codes (GROMACS, LAMMPS, CFD) scale better on computehigh (Tier_1 networking, fast cores)")
+		}
+		if avx2OnlyPartitions[part] {
+			if m := reAVX512.FindString(codeOnly(script)); m != "" {
+				add("warning", 0, "%s compiles for AVX-512 or for the build host (%s), but %s nodes (e2) have AVX2 only: the program can die with 'Illegal instruction'. Use -march=x86-64-v3 (what the site software uses), or run on computehigh (Intel, AVX-512)", m, m, part)
+			}
 		}
 		if shared && !cr.Exclusive {
 			if m := reAllCores.FindString(script); m != "" {
@@ -627,6 +645,17 @@ func memMB(s string) (int64, bool) {
 }
 
 // slurmMinutes parses Slurm time formats: M, M:S, H:M:S, D-H, D-H:M, D-H:M:S.
+// avx2OnlyPartitions run on e2 hosts (x86-64-v3, no AVX-512) since 2026-10-03.
+var avx2OnlyPartitions = map[string]bool{"standard": true, "spot": true, "check": true}
+
+// partitionTimeHint suggests where a too-long job belongs.
+func partitionTimeHint(part string) string {
+	if part == "check" {
+		return ", or submit the real run to standard (check is for tests under 15 minutes)"
+	}
+	return ""
+}
+
 func slurmMinutes(s string) (int, bool) {
 	if s == "" {
 		return 0, false

@@ -113,14 +113,15 @@ $ bifrost status
 ursa-major (Slurm 25.11.4): 0 running, 0 pending, 0 node(s) powered up, now $0.00/hour
 
 PARTITION    NODES  UP  ALLOC  IDLE-UP  BOOT  DOWN  RUN  PEND  $/NODE-H  $/H NOW
-computehigh  16     0   0      0        0     0     0    0     $1.87     $0.00
+check        4      1   0      1        0     0     0    0     $0.13     $0.13
+computehigh  4      0   0      0        0     0     0    0     $1.87     $0.00
 gpul4        8      0   0      0        0     0     0    0     $1.15     $0.00
 highmem      8      0   0      0        0     0     0    0     $4.19     $0.00
-standard*    32     0   0      0        0     0     0    0     $1.45     $0.00
+standard*    48     0   0      0        0     0     0    0     $1.07     $0.00
 ...
 
 $ bifrost check train.sbatch
-PROBLEMS FOUND  partition standard  worst-case cost $0.18  (1 cores, 6% of a node)
+PROBLEMS FOUND  partition standard  worst-case cost $0.13  (1 cores, 6% of a node)
   error   line 4: module "python3" not found in the cluster catalog; closest: pythia8, python-ml
   error   standard shares nodes between jobs: this script asks for no cores, so Slurm gives
           it 1 core and about 8 GB on standard. Ask for the cores it needs ...

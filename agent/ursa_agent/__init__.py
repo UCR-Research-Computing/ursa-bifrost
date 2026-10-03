@@ -1,3 +1,3 @@
 """ursa-agent: a Gemini agent for the Ursa Major HPC cluster."""
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
