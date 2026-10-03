@@ -43,6 +43,15 @@ if [ "$MODE" = apply ]; then
   done
 fi
 
+say "2b. Data bucket (sealed sign-ins, so a restart does not sign people out; private, own bucket, 1-day delete)"
+BUCKET=${PROJECT}-ursa-agent-data
+if have gcloud storage buckets describe "gs://$BUCKET"; then echo "ok   gs://$BUCKET"
+else ask "create gs://$BUCKET?" && { run gcloud storage buckets create "gs://$BUCKET" --project "$PROJECT" --location "$REGION" \
+  --uniform-bucket-level-access --public-access-prevention --soft-delete-duration=0;
+  printf '{"rule":[{"action":{"type":"Delete"},"condition":{"age":1}}]}' > /tmp/ursa-agent-lifecycle.json;
+  run gcloud storage buckets update "gs://$BUCKET" --lifecycle-file=/tmp/ursa-agent-lifecycle.json; }; fi
+run gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member "serviceAccount:$SA" --role roles/storage.objectUser >/dev/null
+
 say "3. Image"
 run docker build -t "$IMAGE" .
 run docker push "$IMAGE"
@@ -51,7 +60,8 @@ say "4. Cloud Run (public URL; every chat/A2A call needs a bifrost sign-in)"
 ask "deploy $SERVICE?" && run gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --image "$IMAGE" \
   --service-account "$SA" --allow-unauthenticated --min-instances 0 --max-instances 1 --concurrency 20 \
   --cpu 1 --memory 1Gi --timeout 600 --execution-environment gen2 \
-  --set-env-vars "AGENT_BASE_URL=$URL,BIFROST_MCP_URL=$BIFROST,URSA_AGENT_MODEL=gemini-3.8-flash" \
+  --set-env-vars "AGENT_BASE_URL=$URL,BIFROST_MCP_URL=$BIFROST,URSA_AGENT_MODEL=gemini-3.8-flash,AGENT_DATA_DIR=/data" \
+  --add-volume "name=data,type=cloud-storage,bucket=$BUCKET" --add-volume-mount "volume=data,mount-path=/data" \
   --set-secrets "GATEWAY_API_KEY=ursa-agent-gateway-key:latest,AGENT_SESSION_SECRET=ursa-agent-session-secret:latest"
 
 say "Done ($MODE). $URL"

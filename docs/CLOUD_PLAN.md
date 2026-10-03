@@ -193,7 +193,8 @@ which removes the propagation delay and the stored key entirely.
   `/a2a/.well-known/agent-card.json` (public; security scheme = bifrost bearer). A2A calls
   need a bifrost access token; C5 maps Gemini Enterprise's user token to one.
 - State: in memory. Scale to zero means sign in again and chats start fresh (acceptable for
-  v1; a persistent session store is a later step).
+  v1; a persistent session store is a later step). Done in ursa-agent 0.4.0: sign-ins are
+  kept across restarts (SPEC 20.6); chats still start fresh.
 
 ## 3. Architecture
 
