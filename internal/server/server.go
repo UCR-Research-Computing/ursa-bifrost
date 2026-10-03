@@ -134,6 +134,20 @@ func programConfig(c config.Config, p *ProgramClient) config.Config {
 	if p.CallsPerMin > 0 {
 		c.Limits.CallsPerMin = p.CallsPerMin
 	}
+	if p.MaxCostPerDayUSD > 0 {
+		// own budget, own ledger: never the person's day cap or submission count
+		c.Caps.MaxCostPerDayUSD = p.MaxCostPerDayUSD
+		if p.MaxCostPerJobUSD > 0 {
+			c.Caps.MaxCostPerJobUSD = p.MaxCostPerJobUSD
+		}
+		if c.Caps.MaxCostPerJobUSD > c.Caps.MaxCostPerDayUSD {
+			c.Caps.MaxCostPerJobUSD = c.Caps.MaxCostPerDayUSD
+		}
+		if p.MaxSubmitsPerDay > 0 {
+			c.Caps.MaxSubmitsPerDay = p.MaxSubmitsPerDay
+		}
+		c.StatePath = strings.TrimSuffix(c.StatePath, ".json") + "-" + p.ID + ".json"
+	}
 	return c
 }
 
@@ -426,6 +440,12 @@ func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
 	if cpm == 0 {
 		cpm = s.cfg.Limits.CallsPerMin
 	}
-	writeJSON(w, 200, map[string]any{"email": u.Email, "tiers": ceiling(u.Tiers, p.Tiers),
-		"program": p.ID, "calls_per_min": cpm})
+	out := map[string]any{"email": u.Email, "tiers": ceiling(u.Tiers, p.Tiers),
+		"program": p.ID, "calls_per_min": cpm}
+	if p.MaxCostPerDayUSD > 0 {
+		caps := programConfig(s.userConfig(u), p).Caps
+		out["own_caps"] = map[string]any{"max_cost_usd_per_day": caps.MaxCostPerDayUSD,
+			"max_cost_usd_per_job": caps.MaxCostPerJobUSD, "max_submits_per_day": caps.MaxSubmitsPerDay}
+	}
+	writeJSON(w, 200, out)
 }

@@ -34,6 +34,9 @@ type JobSummary struct {
 	ElapsedS  int64   `json:"elapsed_s"`
 	ExitCode  string  `json:"exit_code,omitempty"`
 	CostUSD   float64 `json:"est_cost_usd,omitempty"`
+	// Restarts is Slurm's requeue count (node failures, preemption): a watcher
+	// sees it in the list without a job_show per job.
+	Restarts int64 `json:"restarts,omitempty"`
 }
 
 // JobsListInput selects jobs.
@@ -46,7 +49,13 @@ type JobsListInput struct {
 	State string // optional filter, e.g. FAILED or RUNNING
 	Since string // default now-7days
 	Limit int
+	// JobIDs keeps only these jobs (at most MaxJobIDs). Only the caller's own
+	// jobs are ever listed, so another user's id is simply not in the answer.
+	JobIDs []string
 }
+
+// MaxJobIDs bounds jobs_list job_ids (one watcher round for every active run).
+const MaxJobIDs = 100
 
 // JobsList merges the live queue with recent accounting (newest first).
 func (s *Service) JobsList(ctx context.Context, in JobsListInput) ([]JobSummary, error) {
@@ -58,10 +67,23 @@ func (s *Service) JobsList(ctx context.Context, in JobsListInput) ([]JobSummary,
 	if in.Since == "" {
 		in.Since = "now-7days"
 	}
+	if len(in.JobIDs) > MaxJobIDs {
+		return nil, fmt.Errorf("job_ids: at most %d ids per call, got %d", MaxJobIDs, len(in.JobIDs))
+	}
+	want := map[string]bool{}
+	for _, id := range in.JobIDs {
+		if err := backend.ValidJobID(id); err != nil {
+			return nil, err
+		}
+		want[strings.SplitN(id, "_", 2)[0]] = true
+	}
 	limit := in.Limit
 	if limit <= 0 {
 		// a default page, not the cap: 200 rows of a busy week was ~70 KB per call
 		limit = min(DefaultJobRows, s.Cfg.Limits.ListRows)
+		if len(want) > 0 {
+			limit = len(want)
+		}
 	}
 	if limit > s.Cfg.Limits.ListRows {
 		limit = s.Cfg.Limits.ListRows
@@ -111,6 +133,15 @@ func (s *Service) JobsList(ctx context.Context, in JobsListInput) ([]JobSummary,
 		seen[id] = true
 		out = append(out, s.acctSummary(j, cat))
 	}
+	if len(want) > 0 {
+		var f []JobSummary
+		for _, j := range out {
+			if want[strings.SplitN(j.JobID, "_", 2)[0]] {
+				f = append(f, j)
+			}
+		}
+		out = f
+	}
 	if in.State != "" {
 		want := strings.ToUpper(in.State)
 		var f []JobSummary
@@ -144,6 +175,7 @@ func (s *Service) queueSummary(j slurm.QueueJob, cat *Catalog) JobSummary {
 		Partition: j.Partition, State: j.State(), Reason: j.StateReason, Nodes: j.Nodes,
 		NodeCount: j.NodeCount.Int(), CPUs: j.CPUs.Int(),
 		Submitted: numTS(j.SubmitTime), Started: numTS(j.StartTime),
+		Restarts: j.RestartCnt.Int(),
 	}
 	if js.Reason == "None" {
 		js.Reason = ""
@@ -168,7 +200,7 @@ func (s *Service) acctSummary(j slurm.AcctJob, cat *Catalog) JobSummary {
 		Partition: j.Partition, State: j.StateName(), Nodes: j.Nodes,
 		NodeCount: j.AllocationNodes, CPUs: j.TRES.Allocated.Get("cpu"),
 		Submitted: ts(j.Time.Submission), Started: ts(j.Time.Start), Ended: ts(j.Time.End),
-		ElapsedS: j.Time.Elapsed, ExitCode: j.ExitCode.String(),
+		ElapsedS: j.Time.Elapsed, ExitCode: j.ExitCode.String(), Restarts: j.RestartCnt,
 	}
 	// Slurm keeps the last pending reason (e.g. BeginTime) on finished jobs; it is
 	// noise once a job has run, so only queued jobs show a reason.
@@ -334,6 +366,9 @@ func (s *Service) JobShow(ctx context.Context, in JobShowInput) (*JobDetail, err
 			d.JobSummary = live
 			d.Stdout, d.Stderr, d.WorkDir = q.StdoutExpanded, q.StderrExpanded, q.WorkDir
 			d.TimeLimitMin = q.TimeLimit.Int()
+		}
+		if n := q.RestartCnt.Int(); n > d.RestartCount { // live count wins over accounting
+			d.RestartCount = n
 		}
 		if d.State == "PENDING" {
 			m, adv := rules.PendingReason(q.StateReason)

@@ -1049,6 +1049,105 @@ func TestUsersFileRejectsBadPrograms(t *testing.T) {
 	}
 }
 
+const withLabProgram = `domain: ucr.edu
+users:
+  - email: alice@ucr.edu
+    tiers: [R1, R2, A1]
+clients:
+  - id: bifrost-deep-research
+    name: deep-research
+    tiers: [R1, A1]
+    calls_per_min: 120
+    max_cost_usd_per_day: 7
+    max_cost_usd_per_job: 3
+    max_submits_per_day: 3
+    redirect_uris: ["http://127.0.0.1/callback"]
+`
+
+// TestProgramOwnCaps (v0.9.3): a program with its own caps submits against its
+// own ledger and budget; the person's own client keeps the person's caps and
+// is not charged for the program's jobs.
+func TestProgramOwnCaps(t *testing.T) {
+	h := newHarness(t, withLabProgram)
+	h.clientID = "bifrost-deep-research"
+	a, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.clientID = ""
+	own, _ := h.signIn("alice@ucr.edu", "ucr.edu")
+	ca, _ := h.mcp(a["access_token"].(string))
+	if ts := toolSet(t, ca); !ts["job_submit"] || ts["health"] {
+		t.Fatalf("lab program tools: %v", ts)
+	}
+	script := "#!/bin/bash\n#SBATCH -p computehigh\n#SBATCH -N 1\n#SBATCH -t 01:00:00\n#SBATCH --exclusive\nmodule load python-sci\npython -c 1\n"
+	// per-job cap is the program's ($3), not the person's ($25): 2 h whole node = $3.74
+	big := strings.Replace(script, "01:00:00", "02:00:00", 1)
+	if m, isErr := callJSON(t, ca, "job_submit", map[string]any{"script": big}); !isErr || !strings.Contains(fmt.Sprint(m), "$3.00 per-job cap") {
+		t.Fatalf("program per-job cap: %v", m)
+	}
+	// the plan reports the program's day cap
+	m, isErr := callJSON(t, ca, "job_submit", map[string]any{"script": script})
+	if isErr {
+		t.Fatalf("program submit: %v", m)
+	}
+	data, _ := m["data"].(map[string]any)
+	if data["day_cap_usd"] != float64(7) {
+		t.Errorf("plan day cap: %v", data["day_cap_usd"])
+	}
+	// the person's own client still has the person's caps ($50 default day cap)
+	co, _ := h.mcp(own["access_token"].(string))
+	m2, isErr := callJSON(t, co, "job_submit", map[string]any{"script": script})
+	if isErr {
+		t.Fatalf("own submit: %v", m2)
+	}
+	if d2, _ := m2["data"].(map[string]any); d2["day_cap_usd"] != float64(50) {
+		t.Errorf("own day cap: %v", d2["day_cap_usd"])
+	}
+	// separate ledgers: different state files
+	pa := programConfig(h.s.userConfig(h.s.users.Lookup("alice@ucr.edu")), h.s.users.Program("bifrost-deep-research"))
+	po := h.s.userConfig(h.s.users.Lookup("alice@ucr.edu"))
+	if pa.StatePath == po.StatePath || !strings.HasSuffix(pa.StatePath, "-bifrost-deep-research.json") {
+		t.Errorf("ledger paths: program %s person %s", pa.StatePath, po.StatePath)
+	}
+	if pa.Caps.MaxSubmitsPerDay != 3 || pa.Caps.MaxCostPerJobUSD != 3 || pa.Caps.MaxCostPerDayUSD != 7 {
+		t.Errorf("program caps: %+v", pa.Caps)
+	}
+	if code, got := h.whoami(a["access_token"].(string)); code != 200 || got["own_caps"] == nil {
+		t.Errorf("whoami own_caps: %d %v", code, got)
+	}
+	// a program without own caps keeps the person's ledger (v0.9.0 behaviour)
+	plain := programConfig(po, &ProgramClient{ID: "bifrost-ultra", Tiers: []string{"R1"}})
+	if plain.StatePath != po.StatePath || plain.Caps != po.Caps {
+		t.Error("a program without own caps changed the person's ledger or caps")
+	}
+}
+
+func TestUsersFileRejectsBadProgramCaps(t *testing.T) {
+	for name, bad := range map[string]string{
+		"day too high":     strings.Replace(withLabProgram, "max_cost_usd_per_day: 7", "max_cost_usd_per_day: 501", 1),
+		"day negative":     strings.Replace(withLabProgram, "max_cost_usd_per_day: 7", "max_cost_usd_per_day: -1", 1),
+		"job over day":     strings.Replace(withLabProgram, "max_cost_usd_per_job: 3", "max_cost_usd_per_job: 8", 1),
+		"job without day":  strings.Replace(strings.Replace(withLabProgram, "    max_cost_usd_per_day: 7\n", "", 1), "    max_submits_per_day: 3\n", "", 1),
+		"submits too high": strings.Replace(withLabProgram, "max_submits_per_day: 3", "max_submits_per_day: 1001", 1),
+		"submits alone":    strings.Replace(strings.Replace(withLabProgram, "    max_cost_usd_per_day: 7\n", "", 1), "    max_cost_usd_per_job: 3\n", "", 1),
+	} {
+		if bad == withLabProgram {
+			t.Fatalf("%s: replacement did not apply", name)
+		}
+		f := filepath.Join(t.TempDir(), "u.yaml")
+		_ = os.WriteFile(f, []byte(bad), 0o600)
+		if _, err := LoadUsers(f); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	f := filepath.Join(t.TempDir(), "u.yaml")
+	_ = os.WriteFile(f, []byte(withLabProgram), 0o600)
+	if _, err := LoadUsers(f); err != nil {
+		t.Errorf("good program caps refused: %v", err)
+	}
+}
+
 // TestProgramAndPersonInterleaved: the person's own client and a program for
 // the same person, used alternately, each keep their own tools and budget (one
 // shared connection slot would flip tiers or reset the budget on every call).

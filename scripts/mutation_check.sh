@@ -12,6 +12,8 @@ trap restore EXIT
 
 mutate() { # name file python-replace(old,new)
   local name=$1 file=$2 old=$3 new=$4
+  # ONLY=<prefix> runs just the guards whose name starts with it (e.g. ONLY=v093)
+  case "$name" in "${ONLY:-}"*) ;; *) return;; esac
   case " $FILES " in *" $file "*) ;; *) echo "ERROR $name: $file is not in FILES (would not be restored)"; exit 2;; esac
   if python3 - "$file" "$old" "$new" <<'EOF'
 import sys
@@ -248,6 +250,25 @@ mutate "v092 accounting gated" internal/core/service.go '	if c.Kind() == backend
 mutate "v092 accounting slot released" internal/core/inflight.go '		return func() { <-g.acct }, nil' '		return func() {}, nil'
 mutate "v092 hosted server sets cap" internal/server/server.go '	svc.MaxInFlight = core.MaxInFlight' '	svc.MaxInFlight = 0'
 mutate "v092 hosted server sets gate" internal/server/server.go '	svc.Gate = s.gate' '	svc.Gate = nil'
+mutate "v093 job_ids filter applied" internal/core/jobs.go '			if want[strings.SplitN(j.JobID, "_", 2)[0]] {' '			if true {'
+mutate "v093 job_ids validated" internal/core/jobs.go '		if err := backend.ValidJobID(id); err != nil {
+			return nil, err
+		}
+		want[' '		if false {
+			return nil, nil
+		}
+		want['
+mutate "v093 job_ids count cap" internal/core/jobs.go '	if len(in.JobIDs) > MaxJobIDs {' '	if false {'
+mutate "v093 restarts on queue rows" internal/core/jobs.go '		Restarts: j.RestartCnt.Int(),' '		Restarts: 0,'
+mutate "v093 restarts on accounting rows" internal/core/jobs.go 'ExitCode: j.ExitCode.String(), Restarts: j.RestartCnt,' 'ExitCode: j.ExitCode.String(),'
+mutate "v093 program own day cap" internal/server/server.go '		c.Caps.MaxCostPerDayUSD = p.MaxCostPerDayUSD' '		_ = p.MaxCostPerDayUSD'
+mutate "v093 program own job cap" internal/server/server.go '			c.Caps.MaxCostPerJobUSD = p.MaxCostPerJobUSD' '			_ = p.MaxCostPerJobUSD'
+mutate "v093 program own submits" internal/server/server.go '			c.Caps.MaxSubmitsPerDay = p.MaxSubmitsPerDay' '			_ = p.MaxSubmitsPerDay'
+mutate "v093 program own ledger" internal/server/server.go '		c.StatePath = strings.TrimSuffix(c.StatePath, ".json") + "-" + p.ID + ".json"' '		_ = c.StatePath'
+mutate "v093 program day cap bound" internal/server/store.go '		if c.MaxCostPerDayUSD < 0 || c.MaxCostPerDayUSD > MaxProgramDayUSD {' '		if false {'
+mutate "v093 program job cap within day" internal/server/store.go '		if c.MaxCostPerJobUSD < 0 || (c.MaxCostPerJobUSD > 0 && c.MaxCostPerJobUSD > c.MaxCostPerDayUSD) {' '		if false {'
+mutate "v093 program submits bound" internal/server/store.go '		if c.MaxSubmitsPerDay < 0 || c.MaxSubmitsPerDay > MaxProgramSubmitsDay {' '		if false {'
+mutate "v093 program caps as a set" internal/server/store.go '		if c.MaxSubmitsPerDay > 0 && c.MaxCostPerDayUSD == 0 {' '		if false {'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL
