@@ -412,6 +412,39 @@ func TestModules(t *testing.T) {
 	}
 }
 
+// Shared reference databases in /data/shared come from the catalog's "datasets" section
+// and are found by name, db-* module name or the variable they set.
+func TestSearchDatasets(t *testing.T) {
+	s, _ := newTestService(t)
+	cat, err := s.Catalog(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cat.Datasets.Root != "/data/shared" || !cat.Datasets.Mounted || len(cat.Datasets.Items) != 3 {
+		t.Fatalf("datasets: %+v", cat.Datasets)
+	}
+	for q, want := range map[string]string{
+		"kraken": "kraken2-standard", "db-kraken2": "kraken2-standard", "DB-Kraken2-Standard": "kraken2-standard",
+		"ncbi blast": "ncbi-blast", "SWISSPROT_DB": "swissprot",
+	} {
+		h := cat.SearchDatasets(q)
+		if len(h) != 1 || h[0].Name != want {
+			t.Errorf("%q: %+v", q, h)
+		}
+	}
+	if h := cat.SearchDatasets("blastdb"); len(h) != 2 { // ncbi-blast and swissprot both set BLASTDB
+		t.Errorf("blastdb: %+v", h)
+	}
+	if len(cat.SearchDatasets("db-")) != 3 || len(cat.SearchDatasets("db")) != 3 {
+		t.Error(`"db-" and "db" should list every database`)
+	}
+	for _, q := range []string{"", "  ", "gromacs", "-"} {
+		if h := cat.SearchDatasets(q); len(h) != 0 {
+			t.Errorf("%q matched %+v", q, h)
+		}
+	}
+}
+
 // The site's Lmod is hierarchical: hdf5/fftw only exist once an MPI is loaded.
 // module_show used to fail with "bash exited 1: no error text" for them (found
 // live 2026-10-01 on hdf5/1.14.6 and fftw).

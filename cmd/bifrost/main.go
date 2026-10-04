@@ -80,6 +80,7 @@ Times: now-7days, now-12hours, YYYY-MM-DD. --all/--any need tier R2 in the confi
 type moduleResult struct {
 	Matches    []core.ModuleHit `json:"matches"`
 	Containers []core.Container `json:"containers,omitempty"`
+	Datasets   []core.Dataset   `json:"datasets,omitempty"`
 }
 
 type globals struct {
@@ -191,7 +192,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 				if err != nil {
 					return moduleResult{}, err
 				}
-				return moduleResult{Matches: cat.SearchModules(q), Containers: cat.SearchContainers(q)}, nil
+				return moduleResult{Matches: cat.SearchModules(q), Containers: cat.SearchContainers(q), Datasets: cat.SearchDatasets(q)}, nil
 			})
 		return out(stdout, stderr, g, r, err, func(w io.Writer) { printModules(w, r.Data) })
 	case "module":

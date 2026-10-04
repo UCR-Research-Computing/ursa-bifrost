@@ -121,6 +121,10 @@ func (s *Service) StorageUsage(ctx context.Context) (*StorageUsage, error) {
 		markTruncated(ctx)
 	}
 	r.Notes = append(r.Notes, "No per-user quota is set on this cluster; the filesystems are shared. Hidden folders such as .cache and .conda are included because they often fill a home folder.")
+	// Reference data people would otherwise download into home or scratch (best effort).
+	if cat, err := s.Catalog(ctx); err == nil && len(cat.Datasets.Items) > 0 {
+		r.Notes = append(r.Notes, fmt.Sprintf("%d public reference databases (BLAST, DIAMOND, GTDB-Tk, Kraken2, Pfam...) are already on the cluster in %s, read-only: modules_search \"db-\" lists them. Don't keep private copies.", len(cat.Datasets.Items), cat.Datasets.Root))
+	}
 	markUntrusted(ctx) // folder names are written by people and programs
 	return r, nil
 }
