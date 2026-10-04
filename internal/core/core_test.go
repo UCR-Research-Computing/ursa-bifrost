@@ -459,7 +459,9 @@ func TestScriptCheckDatabases(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := issues(sc)
-	for _, want := range []string{"`module load db-kraken2-standard/2025-10-15`", "KRAKEN2_DB_PATH",
+	// line numbers are the script's own (head is 4 lines, so the kraken2-build is line 5)
+	for _, want := range []string{"line 5 downloads a Kraken2", "line 6 downloads NCBI BLAST", "line 8 downloads the GTDB-Tk",
+		"`module load db-kraken2-standard/2025-10-15`", "KRAKEN2_DB_PATH",
 		"`module load db-ncbi-blast/2026-09-28`", "1.3 TB", "`module load db-gtdbtk/r232`"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
