@@ -587,7 +587,7 @@ func TestStorageUsage(t *testing.T) {
 		t.Error("timed-out folder not reported as unknown")
 	}
 	// the catalog lists shared reference databases, so the answer points people at them
-	if !strings.Contains(strings.Join(r.Notes, " "), "3 public reference databases") ||
+	if !strings.Contains(strings.Join(r.Notes, " "), "4 public reference databases") ||
 		!strings.Contains(strings.Join(r.Notes, " "), "/data/shared") {
 		t.Errorf("no /data/shared note: %v", r.Notes)
 	}

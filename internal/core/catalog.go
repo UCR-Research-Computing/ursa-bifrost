@@ -84,11 +84,13 @@ type Dataset struct {
 
 // Datasets is the catalog's shared reference-data section.
 type Datasets struct {
-	Root    string    `json:"root"`
-	Mounted bool      `json:"mounted"`
-	SizeGB  float64   `json:"size_gb,omitempty"`
-	FreeGB  float64   `json:"free_gb,omitempty"`
-	Items   []Dataset `json:"items"`
+	Root        string    `json:"root"`
+	Mounted     bool      `json:"mounted"`
+	SizeGB      float64   `json:"size_gb,omitempty"`
+	FreeGB      float64   `json:"free_gb,omitempty"`
+	ReadMiBPerS float64   `json:"read_mib_per_s,omitempty"` // cluster-wide read throughput (v0.9.12)
+	Note        string    `json:"note,omitempty"`
+	Items       []Dataset `json:"items"`
 }
 
 // SearchDatasets finds reference databases by name, db-* module or environment variable
