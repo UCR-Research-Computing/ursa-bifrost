@@ -50,8 +50,9 @@ var (
 	reArraySpc = regexp.MustCompile(`%(\d+)`)
 )
 
-// dbChecks adds script_check findings about shared reference databases.
-func dbChecks(cat *Catalog, code, array string, add func(sev string, line int, msg string, a ...any)) {
+// dbChecks adds script_check findings about shared reference databases. script is the
+// whole script (line numbers refer to it); comment lines and #SBATCH are skipped.
+func dbChecks(cat *Catalog, script, array string, add func(sev string, line int, msg string, a ...any)) {
 	if cat == nil || len(cat.Datasets.Items) == 0 {
 		return
 	}
@@ -60,7 +61,13 @@ func dbChecks(cat *Catalog, code, array string, add func(sev string, line int, m
 		hosted[d.Name] = d
 	}
 	seen := map[string]bool{}
-	for i, line := range strings.Split(code, "\n") {
+	for i, line := range strings.Split(script, "\n") {
+		if t := strings.TrimSpace(line); t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if j := strings.Index(line, " #"); j >= 0 && !strings.ContainsAny(line[:j], "'\"") {
+			line = line[:j]
+		}
 		for _, dl := range dbDownloads {
 			if !dl.re.MatchString(line) {
 				continue
@@ -75,13 +82,13 @@ func dbChecks(cat *Catalog, code, array string, add func(sev string, line int, m
 				if len(d.Env) > 0 {
 					env = " (sets " + strings.Join(d.Env, ", ") + ")"
 				}
-				add("warning", 0, "line %d downloads %s, but the cluster already has a copy: `module load %s`%s points at %s (read-only). Downloading it again costs hours and %s of disk",
+				add("warning", i+1, "line %d downloads %s, but the cluster already has a copy: `module load %s`%s points at %s (read-only). Downloading it again costs hours and %s of disk",
 					i+1, dl.what, d.Module, env, d.Path, sizeText(d.SizeGB))
 				break
 			}
 		}
 	}
-	if n := arrayConcurrency(array); n > 8 && reBigScan.MatchString(code) {
+	if n := arrayConcurrency(array); n > 8 && reBigScan.MatchString(codeOnly(script)) {
 		mib := cat.Datasets.ReadMiBPerS
 		if mib <= 0 {
 			mib = 100

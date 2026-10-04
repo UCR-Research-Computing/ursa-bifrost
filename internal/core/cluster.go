@@ -532,7 +532,7 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 	if strings.Contains(code, "apptainer") && strings.Contains(code, "--nv") && part != "gpul4" {
 		add("warning", 0, "apptainer --nv on a partition without GPUs")
 	}
-	dbChecks(cat, code, sc.Request["array"], add)
+	dbChecks(cat, script, sc.Request["array"], add)
 	sc.OK = true
 	for _, is := range sc.Issues {
 		if is.Severity == "error" {

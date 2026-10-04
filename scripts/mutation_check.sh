@@ -314,7 +314,7 @@ mutate "v0911 storage db note"   internal/core/helpers.go 'len(cat.Datasets.Item
 mutate "v0912 db download warn"   internal/core/dbcheck.go '				if !ok || seen[name] {' '				if true {'
 mutate "v0912 hosted only"        internal/core/dbcheck.go '				if !ok || seen[name] {' '				if seen[name] {'
 mutate "v0912 array percent"      internal/core/dbcheck.go '	if m := reArraySpc.FindStringSubmatch(spec); m != nil {' '	if m := reArraySpc.FindStringSubmatch(spec); m != nil && false {'
-mutate "v0912 big scan gate"      internal/core/dbcheck.go '	if n := arrayConcurrency(array); n > 8 && reBigScan.MatchString(code) {' '	if n := arrayConcurrency(array); n > 8 {'
+mutate "v0912 big scan gate"      internal/core/dbcheck.go '	if n := arrayConcurrency(array); n > 8 && reBigScan.MatchString(codeOnly(script)) {' '	if n := arrayConcurrency(array); n > 8 {'
 mutate "v095 background renew"     internal/backend/iap.go '		b.touch()
 		b.renewSoon()' '		b.touch()'
 mutate "v095 renew updates store"  internal/backend/iap.go '			k.Expires = exp
