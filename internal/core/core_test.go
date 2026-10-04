@@ -420,7 +420,7 @@ func TestSearchDatasets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cat.Datasets.Root != "/data/shared" || !cat.Datasets.Mounted || len(cat.Datasets.Items) != 3 {
+	if cat.Datasets.Root != "/data/shared" || !cat.Datasets.Mounted || len(cat.Datasets.Items) != 4 || cat.Datasets.ReadMiBPerS != 100 {
 		t.Fatalf("datasets: %+v", cat.Datasets)
 	}
 	for q, want := range map[string]string{
@@ -435,12 +435,66 @@ func TestSearchDatasets(t *testing.T) {
 	if h := cat.SearchDatasets("blastdb"); len(h) != 2 { // ncbi-blast and swissprot both set BLASTDB
 		t.Errorf("blastdb: %+v", h)
 	}
-	if len(cat.SearchDatasets("db-")) != 3 || len(cat.SearchDatasets("db")) != 3 {
+	if len(cat.SearchDatasets("db-")) != 4 || len(cat.SearchDatasets("db")) != 4 {
 		t.Error(`"db-" and "db" should list every database`)
 	}
 	for _, q := range []string{"", "  ", "gromacs", "-"} {
 		if h := cat.SearchDatasets(q); len(h) != 0 {
 			t.Errorf("%q matched %+v", q, h)
+		}
+	}
+}
+
+// script_check points a script that downloads a hosted database at the shared copy, and
+// warns when a big array scans a large database at once (v0.9.12).
+func TestScriptCheckDatabases(t *testing.T) {
+	s, _ := newTestService(t)
+	ctx := context.Background()
+	head := "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -c 8\n#SBATCH -t 60\n"
+	dl := head + "kraken2-build --standard --db $SCRATCH/k2 --threads 8\n" +
+		"wget https://ftp.ncbi.nlm.nih.gov/blast/db/core_nt.00.tar.gz\nupdate_blastdb.pl --decompress nr\n" +
+		"gtdbtk download-db\n"
+	sc, err := s.ScriptCheck(ctx, dl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := issues(sc)
+	for _, want := range []string{"`module load db-kraken2-standard/2025-10-15`", "KRAKEN2_DB_PATH",
+		"`module load db-ncbi-blast/2026-09-28`", "1.3 TB", "`module load db-gtdbtk/r232`"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if n := strings.Count(got, "db-ncbi-blast"); n != 1 { // two BLAST downloads, one warning
+		t.Errorf("ncbi-blast warned %d times:\n%s", n, got)
+	}
+	if !sc.OK {
+		t.Errorf("database warnings must not fail the check: %s", got)
+	}
+	// a database that is not hosted (eggnog here) gets no warning; nor does a comment
+	sc, _ = s.ScriptCheck(ctx, head+"download_eggnog_data.py -y\n# kraken2-build --standard --db x\n")
+	if strings.Contains(issues(sc), "already has a copy") {
+		t.Errorf("warned for an unhosted or commented download: %s", issues(sc))
+	}
+	// big array against nr: warn; capped with %4 or a small array: quiet
+	arr := "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -c 8\n#SBATCH -t 60\n#SBATCH --array=1-100\nblastp -db nr -query q$SLURM_ARRAY_TASK_ID.fa -out o.tsv\n"
+	if sc, _ = s.ScriptCheck(ctx, arr); !strings.Contains(issues(sc), "up to 100 tasks at once") || !strings.Contains(issues(sc), "~1 MiB/s") {
+		t.Errorf("big nr array should warn: %s", issues(sc))
+	}
+	for _, spec := range []string{"1-100%4", "1-6"} {
+		if sc, _ = s.ScriptCheck(ctx, strings.Replace(arr, "1-100", spec, 1)); strings.Contains(issues(sc), "tasks at once") {
+			t.Errorf("--array=%s should not warn: %s", spec, issues(sc))
+		}
+	}
+	if sc, _ = s.ScriptCheck(ctx, strings.Replace(arr, "blastp -db nr", "blastp -db mydb", 1)); strings.Contains(issues(sc), "tasks at once") {
+		t.Errorf("own small database should not warn: %s", issues(sc))
+	}
+}
+
+func TestArrayConcurrency(t *testing.T) {
+	for spec, want := range map[string]int{"": 0, "1-100": 100, "1-100%4": 4, "0-9:2": 5, "1,3,5-7": 5, "1-10,20-29%3": 3, "x": 0} {
+		if got := arrayConcurrency(spec); got != want {
+			t.Errorf("arrayConcurrency(%q) = %d, want %d", spec, got, want)
 		}
 	}
 }

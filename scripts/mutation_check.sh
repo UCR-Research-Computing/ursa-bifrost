@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/core/inflight.go internal/core/shared_cache.go internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go internal/config/config.go internal/core/catalog.go"
+FILES="internal/core/inflight.go internal/core/shared_cache.go internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go internal/config/config.go internal/core/catalog.go internal/core/dbcheck.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
@@ -311,6 +311,10 @@ mutate "v0910 cpu note"            internal/core/cluster.go '	if avx2OnlyPartiti
 		return "AVX2 only (e2)"'
 mutate "v0911 db- lists all"     internal/core/catalog.go '		return append([]Dataset(nil), c.Datasets.Items...)' '		return nil'
 mutate "v0911 storage db note"   internal/core/helpers.go 'len(cat.Datasets.Items) > 0 {' 'len(cat.Datasets.Items) > 9999 {'
+mutate "v0912 db download warn"   internal/core/dbcheck.go '				if !ok || seen[name] {' '				if true {'
+mutate "v0912 hosted only"        internal/core/dbcheck.go '				if !ok || seen[name] {' '				if seen[name] {'
+mutate "v0912 array percent"      internal/core/dbcheck.go '	if m := reArraySpc.FindStringSubmatch(spec); m != nil {' '	if m := reArraySpc.FindStringSubmatch(spec); m != nil && false {'
+mutate "v0912 big scan gate"      internal/core/dbcheck.go '	if n := arrayConcurrency(array); n > 8 && reBigScan.MatchString(code) {' '	if n := arrayConcurrency(array); n > 8 {'
 mutate "v095 background renew"     internal/backend/iap.go '		b.touch()
 		b.renewSoon()' '		b.touch()'
 mutate "v095 renew updates store"  internal/backend/iap.go '			k.Expires = exp

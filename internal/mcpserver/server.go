@@ -319,6 +319,9 @@ func New(s *core.Service) *mcp.Server {
 				if ds := cat.SearchDatasets(in.Query); len(ds) > 0 {
 					out["datasets"] = ds
 					out["dataset_use"] = "shared, read-only reference data in " + cat.Datasets.Root + ": `module load <module>` sets the variables listed under env; do not copy it into home or scratch"
+					if cat.Datasets.Note != "" {
+						out["dataset_note"] = cat.Datasets.Note
+					}
 				}
 				if len(hits) == 0 && in.Query != "" {
 					if c := cat.Closest(in.Query, 5); len(c) > 0 {

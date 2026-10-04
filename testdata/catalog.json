@@ -672,7 +672,19 @@
      "SWISSPROT_DB",
      "UNIPROT_DB"
     ]
+   },
+   {
+    "name": "gtdbtk",
+    "version": "r232",
+    "path": "/data/shared/gtdbtk/r232",
+    "module": "db-gtdbtk/r232",
+    "size_gb": 100.5,
+    "env": [
+     "GTDBTK_DATA_PATH"
+    ]
    }
-  ]
+  ],
+  "read_mib_per_s": 100,
+  "note": "Read-only for users. Throughput is shared by the whole cluster (~100 MiB/s)."
  }
 }
