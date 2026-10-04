@@ -25,6 +25,7 @@ type Catalog struct {
 	Recipes      []Recipe          `json:"recipes"`
 	UsageCards   map[string]string `json:"usage_cards"`
 	Containers   []Container       `json:"containers"`
+	Datasets     Datasets          `json:"datasets"`
 	InstallTools []InstallTool     `json:"install_tools"`
 	JobHeader    struct {
 		Path string `json:"path"`
@@ -69,6 +70,61 @@ type Recipe struct {
 type Container struct {
 	Path   string  `json:"path"`
 	SizeGB float64 `json:"size_gb"`
+}
+
+// Dataset is one shared reference database in /data/shared (catalog "datasets").
+type Dataset struct {
+	Name    string   `json:"name"`
+	Version string   `json:"version"`
+	Path    string   `json:"path"`
+	Module  string   `json:"module"`
+	SizeGB  float64  `json:"size_gb,omitempty"`
+	Env     []string `json:"env,omitempty"`
+}
+
+// Datasets is the catalog's shared reference-data section.
+type Datasets struct {
+	Root    string    `json:"root"`
+	Mounted bool      `json:"mounted"`
+	SizeGB  float64   `json:"size_gb,omitempty"`
+	FreeGB  float64   `json:"free_gb,omitempty"`
+	Items   []Dataset `json:"items"`
+}
+
+// SearchDatasets finds reference databases by name, db-* module or environment variable
+// (case and separators ignored, so "kraken" finds kraken2-standard and "blastdb" finds
+// every database that sets BLASTDB). "db-" alone lists them all.
+func (c *Catalog) SearchDatasets(q string) []Dataset {
+	norm := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if r == '-' || r == '_' || r == '.' || r == ' ' || r == '/' {
+				return -1
+			}
+			return r
+		}, strings.ToLower(s))
+	}
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" {
+		return nil
+	}
+	rest := strings.TrimPrefix(q, "db-")
+	if rest == "" {
+		return append([]Dataset(nil), c.Datasets.Items...)
+	}
+	nq := norm(rest)
+	if nq == "" {
+		return nil
+	}
+	var out []Dataset
+	for _, d := range c.Datasets.Items {
+		for _, f := range append([]string{d.Name, d.Module}, d.Env...) {
+			if strings.Contains(norm(f), nq) {
+				out = append(out, d)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // InstallTool is a way to install software without root.

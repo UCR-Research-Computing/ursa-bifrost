@@ -135,12 +135,12 @@ var logRules = []logRule{
 	{
 		id: "disk-full", severity: Error, title: "Out of disk space or quota",
 		re:         regexp.MustCompile(`No space left on device|Disk quota exceeded`),
-		suggestion: "Write large outputs to $SCRATCH (/scratch/$USER) and temp files to $TMPDIR; clean up old runs.",
+		suggestion: "Write large outputs to $SCRATCH (/scratch/$USER) and temp files to $TMPDIR; clean up old runs. Public reference databases are already in /data/shared (module load db-<name>), so do not download private copies.",
 	},
 	{
 		id: "permission", severity: Error, title: "Permission denied",
 		re:         regexp.MustCompile(`Permission denied`),
-		suggestion: "Check file permissions and that paths are under your home or scratch; scripts need chmod +x if executed directly.",
+		suggestion: "Check file permissions and that paths are under your home or scratch; scripts need chmod +x if executed directly. /data/shared (reference databases) and /apps are read-only: write outputs to $SCRATCH and point tools at the database with its db-* module.",
 	},
 	{
 		id: "command-not-found", severity: Error, title: "A command was not found",

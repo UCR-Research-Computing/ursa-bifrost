@@ -187,9 +187,16 @@ func printModules(w io.Writer, r moduleResult) {
 	for _, c := range r.Containers {
 		fmt.Fprintf(w, "container: %s (%.1f GB)  ->  apptainer exec [--nv] %s <cmd>\n", c.Path, c.SizeGB, c.Path)
 	}
+	for _, d := range r.Datasets {
+		fmt.Fprintf(w, "database: %s %s in %s  ->  module load %s", d.Name, d.Version, d.Path, d.Module)
+		if len(d.Env) > 0 {
+			fmt.Fprintf(w, " (sets %s)", strings.Join(d.Env, ", "))
+		}
+		fmt.Fprintln(w)
+	}
 	if len(hs) == 0 {
-		if len(r.Containers) == 0 {
-			fmt.Fprintln(w, "no matching modules or containers")
+		if len(r.Containers) == 0 && len(r.Datasets) == 0 {
+			fmt.Fprintln(w, "no matching modules, containers or databases")
 		}
 		return
 	}

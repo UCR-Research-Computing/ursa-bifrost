@@ -632,5 +632,47 @@
   "use": "source it near the top of every job script (. /apps/docs/templates/job-header.sh): sets TMPDIR, SCRATCH, package caches, URSA_CONTAINERS; ursa_conda_libs fixes pip wheels inside Pixi/conda envs",
   "available": true
  },
- "how_to_load": "module load <name>[/<version>]; MPI-built packages appear after `module load openmpi` (or mpich / intel-oneapi-mpi). Compilers: gcc/13.5.0 is the default toolchain of the Spack stack. `module spider <name>` shows how to reach any module."
+ "how_to_load": "module load <name>[/<version>]; MPI-built packages appear after `module load openmpi` (or mpich / intel-oneapi-mpi). Compilers: gcc/13.5.0 is the default toolchain of the Spack stack. `module spider <name>` shows how to reach any module.",
+ "datasets": {
+  "root": "/data/shared",
+  "mounted": true,
+  "size_gb": 4362,
+  "free_gb": 4134,
+  "items": [
+   {
+    "name": "kraken2-standard",
+    "version": "2025-10-15",
+    "path": "/data/shared/kraken2-standard/2025-10-15",
+    "module": "db-kraken2-standard/2025-10-15",
+    "size_gb": 91.2,
+    "env": [
+     "KRAKEN2_DB_PATH",
+     "KRAKEN2_DEFAULT_DB"
+    ]
+   },
+   {
+    "name": "ncbi-blast",
+    "version": "2026-09-28",
+    "path": "/data/shared/ncbi-blast/2026-09-28",
+    "module": "db-ncbi-blast/2026-09-28",
+    "size_gb": 1300,
+    "env": [
+     "BLASTDB",
+     "NCBI_DB"
+    ]
+   },
+   {
+    "name": "swissprot",
+    "version": "2026_03",
+    "path": "/data/shared/swissprot/2026_03",
+    "module": "db-swissprot/2026_03",
+    "size_gb": 0.9,
+    "env": [
+     "BLASTDB",
+     "SWISSPROT_DB",
+     "UNIPROT_DB"
+    ]
+   }
+  ]
+ }
 }
