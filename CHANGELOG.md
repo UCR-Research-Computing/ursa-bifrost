@@ -5,6 +5,62 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.9.13 - 2026-10-04
+- The database-download warning in `script_check` reports the script's own line number
+  (and sets the issue's `line` field). v0.9.12 counted lines after stripping comments and
+  `#SBATCH`, so a download on line 7 read as line 2.
+
+## v0.9.12 - 2026-10-04
+- `script_check` knows the shared reference databases. A script that downloads one the
+  cluster already hosts (`update_blastdb`, NCBI blast/db or nr FASTA, UniRef90/Swiss-Prot
+  FASTA, `kraken2-build --standard`, `gtdbtk download-db`, `bakta_db download`,
+  `download_eggnog_data.py`, `kaiju-makedb`, CheckM2/CheckV downloads, `busco --download`,
+  Pfam-A, Rfam, `run_dbcan database`, the InterProScan tarball) gets a warning naming the
+  `db-*` module, its variables, path and size. Only databases actually in the catalog
+  count; comments are ignored; one warning per database.
+- A job array running more than 8 tasks at once that scans a large database (`blast* -db
+  core_nt|nr|nt`, `diamond blastp|blastx`) is warned that the tasks share /data/shared's
+  read throughput (catalog `datasets.read_mib_per_s`, default 100 MiB/s), with each
+  task's share.
+- `modules_search` passes the catalog's `datasets.note`.
+
+## v0.9.11 - 2026-10-04
+- Shared reference data. Ursa Major has a 4 TiB read-only Filestore at /data/shared with
+  public databases (BLAST core_nt/nr, DIAMOND nr, UniRef90, GTDB-Tk, Kraken2, Kaiju,
+  Bakta, eggNOG, Pfam, PANTHER, BUSCO, InterProScan, ...), each with a `db-<name>`
+  module. The catalog's new `datasets` section lists them; `modules_search` returns
+  matches by name, module or variable (`db-` lists all) with `dataset_use`; the CLI prints
+  them; `storage_usage` points at them; the server instructions tell assistants to load a
+  `db-*` module instead of downloading; the disk-full and permission rules mention
+  /data/shared.
+
+## v0.9.10 - 2026-10-03
+- `partitions` carries each partition's time limit and CPU instruction set (`cpu`: "AVX2
+  only (e2)" on standard/spot/check, else "AVX-512"); the CLI table shows both.
+- New log rule `illegal-instruction` (Illegal instruction, SIGILL, AVX-512 not
+  supported); exit code 132 / signal 4 explain a binary built for a newer CPU, ahead of
+  the generic crash rule.
+- Deploy and install stamp the version from `v*` tags only (v0.9.9's hosted copy
+  reported `agent-v0.4.2`, the agent tag on the same commit).
+
+## agent-v0.4.2 - 2026-10-03
+- ursa-agent's partition guidance follows the new cluster layout (standard/spot on e2,
+  computehigh for tightly coupled MPI).
+
+## v0.9.9 - 2026-10-03
+- Checks that follow the new cluster layout: `script_check` refuses a `--time` over the
+  partition's MaxTime (check's 15 min; Slurm would hold the job as PartitionTimeLimit),
+  warns when code is compiled for AVX-512 or the build host (`-march=native`,
+  `-mavx512*`, `-xHost`) on the AVX2-only e2 partitions, and notes that tightly coupled
+  multi-node MPI on standard scales better on computehigh.
+- `waste_report` low-CPU advice says ask for fewer cores, and points single-node
+  computehigh work at standard.
+
+## v0.9.8 - 2026-10-03
+- Ursa Major standard and spot moved to e2-standard-32 in any us-central1 zone. Stockout
+  alternatives now offer standard, then spot, then computehigh; segfault hints name the
+  AVX2-only e2 nodes.
+
 ## v0.9.7 - 2026-10-03
 - `jobs_list` with `job_ids` asks Slurm for just those jobs (`squeue -j` / `sacct -j`),
   uncached, and keeps only the caller's own rows. A program watching its jobs (the
