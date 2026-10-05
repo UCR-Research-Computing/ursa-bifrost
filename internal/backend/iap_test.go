@@ -776,6 +776,72 @@ func TestIAPLiveConnectionRenewsKeyInBackground(t *testing.T) {
 	_ = b.Revoke(ctx)
 }
 
+// copyKeyStore hands out copies, as the file and bucket stores do (each Get
+// decodes a fresh StoredKey), so a renewal that only edits its own copy is
+// visible as a store that never changed.
+type copyKeyStore struct{ m *MemKeyStore }
+
+func (c copyKeyStore) Get(email string) (*StoredKey, error) {
+	k, err := c.m.Get(email)
+	if k == nil || err != nil {
+		return k, err
+	}
+	cp := *k
+	return &cp, nil
+}
+func (c copyKeyStore) Put(email string, k *StoredKey) error {
+	cp := *k
+	return c.m.Put(email, &cp)
+}
+func (c copyKeyStore) Delete(email string) error { return c.m.Delete(email) }
+
+// The background renewal writes the new expiry back to a store that returns
+// copies (v0.9.5; the in-memory store hid a missing Put, since its Get returns
+// the stored pointer itself).
+func TestIAPBackgroundRenewalPersistsToCopyingStore(t *testing.T) {
+	f := newFakeGoogle(t)
+	store := copyKeyStore{NewMemKeyStore()}
+	b := f.backend()
+	b.Keys = store
+	ctx := context.Background()
+	if _, err := b.Run(ctx, Whoami()); err != nil {
+		t.Fatal(err)
+	}
+	// the stored copy and the live connection both say an hour is left
+	k := storedKey(t, store, f.email)
+	k.Expires = time.Now().Add(time.Hour)
+	_ = store.Put(f.email, k)
+	b.mu.Lock()
+	b.keyExp = time.Now().Add(time.Hour)
+	b.mu.Unlock()
+	if _, err := b.Run(ctx, Sinfo()); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		b.mu.Lock()
+		left, busy := time.Until(b.keyExp), b.renewing
+		b.mu.Unlock()
+		if left > 7*time.Hour && !busy {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("not renewed: %v left", left)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// the store is read again after the goroutine flips renewing off; give its
+	// write-back a moment, then check what a restart would load
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Until(storedKey(t, store, f.email).Expires) < 7*time.Hour {
+		if time.Now().After(deadline) {
+			t.Fatal("renewed expiry not written back to the key store")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	_ = b.Revoke(ctx)
+}
+
 // A stored key that has vanished from the profile (PATCH 404) is replaced.
 func TestIAPVanishedKeyOnExtendIsReplaced(t *testing.T) {
 	f := newFakeGoogle(t)

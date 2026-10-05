@@ -50,6 +50,9 @@ type Fixture struct {
 	Puts map[string]string
 	// Out answers a bash template exactly (env_check, du ...): template -> output.
 	Out map[string]string
+	// IgnoreJobFilter answers `squeue/sacct -j` with every recorded job, as a
+	// Slurm that ignored the list would (tests bifrost's own job_ids filter).
+	IgnoreJobFilter bool
 	// Sharing answers `sinfo -h -o %R|%h` (partition|OverSubscribe lines); empty
 	// means every partition is EXCLUSIVE, as on the real cluster in 2026-10.
 	Sharing string
@@ -85,7 +88,7 @@ func (f *Fixture) Run(_ context.Context, c Command) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if id := flag(a, "-j"); id != "" {
+		if id := flag(a, "-j"); id != "" && !f.IgnoreJobFilter {
 			return filterJobs(b, id, "job_id")
 		}
 		return b, nil
@@ -94,7 +97,7 @@ func (f *Fixture) Run(_ context.Context, c Command) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if id := flag(a, "-j"); id != "" {
+		if id := flag(a, "-j"); id != "" && !f.IgnoreJobFilter {
 			return filterJobs(b, id, "job_id")
 		}
 		return b, nil

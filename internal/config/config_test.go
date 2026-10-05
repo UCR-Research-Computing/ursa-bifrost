@@ -22,3 +22,23 @@ func TestPartialLimitsKeepDefaults(t *testing.T) {
 		t.Fatalf("staging: %+v", c.Staging)
 	}
 }
+
+// env_check's partition comes from config and reaches srun -p: only a plain
+// partition name is accepted (v0.9.6).
+func TestEnvPartitionValidated(t *testing.T) {
+	dir := t.TempDir()
+	for _, v := range []string{"check", "standard", "my_part-2"} {
+		p := filepath.Join(dir, v+".yaml")
+		_ = os.WriteFile(p, []byte("backend: fixture\nfixtures_dir: /tmp\nenv_check_partition: "+v+"\n"), 0o600)
+		if c, err := Load(p); err != nil || c.EnvPartition != v {
+			t.Errorf("%q refused: %v", v, err)
+		}
+	}
+	for i, v := range []string{`"check; id"`, `"-w node1"`, `"CHECK"`, `"a b"`} {
+		p := filepath.Join(dir, "bad"+string(rune('a'+i))+".yaml")
+		_ = os.WriteFile(p, []byte("backend: fixture\nfixtures_dir: /tmp\nenv_check_partition: "+v+"\n"), 0o600)
+		if _, err := Load(p); err == nil {
+			t.Errorf("env_check_partition %s accepted", v)
+		}
+	}
+}

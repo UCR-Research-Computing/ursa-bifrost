@@ -1105,7 +1105,12 @@ was not a cache bug.
   <uid>`, signal exits (`0:53`), never-started jobs, `[D-]HH:MM:SS` and `MM:SS.mmm` CPU
   times, memory units, and a `|` inside a job name.
 - Mutation guards: step rows are not jobs, signal exits, never-started node count, peak
-  memory from steps, list reads use the summary, the script note.
+  memory from steps, list reads use the summary, the script note. All 15 killed.
+- The full mutation run for this release also turned up older gaps: a guard broken since
+  v0.9.6 (fixed pattern) and five guards no test killed (jobs_list `job_ids` filter,
+  validation and cap; `env_check_partition`; the IAP background renewal's store
+  write-back, which the in-memory key store masked because its Get returns the stored
+  pointer). Each got a test.
 
 ### 23.4 Measured after the change (laptop CLI over SSH, same 7 days, 2026-10-05)
 
