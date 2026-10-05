@@ -183,6 +183,15 @@ func (f *Fixture) Run(_ context.Context, c Command) ([]byte, error) {
 		if out, ok := f.Out[a[2]]; ok {
 			return []byte(out), nil
 		}
+		if a[2] == sacctSummaryTemplate {
+			// the plain-text accounting rows, printed from the same recording
+			// the --json answers come from (so both paths see identical jobs)
+			b, err := read("sacct_jobs.json")
+			if err != nil {
+				return nil, err
+			}
+			return sacctRowsFromJSON(b)
+		}
 		if a[2] == submitTemplate {
 			if f.NextJobID == 0 {
 				f.NextJobID = 9001

@@ -232,23 +232,19 @@ func (s *Service) Usage(ctx context.Context, in UsageInput) (*Usage, error) {
 	var c backend.Command
 	var err error
 	if in.All {
-		c, err = backend.SacctAll(in.Since, in.Until)
+		c, err = backend.SacctSummaryAll(in.Since, in.Until)
 	} else {
 		me, uerr := s.User(ctx)
 		if uerr != nil {
 			return nil, uerr
 		}
-		c, err = backend.SacctUser(firstNonEmpty(in.User, me), in.Since, in.Until)
+		c, err = backend.SacctSummaryUser(firstNonEmpty(in.User, me), in.Since, in.Until)
 	}
-	if err != nil {
-		return nil, err
-	}
-	b, err := s.run(ctx, c)
 	if err != nil {
 		return nil, err
 	}
 	var a slurm.AcctResponse
-	if err := slurm.Decode(b, &a); err != nil {
+	if a.Jobs, err = s.acctRows(ctx, c); err != nil {
 		return nil, err
 	}
 	cat, _ := s.Catalog(ctx)

@@ -238,6 +238,45 @@ func SacctStates(user, since, states string) (Command, error) {
 	return c, nil
 }
 
+// sacctSummaryTemplate prints job and step rows as plain text (SPEC section 23):
+// --json spends nearly all its time serializing (a week of one person's jobs:
+// 19.6 s as JSON, 0.2 s as text). Epoch times keep the parse exact. The
+// validated selection (-u user or -a, -S, -E) arrives as positional parameters.
+const sacctSummaryTemplate = `SLURM_TIME_FORMAT=%s exec sacct -n -P --noconvert -o ` + slurmFields + ` "$@"`
+
+// slurmFields mirrors slurm.SacctFields (the backend does not import slurm;
+// TestSacctSummaryFields keeps the two equal).
+const slurmFields = "JobIDRaw,User,Partition,State,Reason,ExitCode,NodeList,NNodes,Submit,Start,End,ElapsedRaw,TotalCPU,AllocTRES,MaxRSS,Restarts,JobName"
+
+// SacctSummaryUser lists one user's jobs between since and until ("" = now) as
+// plain-text rows for slurm.ParseSacctRows.
+func SacctSummaryUser(user, since, until string) (Command, error) {
+	if err := ValidUser(user); err != nil {
+		return Command{}, err
+	}
+	return sacctSummary([]string{"-u", user}, since, until)
+}
+
+// SacctSummaryAll is SacctSummaryUser for every user (staff tier, health).
+func SacctSummaryAll(since, until string) (Command, error) {
+	return sacctSummary([]string{"-a"}, since, until)
+}
+
+func sacctSummary(who []string, since, until string) (Command, error) {
+	r, err := sacctRange(who, since, until)
+	if err != nil {
+		return Command{}, err
+	}
+	argv := append([]string{"bash", "-c", sacctSummaryTemplate, "bifrost"}, r.argv[2:]...)
+	return Command{argv: argv, kind: KindAcct}, nil
+}
+
+// SacctSummaryTemplateForTest lets fixtures answer the summary template.
+func SacctSummaryTemplateForTest() string { return sacctSummaryTemplate }
+
+// SacctFieldsForTest is the field list the template prints.
+func SacctFieldsForTest() string { return slurmFields }
+
 // Sinfo is `sinfo --json`.
 func Sinfo() Command {
 	return Command{argv: []string{"sinfo", "--json"}, kind: KindNodes, public: true}

@@ -106,11 +106,11 @@ func (s *Service) JobsList(ctx context.Context, in JobsListInput) ([]JobSummary,
 		}
 	} else if in.All {
 		qc = backend.SqueueAll()
-		ac, err = backend.SacctAll(in.Since, "")
+		ac, err = backend.SacctSummaryAll(in.Since, "")
 	} else {
 		qc, err = backend.SqueueUser(who)
 		if err == nil {
-			ac, err = backend.SacctUser(who, in.Since, "")
+			ac, err = backend.SacctSummaryUser(who, in.Since, "")
 		}
 	}
 	if err != nil {
@@ -125,11 +125,15 @@ func (s *Service) JobsList(ctx context.Context, in JobsListInput) ([]JobSummary,
 		return nil, err
 	}
 	var a slurm.AcctResponse
-	b, err = s.run(ctx, ac)
-	if err != nil {
-		return nil, err
-	}
-	if err := slurm.Decode(b, &a); err != nil {
+	if byID {
+		b, err = s.run(ctx, ac)
+		if err != nil {
+			return nil, err
+		}
+		if err := slurm.Decode(b, &a); err != nil {
+			return nil, err
+		}
+	} else if a.Jobs, err = s.acctRows(ctx, ac); err != nil {
 		return nil, err
 	}
 	cat, _ := s.Catalog(ctx) // prices are optional
@@ -255,6 +259,7 @@ type JobDetail struct {
 	KilledBy      string             `json:"cancelled_by,omitempty"`
 	PendingReason *PendingExplain    `json:"pending,omitempty"`
 	Script        *policy.Untrusted  `json:"script_untrusted,omitempty"`
+	ScriptNote    string             `json:"script_note,omitempty"`
 	Raw           map[string]any     `json:"-"`
 	acct          *slurm.AcctJob     `json:"-"`
 	queue         *slurm.QueueJob    `json:"-"`
@@ -372,9 +377,15 @@ func (s *Service) JobShow(ctx context.Context, in JobShowInput) (*JobDetail, err
 			markTruncated(ctx)
 		}
 		d.Efficiency = efficiency(j)
-		if in.IncludeScript && j.Script != "" {
-			d.Script = policy.Wrap(j.Script, s.Cfg.Limits.ScriptBytes)
-			markUntrusted(ctx)
+		if in.IncludeScript {
+			if j.Script != "" {
+				d.Script = policy.Wrap(j.Script, s.Cfg.Limits.ScriptBytes)
+				markUntrusted(ctx)
+			} else {
+				// SPEC 23: Ursa Major's AccountingStoreFlags has no job_script,
+				// so an empty script is the cluster's setting, not a lookup miss
+				d.ScriptNote = "Slurm did not store this job's batch script (the cluster's AccountingStoreFlags does not include job_script). Read the script from the job's working directory instead."
+			}
 		}
 	}
 	if q := d.queue; q != nil { // live state wins

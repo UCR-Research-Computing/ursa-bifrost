@@ -1062,7 +1062,8 @@ Nearly all the time goes into JSON serialization, not into the database query. A
 field-by-field comparison of all 745 jobs (`--json` against the plain text) found no
 difference in user, partition, state, reason, node list, times, elapsed time, allocated TRES
 (apart from an `energy` entry bifrost never reads), restarts, exit codes or peak memory.
-TotalCPU is printed to 10 ms, so it differs from the JSON by at most 0.01 s. Never-started
+TotalCPU is printed to the millisecond (to the second past an hour, so 9602.94 s reads
+9602 s), a difference of under 0.01% of any job's CPU time. Never-started
 jobs print 1 node and no start time (the JSON says 0 nodes and NO_VAL), and the parser
 maps them back to the JSON's values.
 
@@ -1089,8 +1090,8 @@ was not a cache bug.
 - **`storage_usage` sizes folders 8 at a time.** The du template feeds each top-level
   entry to `xargs -0 -P 8`. Each entry still gets at most 30 s, and nothing starts after
   a 40 s overall budget (was 100 s, one at a time). Measured: 26 s with 3 of 91 entries
-  unknown (was 100 s, 43 unknown). Still cached 5 minutes, so a person who cleans up sees
-  the new sizes within that time.
+  unknown (was 100 s, 43 unknown); through bifrost itself, 33 s with 2 unknown. Still
+  cached 5 minutes, so a person who cleans up sees the new sizes within that time.
 - **`job_show include_script` says when there is no script.** The new `script_note` field
   says the cluster did not store one. Turning script storage on
   (`AccountingStoreFlags=job_script`) is a separate cluster change.
@@ -1105,6 +1106,16 @@ was not a cache bug.
   times, memory units, and a `|` inside a job name.
 - Mutation guards: step rows are not jobs, signal exits, never-started node count, peak
   memory from steps, list reads use the summary, the script note.
+
+### 23.4 Measured after the change (laptop CLI over SSH, same 7 days, 2026-10-05)
+
+| Command | v0.9.13 | v0.9.14 | Answer |
+|---|---|---|---|
+| `bifrost usage` | 26.0 s | 2.7 s | 745 jobs, 90 failed both; node-hours 144.59 vs 144.60, cost $195.38 vs $195.40 (CPU-time rounding) |
+| `bifrost waste` | 24.7 s | 5.4 s | same 745 jobs and items; total 107.68 vs 107.69 wasted node-hours (an idle node aged 10 s between runs) |
+| `bifrost jobs --limit 200` | 22.7 s | 3.0 s | identical rows apart from the running jobs' elapsed time |
+
+The remaining seconds are the SSH round trip and the catalog read, not sacct.
 
 ## Change log
 

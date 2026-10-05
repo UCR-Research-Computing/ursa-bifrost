@@ -68,24 +68,20 @@ func (s *Service) Waste(ctx context.Context, in WasteInput) (*WasteReport, error
 	var err error
 	scope := "all users"
 	if in.All {
-		c, err = backend.SacctAll(in.Since, "")
+		c, err = backend.SacctSummaryAll(in.Since, "")
 	} else {
 		me, uerr := s.User(ctx)
 		if uerr != nil {
 			return nil, uerr
 		}
 		scope = firstNonEmpty(in.User, me)
-		c, err = backend.SacctUser(scope, in.Since, "")
+		c, err = backend.SacctSummaryUser(scope, in.Since, "")
 	}
-	if err != nil {
-		return nil, err
-	}
-	b, err := s.run(ctx, c)
 	if err != nil {
 		return nil, err
 	}
 	var a slurm.AcctResponse
-	if err := slurm.Decode(b, &a); err != nil {
+	if a.Jobs, err = s.acctRows(ctx, c); err != nil {
 		return nil, err
 	}
 	cat, _ := s.Catalog(ctx)
@@ -372,45 +368,42 @@ func (s *Service) Health(ctx context.Context) (*Health, error) {
 	}
 
 	// Failure rate over the last day (everyone).
-	ac, err := backend.SacctAll("now-1days", "")
+	ac, err := backend.SacctSummaryAll("now-1days", "")
 	if err != nil {
 		return nil, err
 	}
-	if b, err := s.run(ctx, ac); err == nil {
-		var a slurm.AcctResponse
-		if slurm.Decode(b, &a) == nil {
-			ended, failed := 0, 0
-			nodeFail := map[string]int{}
-			for _, j := range a.Jobs {
-				st := j.StateName()
-				switch st {
-				case "RUNNING", "PENDING", "REQUEUED":
-					continue
-				}
-				ended++
-				switch st {
-				case "FAILED", "NODE_FAIL", "OUT_OF_MEMORY", "TIMEOUT", "BOOT_FAIL":
-					failed++
-				}
-				if st == "NODE_FAIL" || st == "BOOT_FAIL" {
-					nodeFail[j.Partition]++
-				}
+	if jobs, err := s.acctRows(ctx, ac); err == nil {
+		ended, failed := 0, 0
+		nodeFail := map[string]int{}
+		for _, j := range jobs {
+			st := j.StateName()
+			switch st {
+			case "RUNNING", "PENDING", "REQUEUED":
+				continue
 			}
-			h.Jobs24h = ended
-			if ended > 0 {
-				r := round(100*float64(failed)/float64(ended), 1)
-				h.FailureRate = &r
-				if ended >= 10 && r >= 50 {
-					add(HealthIssue{Severity: "warning", Kind: "high-failure-rate", Subject: "last 24 h",
-						Detail: fmt.Sprintf("%d of %d jobs failed (%.0f%%)", failed, ended, r),
-						Advice: "Look for a shared cause: a broken module, a full filesystem, one user's retry loop (waste_report shows repeats)."})
-				}
+			ended++
+			switch st {
+			case "FAILED", "NODE_FAIL", "OUT_OF_MEMORY", "TIMEOUT", "BOOT_FAIL":
+				failed++
 			}
-			for p, n := range nodeFail {
-				add(HealthIssue{Severity: "error", Kind: "boot-failures", Subject: "partition " + p,
-					Detail: fmt.Sprintf("%d job(s) ended NODE_FAIL/BOOT_FAIL in 24 h", n),
-					Advice: "Cloud nodes failed under jobs or did not boot; check GCP quota/stockouts for the zone."})
+			if st == "NODE_FAIL" || st == "BOOT_FAIL" {
+				nodeFail[j.Partition]++
 			}
+		}
+		h.Jobs24h = ended
+		if ended > 0 {
+			r := round(100*float64(failed)/float64(ended), 1)
+			h.FailureRate = &r
+			if ended >= 10 && r >= 50 {
+				add(HealthIssue{Severity: "warning", Kind: "high-failure-rate", Subject: "last 24 h",
+					Detail: fmt.Sprintf("%d of %d jobs failed (%.0f%%)", failed, ended, r),
+					Advice: "Look for a shared cause: a broken module, a full filesystem, one user's retry loop (waste_report shows repeats)."})
+			}
+		}
+		for p, n := range nodeFail {
+			add(HealthIssue{Severity: "error", Kind: "boot-failures", Subject: "partition " + p,
+				Detail: fmt.Sprintf("%d job(s) ended NODE_FAIL/BOOT_FAIL in 24 h", n),
+				Advice: "Cloud nodes failed under jobs or did not boot; check GCP quota/stockouts for the zone."})
 		}
 	}
 
