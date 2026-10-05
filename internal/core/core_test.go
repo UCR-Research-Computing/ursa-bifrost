@@ -580,15 +580,38 @@ func TestJobsListByIDs(t *testing.T) {
 			t.Errorf("job_ids widened the query: %s", c)
 		}
 	}
+	n := len(fx.Calls)
 	if _, err := s.JobsList(ctx, JobsListInput{JobIDs: []string{"260; rm -rf ~"}}); err == nil {
 		t.Error("a bad job id was accepted")
+	}
+	// refused by bifrost itself, before anything reaches the cluster
+	if _, err := s.JobsList(ctx, JobsListInput{JobIDs: []string{"229", "x"}}); err == nil || !strings.Contains(err.Error(), "expected digits") {
+		t.Errorf("bad id among good ones: %v", err)
 	}
 	many := make([]string, MaxJobIDs+1)
 	for i := range many {
 		many[i] = fmt.Sprint(i + 1)
 	}
-	if _, err := s.JobsList(ctx, JobsListInput{JobIDs: many}); err == nil {
-		t.Error("more than MaxJobIDs ids accepted")
+	if _, err := s.JobsList(ctx, JobsListInput{JobIDs: many}); err == nil || !strings.Contains(err.Error(), "job_ids: at most") {
+		t.Errorf("more than MaxJobIDs ids: %v", err)
+	}
+	if len(fx.Calls) != n {
+		t.Errorf("refused job_ids still ran commands: %v", fx.Calls[n:])
+	}
+	// the job_ids filter itself, past whatever Slurm returns: a squeue -j that
+	// ignores its list (old Slurm, a wrapper) must not leak other jobs into the answer
+	fx.IgnoreJobFilter = true
+	one, err := s.JobsList(ctx, JobsListInput{JobIDs: []string{"229"}, Limit: 50})
+	fx.IgnoreJobFilter = false
+	if err != nil || len(one) != 1 || one[0].JobID != "229" {
+		t.Errorf("job_ids [229] with an unfiltered Slurm answer: %d rows %v", len(one), err)
+	}
+	// array ids are validated and matched by their parent job
+	if _, err := s.JobsList(ctx, JobsListInput{JobIDs: []string{"229_x"}}); err == nil {
+		t.Error("bad array id accepted")
+	}
+	if got, err := s.JobsList(ctx, JobsListInput{JobIDs: []string{"229_3"}}); err != nil || len(got) != 1 {
+		t.Errorf("array id 229_3: %d rows %v", len(got), err)
 	}
 	if _, err := s.JobsList(ctx, JobsListInput{JobIDs: many[:MaxJobIDs]}); err != nil {
 		t.Errorf("exactly MaxJobIDs refused: %v", err)

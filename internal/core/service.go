@@ -391,6 +391,16 @@ func Call[T any](ctx context.Context, s *Service, client, tool, tier string, arg
 	return res, nil
 }
 
+// acctRows runs a plain-text accounting summary (backend.SacctSummary*) and
+// parses it (SPEC section 23: same jobs as --json, about 100x faster).
+func (s *Service) acctRows(ctx context.Context, c backend.Command) ([]slurm.AcctJob, error) {
+	b, err := s.run(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	return slurm.ParseSacctRows(b)
+}
+
 // runGated runs c on the backend, taking a server-wide accounting slot first
 // for sacct (Gate). The wait is bounded by the command's own timeout.
 func (s *Service) runGated(ctx context.Context, c backend.Command) ([]byte, error) {

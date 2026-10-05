@@ -135,10 +135,12 @@ func DiskFree(dirs ...string) (Command, error) {
 	return Command{argv: argv, kind: KindStorage, okExit: []int{1}}, nil
 }
 
-// duTemplate sizes each top-level entry of the given folders within a time
-// budget (whole-home du took over four minutes on the live cluster). Entries
-// it could not finish print "?".
-const duTemplate = `end=$(( $(date +%s) + 100 )); for root in "$@"; do [ -d "$root" ] || continue; for d in "$root"/* "$root"/.[!.]* "$root"/..?*; do [ -e "$d" ] || continue; [ -L "$d" ] && continue; left=$(( end - $(date +%s) )); if [ "$left" -le 1 ]; then printf '?\t%s\n' "$d"; continue; fi; t=$(( left < 30 ? left : 30 )); s=$(timeout "$t" du -x -s -B1 -- "$d" 2>/dev/null | cut -f1); if [ -n "$s" ]; then printf '%s\t%s\n' "$s" "$d"; else printf '?\t%s\n' "$d"; fi; done; done`
+// duTemplate sizes each top-level entry of the given folders, 8 at a time
+// (SPEC section 23; one at a time a 100 s budget left 43 of 91 entries of a busy
+// home unknown). Each entry gets at most 30 s, and none starts once the 40 s
+// overall budget is spent. Entries it could not size print "?". Paths reach
+// the inner shell only as positional parameters, NUL-separated.
+const duTemplate = `end=$(( $(date +%s) + 40 )); for root in "$@"; do [ -d "$root" ] || continue; for d in "$root"/* "$root"/.[!.]* "$root"/..?*; do [ -e "$d" ] || continue; [ -L "$d" ] && continue; printf '%s\0' "$d"; done; done | xargs -0 -r -P 8 -n 1 sh -c 'left=$(( $1 - $(date +%s) )); if [ "$left" -le 1 ]; then printf '\''?\t%s\n'\'' "$2"; exit 0; fi; t=$(( left < 30 ? left : 30 )); s=$(timeout "$t" du -x -s -B1 -- "$2" 2>/dev/null | cut -f1); if [ -n "$s" ]; then printf '\''%s\t%s\n'\'' "$s" "$2"; else printf '\''?\t%s\n'\'' "$2"; fi' bifrost-du "$end"`
 
 // DuTop sizes the top-level entries of the given folders ("bytes<TAB>path").
 func DuTop(dirs ...string) (Command, error) {

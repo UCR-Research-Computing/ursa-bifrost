@@ -5,6 +5,25 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.9.14 - 2026-10-05
+- Faster list reads (SPEC section 23). `jobs_list`, `my_usage`/`usage_report`,
+  `waste_report(_all)` and `health`'s failure rate read accounting as plain text
+  (`sacct -n -P --noconvert`, epoch times) instead of `sacct --json`. Measured on Ursa
+  Major, one person over 7 days: 19.6 s and 12.6 MB before, 0.2 s after. A field-by-field
+  comparison of 745 live jobs found the same users, states, times, TRES, exit codes and
+  peak memory; CPU time is printed to the millisecond (to the second past an hour).
+  `job_show`, `job_explain`, `ticket_draft` and `jobs_list job_ids` keep `--json`.
+- `storage_usage` sizes folders 8 at a time within 40 s. Was one at a time within 100 s:
+  on a busy home, 26 s with 3 of 91 folders unknown instead of 100 s with 43 unknown.
+- `job_show include_script` explains a missing script in `script_note`. Ursa Major's
+  `AccountingStoreFlags` does not include `job_script`, so Slurm keeps no scripts; it was
+  never a cache problem.
+- Mutation check: the full run (now 208 guards) found one guard that no longer applied
+  (`v07 env version allowlist`, BROKEN since the v0.9.6 signature change) and five that
+  no test killed: the jobs_list `job_ids` filter, id validation and count cap, the
+  `env_check_partition` config check, and the background key renewal's write-back to the
+  key store (the in-memory store hid it). Each now has a test.
+
 ## v0.9.13 - 2026-10-04
 - The database-download warning in `script_check` reports the script's own line number
   (and sets the issue's `line` field). v0.9.12 counted lines after stripping comments and

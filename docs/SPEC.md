@@ -725,7 +725,7 @@ boundary and the line numbers say exactly what was returned, so paging never ski
 
 | Tool | Runs on the login node, as the person | Guard |
 |---|---|---|
-| `storage_usage` | `df -P -B1` on home and scratch; `du -x -d 1` on the person's two folders | Fixed paths; 150-second limit per folder; cached 5 minutes. Top-level folder names and sizes only, including hidden ones such as `.cache` and `.conda` (often the cause of a full home); credential-like names are left out |
+| `storage_usage` | `df -P -B1` on home and scratch; `du -x -s` on each top-level entry of the person's two folders, 8 at a time (v0.9.14, section 23) | Fixed paths; 30 s per entry, 40 s overall budget (entries left over are "unknown"); cached 5 minutes. Top-level folder names and sizes only, including hidden ones such as `.cache` and `.conda` (often the cause of a full home); credential-like names are left out |
 | `files_list` | `realpath -e`, then `find <dir> -mindepth 1 -maxdepth 1 -printf ...` | Path under `/home/<user>/` or `/scratch/<user>/` (or `~/...`), clean and absolute; every component checked, before and after symlinks are resolved. Commands run as the person, so file permissions are theirs |
 | `files_read` | `stat`, `dd` (byte window) or `grep -n` | Same path rule; text only; redacted; untrusted |
 | `env_check` | `srun -p check -N1 -n1 -c1 -t3 --immediate=120 --quiet -J bifrost-env-check` around a fixed `bash -lc` template: `module load` each given module (with Lmod's message when it fails), `module list`, then `command -v` for each command; versions only for a known list (python3, gcc, mpirun, nvcc, cmake, R, julia, java, apptainer...) | Module and command names validated; at most 10 modules and 15 commands; each version probe under `timeout 10`; the partition comes from config `env_check_partition` (default `check`, validated) |
@@ -1040,10 +1040,93 @@ days after K2 so the options lists can be checked against real scripts.
 ursa-agent's prompt hint and deep-research's Lab planner (calling `software_help` for each
 tool in a plan before writing the job) follow in their own repos.
 
+## 23. Fast accounting and storage reads (v0.9.14)
+
+### 23.1 Why
+
+A routine "status of my stuff" check on 2026-10-05 took about 145 s of bifrost time. The
+audit log showed where: `storage_usage` 99.5 s, `jobs_list` 19.4 s, `my_usage` 18.7 s. The
+other tools took 0.1-3.6 s. Hermes sends one request at a time per MCP server, so every
+call queued behind the slow ones.
+
+Measured on the login node, for one user and 7 days (745 jobs, 1,581 rows with steps):
+
+| Command | Time | Output |
+|---|---|---|
+| `sacct --json -u <user> -S now-7days` | 19.6 s | 12.6 MB |
+| `sacct --json -u <user> -S now-1days` | 3.1 s | 2.2 MB |
+| `sacct -X --json ...` (no steps) | 8.5 s | 4.1 MB, but `time.total` is 0 for every job (CPU time lives in the steps), so efficiency breaks. Rejected |
+| `sacct -n -P --noconvert -o <17 fields>` (all users, 7 days) | 0.2 s | 1,581 lines |
+
+Nearly all the time goes into JSON serialization, not into the database query. A
+field-by-field comparison of all 745 jobs (`--json` against the plain text) found no
+difference in user, partition, state, reason, node list, times, elapsed time, allocated TRES
+(apart from an `energy` entry bifrost never reads), restarts, exit codes or peak memory.
+TotalCPU is printed to the millisecond (to the second past an hour, so 9602.94 s reads
+9602 s), a difference of under 0.01% of any job's CPU time. Never-started
+jobs print 1 node and no start time (the JSON says 0 nodes and NO_VAL), and the parser
+maps them back to the JSON's values.
+
+The job script question from the same check: `job_show include_script` returned nothing
+because the cluster does not store scripts (`AccountingStoreFlags = job_comment`). This
+was not a cache bug.
+
+### 23.2 What changes
+
+- **List-type accounting reads use the plain-text summary.** New allow-listed command
+  `SacctSummary`: a fixed template, `SLURM_TIME_FORMAT=%s exec sacct -n -P --noconvert -o
+  <fields> "$@"`, with the validated `-u <user>` / `-a`, `-S`, `-E` passed as positional
+  arguments. The fields are JobIDRaw, User, Partition, State, Reason, ExitCode, NodeList,
+  NNodes, Submit, Start, End, ElapsedRaw, TotalCPU, AllocTRES, MaxRSS, Restarts, and
+  JobName last, so a `|` inside a name stays part of the name. `slurm.ParseSacctRows` turns
+  the rows into the same `AcctJob` values the JSON produced. Job rows carry the totals;
+  step rows (`<id>.batch`, `<id>.0`) contribute only their MaxRSS, as one synthetic step
+  per row, so peak memory is computed the same way as before. Used by `jobs_list` (own and
+  `all`), `my_usage`/`usage_report`, `waste_report(_all)` and `health`'s 24-hour failure
+  rate. Kind, cache, single-flight and the server-wide accounting gate are unchanged.
+- **Per-job reads keep `--json`.** `job_show`, `job_explain`, `ticket_draft` and
+  `jobs_list job_ids` need steps, the submit line, the working directory and log paths,
+  and a one-job query is fast anyway.
+- **`storage_usage` sizes folders 8 at a time.** The du template feeds each top-level
+  entry to `xargs -0 -P 8`. Each entry still gets at most 30 s, and nothing starts after
+  a 40 s overall budget (was 100 s, one at a time). Measured: 26 s with 3 of 91 entries
+  unknown (was 100 s, 43 unknown); through bifrost itself, 33 s with 2 unknown. Still
+  cached 5 minutes, so a person who cleans up sees the new sizes within that time.
+- **`job_show include_script` says when there is no script.** The new `script_note` field
+  says the cluster did not store one. Turning script storage on
+  (`AccountingStoreFlags=job_script`) is a separate cluster change.
+
+### 23.3 Tests
+
+- The fixture backend answers the summary template from `testdata/sacct_jobs.json`,
+  printed in sacct's plain-text format. Every existing usage, waste, health and jobs_list
+  test therefore runs through the new parser with unchanged expectations.
+- Parser tests on recorded real rows (anonymized): array tasks, step rows, `CANCELLED by
+  <uid>`, signal exits (`0:53`), never-started jobs, `[D-]HH:MM:SS` and `MM:SS.mmm` CPU
+  times, memory units, and a `|` inside a job name.
+- Mutation guards: step rows are not jobs, signal exits, never-started node count, peak
+  memory from steps, list reads use the summary, the script note. All 15 killed.
+- The full mutation run for this release also turned up older gaps: a guard broken since
+  v0.9.6 (fixed pattern) and five guards no test killed (jobs_list `job_ids` filter,
+  validation and cap; `env_check_partition`; the IAP background renewal's store
+  write-back, which the in-memory key store masked because its Get returns the stored
+  pointer). Each got a test.
+
+### 23.4 Measured after the change (laptop CLI over SSH, same 7 days, 2026-10-05)
+
+| Command | v0.9.13 | v0.9.14 | Answer |
+|---|---|---|---|
+| `bifrost usage` | 26.0 s | 2.7 s | 745 jobs, 90 failed both; node-hours 144.59 vs 144.60, cost $195.38 vs $195.40 (CPU-time rounding) |
+| `bifrost waste` | 24.7 s | 5.4 s | same 745 jobs and items; total 107.68 vs 107.69 wasted node-hours (an idle node aged 10 s between runs) |
+| `bifrost jobs --limit 200` | 22.7 s | 3.0 s | identical rows apart from the running jobs' elapsed time |
+
+The remaining seconds are the SSH round trip and the catalog read, not sacct.
+
 ## Change log
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-05 | v0.9.14 | Section 23: list-type accounting reads (jobs_list, my_usage/usage_report, waste_report, health) use plain-text `sacct -P` instead of `--json` (7 days: 19.6 s to 0.2 s, same numbers); storage_usage sizes folders 8 at a time within 40 s (100 s to about 26 s, far fewer unknown); `job_show include_script` explains a missing script (the cluster stores none) |
 | 2026-10-03 | agent 0.4.0 | ursa-agent keeps sign-ins across restarts in its own sealed bucket store (20.6); chats still start fresh |
 | 2026-10-03 | v0.9.7 | `jobs_list job_ids` reads `squeue -j`/`sacct -j` for just those jobs, uncached, own rows only (a finished job shows at once; was up to the 20 s + 60 s cache); 5 mutation guards |
 | 2026-10-03 | v0.9.8 | Ursa Major standard and spot moved to e2-standard-32 in any us-central1 zone (cluster change the same day). Stockout alternatives now offer standard, then spot, then computehigh (`altPartitions`, `altColdPartitions`); segfault hints name the AVX2-only e2 nodes; 2 mutation guards |

@@ -180,11 +180,13 @@ func TestNewTemplatesAreFixed(t *testing.T) {
 		{"window", func() (Command, error) { return LogWindow("/home/alice/a.log", 0, 10) }},
 		{"listdir", func() (Command, error) { return ListDir("/home/alice") }},
 		{"du", func() (Command, error) { return DuTop("/home/alice", "/scratch/alice") }},
+		{"sacct-rows", func() (Command, error) { return SacctSummaryUser("alice", "now-7days", "") }},
+		{"sacct-rows-all", func() (Command, error) { return SacctSummaryAll("now-1days", "2026-10-05") }},
 		{"env", func() (Command, error) {
 			return EnvCheck("check", []string{"gcc"}, []string{"python3"}, map[string]bool{"python3": true})
 		}},
 	}
-	fixed := map[string]bool{treeTemplate: true, readRangeTemplate: true, grepTemplate: true, logWindowTemplate: true, listDirTemplate: true, duTemplate: true, envTemplate: true}
+	fixed := map[string]bool{treeTemplate: true, readRangeTemplate: true, grepTemplate: true, logWindowTemplate: true, listDirTemplate: true, duTemplate: true, envTemplate: true, sacctSummaryTemplate: true}
 	for _, c := range cs {
 		cmd, err := c.mk()
 		if err != nil {
@@ -275,4 +277,50 @@ func flagValue(a []string, f string) string {
 		}
 	}
 	return ""
+}
+
+// SPEC 23: the plain-text accounting summary. Selection arguments are validated
+// and arrive only as positional parameters; an empty or odd user never widens
+// the query to every user.
+func TestSacctSummaryCommand(t *testing.T) {
+	c, err := SacctSummaryUser("alice_ucr_edu", "now-7days", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(c.argv[3:], " "); got != "bifrost -u alice_ucr_edu -S now-7days" {
+		t.Errorf("user args: %q", got)
+	}
+	if c.Kind() != KindAcct || c.Write() || c.Public() {
+		t.Errorf("kind %v write %v public %v: per-person accounting, cached as acct", c.Kind(), c.Write(), c.Public())
+	}
+	a, err := SacctSummaryAll("now-1days", "2026-10-05")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(a.argv[3:], " "); got != "bifrost -a -S now-1days -E 2026-10-05" {
+		t.Errorf("all args: %q", got)
+	}
+	for _, bad := range []func() (Command, error){
+		func() (Command, error) { return SacctSummaryUser("", "now-7days", "") },
+		func() (Command, error) { return SacctSummaryUser("alice;id", "now-7days", "") },
+		func() (Command, error) { return SacctSummaryUser("alice", "now-7days; id", "") },
+		func() (Command, error) { return SacctSummaryAll("now-1days", "$(id)") },
+	} {
+		if _, err := bad(); err == nil {
+			t.Error("bad summary selection accepted")
+		}
+	}
+	if !strings.Contains(sacctSummaryTemplate, "-o "+SacctFieldsForTest()+" ") || !strings.HasPrefix(sacctSummaryTemplate, "SLURM_TIME_FORMAT=%s exec sacct -n -P --noconvert ") {
+		t.Errorf("template: %s", sacctSummaryTemplate)
+	}
+}
+
+// The new du template still sizes every entry when names carry shell syntax,
+// and runs entries in parallel (xargs -P 8) within the 40 s budget.
+func TestDuTemplateShape(t *testing.T) {
+	for _, want := range []string{"+ 40 ))", "xargs -0 -r -P 8 -n 1", `printf '%s\0' "$d"`, "timeout \"$t\" du -x -s -B1 -- \"$2\""} {
+		if !strings.Contains(duTemplate, want) {
+			t.Errorf("du template lacks %q", want)
+		}
+	}
 }

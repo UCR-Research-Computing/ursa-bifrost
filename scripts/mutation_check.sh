@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/core/inflight.go internal/core/shared_cache.go internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go internal/config/config.go internal/core/catalog.go internal/core/dbcheck.go"
+FILES="internal/core/inflight.go internal/core/shared_cache.go internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go internal/config/config.go internal/core/catalog.go internal/core/dbcheck.go internal/slurm/sacctrows.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
@@ -134,7 +134,7 @@ mutate "v07 link file in listing" internal/core/staged.go '		if !hasFile(all, f)
 			return nil, fmt.Errorf("%s is not a file in the job folder (see job_results)", f)'
 mutate "v07 link size cap"        internal/core/staged.go '	if total > s.Cfg.Staging.MaxLinkBytes {' '	if false {'
 mutate "v07 fetch after header"   internal/core/staged.go '	return insertAfterHeader(script, fetchBlock(urls, names)), nil' '	return fetchBlock(urls, names) + script, nil'
-mutate "v07 env version allowlist" internal/core/helpers.go '	c, err := backend.EnvCheck(modules, commands, versionCommands)' '	c, err := backend.EnvCheck(modules, commands, map[string]bool{"myprog": true, "gcc": true, "python3": true})'
+mutate "v07 env version allowlist" internal/core/helpers.go '	c, err := backend.EnvCheck(s.Cfg.EnvPartition, modules, commands, versionCommands)' '	c, err := backend.EnvCheck(s.Cfg.EnvPartition, modules, commands, map[string]bool{"myprog": true, "gcc": true, "python3": true})'
 mutate "v07 interactive gpus"     internal/core/helpers.go '	if in.GPUs < 0 || in.GPUs > cp.GPUsPerNode {' '	if in.GPUs < 0 {'
 mutate "v07 interactive memory"   internal/core/helpers.go '	if in.Memory != "" && !reMemory.MatchString(in.Memory) {' '	if false {'
 mutate "v07 storage hides creds"  internal/core/helpers.go '		if sensitive(path.Base(p)) {' '		if false {'
@@ -322,6 +322,27 @@ mutate "v095 renew updates store"  internal/backend/iap.go '			k.Expires = exp
 		}
 	}()' '		}
 	}()'
+mutate "v0914 step rows not jobs"   internal/slurm/sacctrows.go '		if parent, _, isStep := strings.Cut(id, "."); isStep {' '		if parent, _, isStep := strings.Cut(id, "."); isStep && false {'
+mutate "v0914 step peak memory"    internal/slurm/sacctrows.go '			jobs[i].Steps = append(jobs[i].Steps, st)' '			_ = st'
+mutate "v0914 signal exit"         internal/slurm/sacctrows.go '	if n := atoi(sig); n != 0 {' '	if n := atoi(sig); n != 0 && false {'
+mutate "v0914 never started nodes" internal/slurm/sacctrows.go '		if j.Nodes == "None assigned" {' '		if false {'
+mutate "v0914 state before by"     internal/slurm/sacctrows.go '		state, _, _ := strings.Cut(f[3], " ") // "CANCELLED by 50001"' '		state := f[3]'
+mutate "v0914 name keeps pipes"    internal/slurm/sacctrows.go '		f := strings.SplitN(line, "|", sacctFieldCount)' '		f := strings.Split(line, "|")'
+mutate "v0914 cpu days"            internal/slurm/sacctrows.go '		days, s = atoi(d), rest' '		s = rest; _ = d'
+mutate "v0914 mem MB"              internal/slurm/sacctrows.go '			t.Count = memBytes(v) / (1024 * 1024)' '			t.Count = memBytes(v)'
+mutate "v0914 usage uses summary"  internal/core/cluster.go '		c, err = backend.SacctSummaryUser(firstNonEmpty(in.User, me), in.Since, in.Until)' '		c, err = backend.SacctUser(firstNonEmpty(in.User, me), in.Since, in.Until)'
+mutate "v0914 jobs uses summary"   internal/core/jobs.go '			ac, err = backend.SacctSummaryUser(who, in.Since, "")' '			ac, err = backend.SacctUser(who, in.Since, "")'
+mutate "v0914 user not widened"    internal/backend/command.go '	return sacctSummary([]string{"-u", user}, since, until)' '	return sacctSummary([]string{"-a"}, since, until)'
+mutate "v0914 user validated"      internal/backend/command.go '	if err := ValidUser(user); err != nil {
+		return Command{}, err
+	}
+	return sacctSummary(' '	if false {
+		return Command{}, nil
+	}
+	return sacctSummary('
+mutate "v0914 script note"         internal/core/jobs.go '				d.ScriptNote = "Slurm did not store' '				_ = "Slurm did not store'
+mutate "v0914 du parallel"         internal/backend/files.go 'xargs -0 -r -P 8 -n 1' 'xargs -0 -r -P 1 -n 1'
+mutate "v0914 du budget"           internal/backend/files.go 'end=$(( $(date +%s) + 40 ))' 'end=$(( $(date +%s) + 100 ))'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL
