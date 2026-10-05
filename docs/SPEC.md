@@ -984,6 +984,62 @@ A1), separate budgets, interleaved use of both clients, one backend per person, 
 programs at each step (including mid sign-in), foreign redirects, and bad users files. 13
 new mutation guards (128 in all, every one caught).
 
+## 22. Software knowledge (planned, v0.10.x)
+
+Status: plan, 2026-10-04, approved in principle by Chuck. The cluster side (capturing
+metadata and installed `--help` into `/apps/docs/tools/`) is in ucr-slurm-production
+`docs/software-knowledge/PLAN.md`; this section covers what bifrost serves.
+
+### 22.1 The gap
+
+bifrost serves partitions, costs, limits, jobs, failures and shared databases well, but
+software as a list of names and versions. `modules_search` matches names only (no hits
+for "assembly" or "variant calling" despite flye, canu, hifiasm, gatk, freebayes), only 12
+modules have usage cards, and nothing returns a program's options, so assistants write
+flags from training data (a deep-research Lab run used a flag newer than the installed
+vLLM 0.6.4).
+
+### 22.2 Inputs (built by the cluster repo)
+
+- `/apps/docs/tools/index.json`: per module and version, `summary`, `field`, `topics`,
+  `operations` (EDAM), `programs`, `threads_flag`/`memory_flag` (parsed), `databases`
+  (paired `db-*` modules), `home`, `docs`, `license`, `source`, and per program the help
+  file, method, `options` (when cleanly parseable) and `captured_at`.
+- `/apps/docs/tools/help/<module>/<version>/<program>[.<sub>].txt`: the installed
+  program's help output, ANSI stripped, at most 256 KB.
+- The catalog gains only `"tool_index"` (the path) and a schema bump.
+
+bifrost reads the index like the catalog: a fixed allow-listed `cat --` of that path,
+cached for an hour, optional (every tool works as today when it is missing).
+
+### 22.3 K2: search and help (v0.10.0)
+
+| Tool | Change |
+|---|---|
+| `modules_search` | Also matches summary, topics, operations and program names, ranked name > program > operation/topic > summary, top 25. Each hit adds `summary`, `field`, `programs` (first few), `threads_flag`, `databases`, `help_available`. |
+| `software_help` (new, R1, read-only) | `module`, `program?`, `subcommand?`, `grep?`, `offset?`, `limit?`. Without `program`: the module's programs with summary, threads/memory flags, paired databases and docs URL. With `program`: its captured help, paged like `files_read` (section 18), or with `grep` the matching lines plus context. Notes when the help was captured for a version that is no longer installed. |
+| Server instructions | Before writing a command line for a tool whose flags you are unsure of, read `software_help`; use `modules_search` with a task ("genome assembly") when you don't know the tool's name. |
+| CLI | `bifrost help <module> [program] [--grep PATTERN]` |
+
+Safety: module, version, program and subcommand are validated against the index before
+any path is built (no user text reaches a path or a shell); only files under
+`/apps/docs/tools/help/` are read; output is site content (trusted, like `module_show`).
+Mutation guards: index-validated path, grep paging bounds, stale-version note, ranking.
+
+### 22.4 K3: flag checks in script_check (v0.10.1)
+
+`script_check` warns (never errors) when a script line runs a program whose index entry
+has an `options` list and passes a long option (`--foo`) that list lacks: "installed
+vllm 0.6.4 does not list --max-num-batched-tokens; see software_help vllm". Only long
+options, only for programs loaded by the script's own `module load`, skipped on lines with
+variable expansion or for subcommand tools without that subcommand captured. Waits a few
+days after K2 so the options lists can be checked against real scripts.
+
+### 22.5 Clients
+
+ursa-agent's prompt hint and deep-research's Lab planner (calling `software_help` for each
+tool in a plan before writing the job) follow in their own repos.
+
 ## Change log
 
 | Date | Version | Change |
