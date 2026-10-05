@@ -134,7 +134,7 @@ mutate "v07 link file in listing" internal/core/staged.go '		if !hasFile(all, f)
 			return nil, fmt.Errorf("%s is not a file in the job folder (see job_results)", f)'
 mutate "v07 link size cap"        internal/core/staged.go '	if total > s.Cfg.Staging.MaxLinkBytes {' '	if false {'
 mutate "v07 fetch after header"   internal/core/staged.go '	return insertAfterHeader(script, fetchBlock(urls, names)), nil' '	return fetchBlock(urls, names) + script, nil'
-mutate "v07 env version allowlist" internal/core/helpers.go '	c, err := backend.EnvCheck(modules, commands, versionCommands)' '	c, err := backend.EnvCheck(modules, commands, map[string]bool{"myprog": true, "gcc": true, "python3": true})'
+mutate "v07 env version allowlist" internal/core/helpers.go '	c, err := backend.EnvCheck(s.Cfg.EnvPartition, modules, commands, versionCommands)' '	c, err := backend.EnvCheck(s.Cfg.EnvPartition, modules, commands, map[string]bool{"myprog": true, "gcc": true, "python3": true})'
 mutate "v07 interactive gpus"     internal/core/helpers.go '	if in.GPUs < 0 || in.GPUs > cp.GPUsPerNode {' '	if in.GPUs < 0 {'
 mutate "v07 interactive memory"   internal/core/helpers.go '	if in.Memory != "" && !reMemory.MatchString(in.Memory) {' '	if false {'
 mutate "v07 storage hides creds"  internal/core/helpers.go '		if sensitive(path.Base(p)) {' '		if false {'
