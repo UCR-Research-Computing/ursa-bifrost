@@ -332,7 +332,7 @@ func (s *Service) withInputs(ctx context.Context, script string, in []SubmitInpu
 		if err != nil {
 			return "", err
 		}
-		if !ok {
+		if !ok || o.Generation != f.Gen || o.Size != f.Bytes {
 			return "", fmt.Errorf("staged input %s changed or disappeared since the plan; prepare the job again", f.Filename)
 		}
 		u, err := st.SignURL(ctx, http.MethodGet, f.Object, ttl, nil)
