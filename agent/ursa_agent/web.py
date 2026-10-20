@@ -597,6 +597,26 @@ async def _a2a_before_agent(context):
     return context
 
 
+def _add_v03_interface(card) -> None:
+    """Advertise the same JSON-RPC endpoint for A2A 0.3 clients too.
+
+    Under a2a-sdk 1.x the compat builder emits one interface, protocolVersion
+    "1.0", and the SDK's card serializer adds the 0.3 top-level fields (`url`,
+    `protocolVersion`, `preferredTransport`, the 0.3 security scheme shape)
+    only when the card lists a 0.3 interface; without one it drops them, and
+    0.3 clients (Gemini Enterprise) see a card with no URL. The JSON-RPC route
+    already accepts 0.3 requests (attach_a2a_routes_to_app enables v0.3 compat),
+    so this only makes the card say so."""
+    ifaces = getattr(card, "supported_interfaces", None)
+    if ifaces is None or len(ifaces) != 1:  # a2a-sdk 0.3.x card: url is already top level
+        return
+    v1 = ifaces[0]
+    # The builder strips the trailing slash, but the RPC route is the mount root
+    # "/a2a/": a POST to "/a2a" gets a 307 (to http:// behind Cloud Run's proxy).
+    v1.url = f"{BASE_URL}/a2a/"
+    ifaces.add(url=v1.url, protocol_binding=v1.protocol_binding, protocol_version="0.3.0")
+
+
 def build_a2a_app():
     """A2A JSON-RPC endpoint + agent card under /a2a (Gemini Enterprise later).
 
@@ -658,6 +678,7 @@ def build_a2a_app():
         default_output_modes=["text/plain"],
         supports_authenticated_extended_card=False,
     )
+    _add_v03_interface(card)
     cfg = A2aAgentExecutorConfig(execute_interceptors=[ExecuteInterceptor(before_agent=_a2a_before_agent)])
     a2a_runner = Runner(app_name=APP, agent=agent, session_service=sessions)
     inner = to_a2a(

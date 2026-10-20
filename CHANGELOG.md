@@ -5,6 +5,16 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## agent-v0.4.3 - 2026-10-20
+- ursa-agent's public A2A card (`/a2a/.well-known/agent-card.json`) carries the A2A 0.3
+  fields again: top-level `url`, `protocolVersion` and `preferredTransport`, and the 0.3
+  shape of the bifrost bearer scheme (`type: http`). Under a2a-sdk 1.x the card listed only
+  a protocol 1.0 interface, so the SDK left the 0.3 fields out and 0.3 clients (Gemini
+  Enterprise) saw a card with no endpoint. The card now lists the same JSON-RPC endpoint
+  for 1.0 and 0.3 (the route already accepted 0.3 requests). The advertised URL keeps its
+  trailing slash (`.../a2a/`): a POST to `.../a2a` got a 307 redirect. No behaviour change
+  otherwise; test `agent/tests/test_agent_card.py`.
+
 ## v0.9.15 - 2026-10-20
 - Partition lists. `#SBATCH -p a,b` is legal Slurm (the job starts on whichever partition
   has a node first) but `script_check` and `job_submit` looked the whole string up as one

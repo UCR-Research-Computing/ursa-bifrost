@@ -2381,7 +2381,7 @@ wheels = [
 
 [[package]]
 name = "ursa-agent"
-version = "0.4.2"
+version = "0.4.3"
 source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk" },

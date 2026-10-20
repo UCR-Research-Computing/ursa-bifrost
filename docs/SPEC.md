@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (Draft 7; built through bifrost v0.9.15 and ursa-agent 0.4.2) |
-| Status | bifrost v0.9.15, ursa-agent 0.4.2, 2026-10-20 (spec Draft 7). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23 and docs/CLOUD_PLAN.md record what was built (22 is planned); open questions left in section 15. |
+| Document | Specification and design (Draft 7; built through bifrost v0.9.15 and ursa-agent 0.4.3) |
+| Status | bifrost v0.9.15, ursa-agent 0.4.3 (live: 0.4.2 until the next agent deploy), 2026-10-20 (spec Draft 7). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23 and docs/CLOUD_PLAN.md record what was built (22 is planned); open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -1126,6 +1126,7 @@ The remaining seconds are the SSH round trip and the catalog read, not sacct.
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-20 | agent 0.4.3 | ursa-agent A2A card: top-level `url`, `protocolVersion` and `preferredTransport` (A2A 0.3 fields) were missing because the card listed only a 1.0 interface and the SDK adds the 0.3 fields only for a 0.3 one. The card lists the same JSON-RPC endpoint for 1.0 and 0.3 and keeps the trailing slash (`/a2a/`; `/a2a` redirected). Test asserts url, protocolVersion, skills and the bifrost bearer scheme. No other behaviour change |
 | 2026-10-20 | v0.9.15 | Partition lists: `#SBATCH -p a,b` (Slurm starts the job on whichever partition has a node first) was refused as one unknown name. script_check and job_submit now check each member; limits, the cost estimate and the per-job and day caps use the dearest member (worst case); sbatch gets the list as written. The sbatch option validator accepts up to four comma-joined names and still refuses `a,`, `,a`, `a;id`. Prompted by the cluster's Spot TPU partition (`tpuspot` next to `tpu`) |
 | 2026-10-05 | v0.9.14 | Section 23: list-type accounting reads (jobs_list, my_usage/usage_report, waste_report, health) use plain-text `sacct -P` instead of `--json` (7 days: 19.6 s to 0.2 s, same numbers); storage_usage sizes folders 8 at a time within 40 s (100 s to about 26 s, far fewer unknown); `job_show include_script` explains a missing script (the cluster stores none) |
 | 2026-10-03 | agent 0.4.0 | ursa-agent keeps sign-ins across restarts in its own sealed bucket store (20.6); chats still start fresh |
