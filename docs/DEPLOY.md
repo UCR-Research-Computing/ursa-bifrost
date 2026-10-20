@@ -61,6 +61,35 @@ about $10 a month (1 vCPU, 512 MiB, CPU billed only during requests) plus a few 
 in Cloud Storage and Secret Manager versions. `MIN_INSTANCES=0 deploy/deploy.sh
 apply` returns to zero idle cost with cold starts.
 
+### Without Docker (ko)
+
+`deploy.sh` builds with Docker. On a machine without it (the v0.9.15 deploy, 2026-10-20),
+build the same image with [ko](https://ko.build) (static Go binary on
+`gcr.io/distroless/static-debian12:nonroot`, as in the Dockerfile) and deploy only the image.
+ko's entrypoint is the bare binary, so pass the serve command; every other service setting
+(secrets, bucket mount, scaling, service account) stays as deploy.sh left it.
+
+```bash
+cat > /tmp/ko.yaml <<'K'
+defaultBaseImage: gcr.io/distroless/static-debian12:nonroot
+builds:
+- id: bifrost
+  main: ./cmd/bifrost
+  env: [CGO_ENABLED=0]
+  flags: [-trimpath]
+  ldflags: ["-s -w -X github.com/UCR-Research-Computing/ursa-bifrost/internal/version.Version=vX.Y.Z"]
+K
+gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+KO_CONFIG_PATH=/tmp/ko.yaml KO_DOCKER_REPO=us-central1-docker.pkg.dev/$PROJECT/bifrost/bifrost \
+  ko build ./cmd/bifrost --bare --tags vX.Y.Z --platform linux/amd64
+gcloud run deploy bifrost-mcp --project $PROJECT --region $REGION \
+  --image us-central1-docker.pkg.dev/$PROJECT/bifrost/bifrost:vX.Y.Z \
+  --command /ko-app/bifrost --args serve,--config,/config/config.yaml
+```
+
+Check the revision's log for `ursa-bifrost vX.Y.Z serving`. The next `deploy.sh apply`
+(Docker image, Dockerfile entrypoint) clears `--command`/`--args` again.
+
 ## Connect a client
 
 Hermes: `hermes mcp add ursa-cloud --url https://<service url>/mcp`. Hermes
