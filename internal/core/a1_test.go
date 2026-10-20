@@ -568,3 +568,30 @@ func TestAlternativeOrder(t *testing.T) {
 		t.Errorf("altColdPartitions = %v", altColdPartitions)
 	}
 }
+
+// A partition list goes to sbatch as written (Slurm picks whichever starts first) while the
+// cost cap uses the dearest member.
+func TestSubmitPartitionList(t *testing.T) {
+	s, fx := a1Service(t)
+	ctx := context.Background()
+	script := "#!/bin/bash\n#SBATCH -p spot,standard\n#SBATCH --exclusive\n#SBATCH --requeue\n#SBATCH -t 60\necho hi\n"
+	plan, err := s.PrepareSubmit(ctx, SubmitInput{Script: script})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.WorstCaseUSD != 1.45 || plan.Partition != "spot,standard" {
+		t.Errorf("plan: worst %v partition %q, want 1.45 and the list", plan.WorstCaseUSD, plan.Partition)
+	}
+	found := false
+	for _, c := range fx.Calls {
+		if strings.HasPrefix(c, "sbatch --test-only") && strings.Contains(c, "--partition=spot,standard") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("test-only did not carry --partition=spot,standard: %v", fx.Calls)
+	}
+	if _, err := s.PrepareSubmit(ctx, SubmitInput{Script: strings.Replace(script, "spot,standard", "spot,nosuch", 1)}); err == nil || !strings.Contains(err.Error(), `"nosuch" does not exist`) {
+		t.Errorf("unknown list member not refused: %v", err)
+	}
+}

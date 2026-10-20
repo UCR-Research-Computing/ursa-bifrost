@@ -380,10 +380,12 @@ func Timeout(c Command) time.Duration {
 
 var (
 	rePartition = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
-	reJobName   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
-	reJobsDir   = regexp.MustCompile(`^bifrost-jobs/\d{8}-\d{6}-[a-z0-9-]{1,40}$`)
-	reComment   = regexp.MustCompile(`^bifrost:[0-9a-f]{12}$`)
-	reRelPath   = regexp.MustCompile(`^[A-Za-z0-9._+][A-Za-z0-9._+/ -]{0,250}$`) // no leading "-" (option injection)
+	// a Slurm partition list for sbatch -p: 1-4 valid names joined by commas, nothing else
+	rePartitionList = regexp.MustCompile(`^[a-z0-9_-]{1,32}(,[a-z0-9_-]{1,32}){0,3}$`)
+	reJobName       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+	reJobsDir       = regexp.MustCompile(`^bifrost-jobs/\d{8}-\d{6}-[a-z0-9-]{1,40}$`)
+	reComment       = regexp.MustCompile(`^bifrost:[0-9a-f]{12}$`)
+	reRelPath       = regexp.MustCompile(`^[A-Za-z0-9._+][A-Za-z0-9._+/ -]{0,250}$`) // no leading "-" (option injection)
 )
 
 // SubmitOpts are the resources bifrost enforces on the sbatch command line.
@@ -398,7 +400,7 @@ type SubmitOpts struct {
 }
 
 func (o SubmitOpts) validate() error {
-	if !rePartition.MatchString(o.Partition) {
+	if !rePartitionList.MatchString(o.Partition) {
 		return fmt.Errorf("partition %q is not a valid name", o.Partition)
 	}
 	if o.Nodes < 1 || o.Nodes > 1000 {

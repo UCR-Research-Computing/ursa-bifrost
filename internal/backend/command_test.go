@@ -137,6 +137,15 @@ func TestSubmitConstructorsValidate(t *testing.T) {
 		{Partition: "standard", Nodes: 1, TimeMin: 0, Comment: good.Comment},
 		{Partition: "standard", Nodes: 1, TimeMin: 30, JobName: "$(id)", Comment: good.Comment},
 		{Partition: "standard", Nodes: 1, TimeMin: 30, Comment: "free text"},
+		{Partition: "spot,", Nodes: 1, TimeMin: 30, Comment: good.Comment},
+		{Partition: ",spot", Nodes: 1, TimeMin: 30, Comment: good.Comment},
+		{Partition: "spot,std;id", Nodes: 1, TimeMin: 30, Comment: good.Comment},
+		{Partition: "a,b,c,d,e", Nodes: 1, TimeMin: 30, Comment: good.Comment},
+	}
+	list := good
+	list.Partition = "tpuspot,tpu"
+	if _, err := SbatchTestOnly(list, []byte("x")); err != nil {
+		t.Errorf("partition list refused: %v", err)
 	}
 	for _, o := range bad {
 		if _, err := SbatchTestOnly(o, []byte("x")); err == nil {

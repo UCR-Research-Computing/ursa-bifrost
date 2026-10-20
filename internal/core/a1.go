@@ -313,10 +313,18 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 			}
 		}
 	}
+	// A partition list (-p tpuspot,tpu) goes to sbatch as written; caps, node limits and
+	// the price use the dearest member (worst case).
+	slurmPart := part
+	checkPart, unknown := s.resolvePartitionList(cat, part)
+	for _, u := range unknown {
+		blocking = append(blocking, fmt.Sprintf("partition %q does not exist", u))
+	}
+	part = checkPart
 	cp, ok := cat.Partition(part)
-	if !ok {
+	if !ok && len(unknown) == 0 {
 		blocking = append(blocking, fmt.Sprintf("partition %q does not exist", part))
-	} else if s.partitionShared(ctx, part) && !coresAsked(req) {
+	} else if ok && s.partitionShared(ctx, part) && !coresAsked(req) {
 		// the same rule as script_check, against the partition the job will run on
 		// (an override can move a script onto a shared partition)
 		blocking = append(blocking, fmt.Sprintf("%s shares nodes between jobs and the script asks for no cores, so it would get 1 core; add #SBATCH --cpus-per-task=N (or --ntasks-per-node=N for MPI ranks), or --exclusive for the whole node", part))
@@ -385,7 +393,7 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 		slug = "job"
 	}
 	dir := s.Cfg.JobsRoot + "/" + stamp + "-" + slug
-	opts := subOpts{Partition: part, Nodes: nodes, TimeMin: mins, JobName: name}
+	opts := subOpts{Partition: slurmPart, Nodes: nodes, TimeMin: mins, JobName: name}
 	planHash := submitHash(dir, opts, scriptHash, inputsHash(inputs))
 	opts.Comment = "bifrost:" + planHash[:12]
 
@@ -422,7 +430,7 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 	}
 
 	*plan = SubmitPlan{Token: tok, ExpiresAt: exp.Format(time.RFC3339), PlanHash: planHash[:12],
-		Partition: part, Nodes: nodes, TimeLimit: minutesText(mins), JobName: name, RemoteDir: "~/" + dir,
+		Partition: slurmPart, Nodes: nodes, TimeLimit: minutesText(mins), JobName: name, RemoteDir: "~/" + dir,
 		ScriptBytes: len(in.Script), ScriptSHA256: scriptHash[:16], USDPerNodeH: price, WorstCaseUSD: worst,
 		SpentTodayUS: spent, DayCapUSD: caps.MaxCostPerDayUSD, Scheduler: plan.Scheduler,
 		Warnings: plan.Warnings, Overrides: plan.Overrides, Inputs: shownInputs(inputs),

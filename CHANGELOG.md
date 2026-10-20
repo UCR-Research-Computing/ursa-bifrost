@@ -5,6 +5,14 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.9.15 - 2026-10-20
+- Partition lists. `#SBATCH -p a,b` is legal Slurm (the job starts on whichever partition
+  has a node first) but `script_check` and `job_submit` looked the whole string up as one
+  name and refused it ("partition \"tpuspot,tpu\" does not exist"). Each member is now
+  checked; limits, the cost estimate and the per-job and day caps use the dearest member
+  (worst case); sbatch gets the list as written. The sbatch option validator accepts up to
+  four names joined by commas and still refuses anything else (`a,`, `,a`, `a;id`).
+
 ## v0.9.14 - 2026-10-05
 - Faster list reads (SPEC section 23). `jobs_list`, `my_usage`/`usage_report`,
   `waste_report(_all)` and `health`'s failure rate read accounting as plain text

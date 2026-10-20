@@ -775,3 +775,27 @@ func TestPartitionsCarryCPUNote(t *testing.T) {
 		t.Errorf("cpu notes: %v", got)
 	}
 }
+
+// Slurm takes a comma list of partitions (-p tpuspot,tpu) and starts the job on whichever has
+// a node first. script_check and submit used to look the whole string up as one name and
+// refuse it ("partition \"tpuspot,tpu\" does not exist", 2026-10-20).
+func TestScriptCheckPartitionList(t *testing.T) {
+	s, _ := newTestService(t)
+	ok := "#!/bin/bash\n#SBATCH -p spot,standard\n#SBATCH --exclusive\n#SBATCH -t 60\n#SBATCH --requeue\necho hi\n"
+	sc, err := s.ScriptCheck(context.Background(), ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(issues(sc), "does not exist") {
+		t.Fatalf("partition list refused: %s", issues(sc))
+	}
+	// cost is quoted for the most expensive listed partition (worst case): standard 1.45/h
+	if sc.EstCostUSD == nil || *sc.EstCostUSD != 1.45 {
+		t.Errorf("cost for spot,standard = %v, want 1.45 (the dearer one)", sc.EstCostUSD)
+	}
+	bad := "#!/bin/bash\n#SBATCH -p spot,nosuch\n#SBATCH --exclusive\n#SBATCH -t 60\necho hi\n"
+	sc, _ = s.ScriptCheck(context.Background(), bad)
+	if !strings.Contains(issues(sc), `partition "nosuch" does not exist`) {
+		t.Errorf("unknown member of a list not caught: %s", issues(sc))
+	}
+}

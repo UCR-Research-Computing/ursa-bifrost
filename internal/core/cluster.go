@@ -443,13 +443,25 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 	}
 	part := firstNonEmpty(sc.Request["partition"], cat.DefaultPartition())
 	sc.Partition = part
+	// A comma list (-p tpuspot,tpu) is legal Slurm: the job starts on whichever has a node
+	// first. Check every member exists, then run the checks below against the dearest one
+	// so limits and the cost estimate are the worst case.
+	part, unknown := s.resolvePartitionList(cat, part)
+	if len(unknown) == 0 && part != sc.Partition {
+		add("info", 0, "partition list %s: Slurm starts the job on whichever has a node first; checks and cost use %s (the dearest)", sc.Partition, part)
+	}
 	p, ok := cat.Partition(part)
-	if !ok {
+	if len(unknown) > 0 || !ok {
 		var names []string
 		for _, x := range cat.Partitions {
 			names = append(names, x.Name)
 		}
-		add("error", 0, "partition %q does not exist; partitions: %s", part, strings.Join(names, ", "))
+		if len(unknown) == 0 {
+			unknown = []string{part}
+		}
+		for _, u := range unknown {
+			add("error", 0, "partition %q does not exist; partitions: %s", u, strings.Join(names, ", "))
+		}
 	} else {
 		if sc.Request["partition"] == "" {
 			add("info", 0, "no partition given; Slurm will use the default (%s)", part)
@@ -827,4 +839,33 @@ func (s *Service) ModuleShow(ctx context.Context, name, mpi string) (*ModuleShow
 	}
 	res.Show = out
 	return res, nil
+}
+
+// resolvePartitionList splits a Slurm partition list ("a,b") and returns the member with the
+// highest node-hour price (the first when prices tie or are unknown), plus any names the
+// catalog does not have. A single name comes back unchanged.
+func (s *Service) resolvePartitionList(cat *Catalog, list string) (string, []string) {
+	if !strings.Contains(list, ",") {
+		return list, nil
+	}
+	var unknown []string
+	best, bestPrice := "", -1.0
+	for _, name := range strings.Split(list, ",") {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := cat.Partition(name); !ok {
+			unknown = append(unknown, name)
+			continue
+		}
+		pr, ok := s.price(cat, name)
+		if !ok {
+			pr = 0
+		}
+		if best == "" || pr > bestPrice {
+			best, bestPrice = name, pr
+		}
+	}
+	return best, unknown
 }
