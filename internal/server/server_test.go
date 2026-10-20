@@ -166,7 +166,7 @@ func newHarness(t *testing.T, usersYAML string) *harness {
 	_ = os.WriteFile(h.users, []byte(usersYAML), 0o600)
 	cfg := config.Default()
 	cfg.Backend = "iap"
-	cfg.IAP = config.IAPConfig{Project: "p", Zone: "us-central1-a", Instance: "login"}
+	cfg.IAP = config.IAPConfig{Project: "p", Zone: "us-central1-a", Instance: "login", HostKeys: []string{"ssh-ed25519 AAAAtest"}}
 	cfg.AuditPath = filepath.Join(dir, "audit.jsonl")
 	cfg.Server = config.ServerConfig{BaseURL: "http://placeholder", DataDir: filepath.Join(dir, "data"), UsersFile: h.users, GoogleClientID: "test-client.apps.googleusercontent.com"}
 	key := make([]byte, 32)
@@ -1220,5 +1220,42 @@ func TestHostedServicesShareGateAndCapInFlight(t *testing.T) {
 		if c.svc.Gate == nil || c.svc.Gate != h.s.gate {
 			t.Errorf("%s: not on the shared accounting gate", k)
 		}
+	}
+}
+
+// v0.9.16: rate limits key on the address Cloud Run appended (last XFF entry),
+// not on whatever the client put first.
+func TestClientIPUsesLastForwardedHop(t *testing.T) {
+	cases := map[string]string{
+		"203.0.113.7":                  "203.0.113.7",
+		"1.2.3.4, 203.0.113.7":         "203.0.113.7",
+		"spoof-a, spoof-b,203.0.113.7": "203.0.113.7",
+		"":                             "10.0.0.1:5555",
+	}
+	for xff, want := range cases {
+		r := httptest.NewRequest("POST", "/token", nil)
+		r.RemoteAddr = "10.0.0.1:5555"
+		if xff != "" {
+			r.Header.Set("X-Forwarded-For", xff)
+		}
+		if got := clientIP(r); got != want {
+			t.Errorf("XFF %q: clientIP = %q, want %q", xff, got, want)
+		}
+	}
+}
+
+// v0.9.16: the hosted server refuses to start without pinned host keys.
+func TestServerNeedsHostKeys(t *testing.T) {
+	dir := t.TempDir()
+	users := filepath.Join(dir, "users.yaml")
+	_ = os.WriteFile(users, []byte("domain: ucr.edu\nusers: []\n"), 0o600)
+	cfg := config.Default()
+	cfg.Backend = "iap"
+	cfg.IAP = config.IAPConfig{Project: "p", Zone: "z", Instance: "login"}
+	cfg.Server = config.ServerConfig{BaseURL: "http://x", DataDir: filepath.Join(dir, "data"), UsersFile: users, GoogleClientID: "c"}
+	key := make([]byte, 32)
+	_, err := New(cfg, nil, base64.StdEncoding.EncodeToString(key))
+	if err == nil || !strings.Contains(err.Error(), "host_keys is required") {
+		t.Fatalf("server started without host keys: %v", err)
 	}
 }

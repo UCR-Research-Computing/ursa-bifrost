@@ -71,6 +71,12 @@ func New(cfg config.Config, google *Google, secret string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cfg.Backend == "iap" && len(cfg.IAP.HostKeys) == 0 {
+		// v0.9.16: the hosted server must pin the login node's host keys; without
+		// them it would trust the first key it sees after every restart. (The
+		// laptop CLI keeps trust-on-first-use.)
+		return nil, fmt.Errorf("iap.host_keys is required for the hosted server (from /etc/ssh/ssh_host_*_key.pub on %s)", cfg.IAP.Instance)
+	}
 	sealer, err := NewSealer(secret)
 	if err != nil {
 		return nil, err
@@ -192,6 +198,7 @@ func (s *Server) conn(u *User, p *ProgramClient) *userConn {
 	svc.Shared = s.shared
 	svc.Gate = s.gate
 	svc.MaxInFlight = core.MaxInFlight
+	svc.StateSealer = s.store.s // A1 plans and ledger sealed at rest (v0.9.16)
 	if p != nil {
 		svc.Program = p.ID
 	}

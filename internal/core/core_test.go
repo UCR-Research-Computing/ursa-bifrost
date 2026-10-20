@@ -334,11 +334,30 @@ func issues(sc *ScriptCheck) string {
 }
 
 func TestSlurmMinutes(t *testing.T) {
-	cases := map[string]int{"30": 30, "1:00:00": 60, "04:30:00": 270, "1-00:00": 1440, "2-12": 3600, "1-01:30:00": 1530, "45:00": 45}
+	cases := map[string]int{"30": 30, "1:00:00": 60, "04:30:00": 270, "1-00:00": 1440, "2-12": 3600, "1-01:30:00": 1530, "45:00": 45,
+		// v0.9.16: seconds round up to the next minute
+		"0:45": 1, "1:00:30": 61, "1-00:00:30": 1441, "10:00": 10}
 	for in, want := range cases {
 		if got, ok := slurmMinutes(in); !ok || got != want {
 			t.Errorf("%s: %d %v (want %d)", in, got, ok, want)
 		}
+	}
+	// v0.9.16: not a time at all is refused, never read as 0 minutes
+	for _, bad := range []string{"1hour", "abc", "1:x", "-5", "1--2", "1:2:3:4", "1-2:3:4:5", ":", "1:", "2h30m", " 30"} {
+		if got, ok := slurmMinutes(bad); ok {
+			t.Errorf("%q parsed as %d minutes; want refused", bad, got)
+		}
+	}
+}
+
+func TestScriptCheckBadTimeWarns(t *testing.T) {
+	s, _ := newTestService(t, "R1", "R2")
+	sc, err := s.ScriptCheck(context.Background(), "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -c 2\n#SBATCH -t 1hour\necho hi\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(issues(sc), "no --time limit") || sc.EstCostUSD != nil {
+		t.Errorf("a malformed --time must warn and give no estimate: %s est=%v", issues(sc), sc.EstCostUSD)
 	}
 }
 

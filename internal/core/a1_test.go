@@ -595,3 +595,118 @@ func TestSubmitPartitionList(t *testing.T) {
 		t.Errorf("unknown list member not refused: %v", err)
 	}
 }
+
+// v0.9.16: an override partition gets the full static check against itself.
+func TestSubmitOverrideRechecksLimits(t *testing.T) {
+	s, fx := a1Service(t)
+	ctx := context.Background()
+	// 20 cores fit computehigh (22) but not standard (16)
+	script := "#!/bin/bash\n#SBATCH -p computehigh\n#SBATCH --exclusive\n#SBATCH -c 20\n#SBATCH -t 60\necho hi\n"
+	if _, err := s.PrepareSubmit(ctx, SubmitInput{Script: script}); err != nil {
+		t.Fatalf("baseline plan on computehigh: %v", err)
+	}
+	_, err := s.PrepareSubmit(ctx, SubmitInput{Script: script, Partition: "standard"})
+	if err == nil || !strings.Contains(err.Error(), "20 CPUs per node requested; standard") {
+		t.Errorf("override onto a smaller partition not re-checked: %v", err)
+	}
+	// GPUs requested, override onto a partition with none
+	gpu := "#!/bin/bash\n#SBATCH -p gpul4\n#SBATCH --gres=gpu:1\n#SBATCH -t 60\necho hi\n"
+	if _, err := s.PrepareSubmit(ctx, SubmitInput{Script: gpu, Partition: "highmem"}); err == nil || !strings.Contains(err.Error(), "GPUs requested on highmem") {
+		t.Errorf("GPU script moved to highmem not refused: %v", err)
+	}
+	// override onto a shared partition without a core request still refused, once
+	sh := sharedService(t)
+	plain := "#!/bin/bash\n#SBATCH -p highmem\n#SBATCH -t 60\necho hi\n"
+	_, err = sh.PrepareSubmit(ctx, SubmitInput{Script: plain, Partition: "standard"})
+	if err == nil || strings.Count(err.Error(), "shares nodes between jobs") != 1 {
+		t.Errorf("shared-partition override: want one shares-nodes error, got %v", err)
+	}
+	for _, c := range fx.Calls {
+		if strings.HasPrefix(c, "sbatch --parsable") {
+			t.Fatalf("a refused plan reached sbatch: %s", c)
+		}
+	}
+}
+
+func TestWithPartition(t *testing.T) {
+	cases := map[string]string{
+		"#!/bin/bash\n#SBATCH -p computehigh\necho":         "#SBATCH -p standard",
+		"#!/bin/bash\n#SBATCH --partition=gpul4 -t 5\necho": "#SBATCH --partition=standard -t 5",
+		"#!/bin/bash\n#SBATCH --partition gpul4\necho":      "#SBATCH --partition standard",
+		"#!/bin/bash\n#SBATCH -pgpul4\necho":                "#SBATCH -pstandard",
+		"#!/bin/bash\n#SBATCH -t 5\necho":                   "#SBATCH --partition=standard",
+	}
+	for in, want := range cases {
+		if got := withPartition(in, "standard"); !strings.Contains(got, want) || !strings.HasPrefix(got, "#!/bin/bash\n") {
+			t.Errorf("withPartition(%q) = %q, want it to contain %q", in, got, want)
+		}
+	}
+}
+
+// v0.9.16: plans prepared together cannot all be confirmed past max_submits_per_day.
+func TestSubmitCountRecheckedAtConfirm(t *testing.T) {
+	s, _ := a1Service(t)
+	s.Cfg.Caps.MaxSubmitsPerDay = 2
+	ctx := context.Background()
+	var toks []string
+	for i := 0; i < 3; i++ {
+		p, err := s.PrepareSubmit(ctx, SubmitInput{Script: goodScript})
+		if err != nil {
+			t.Fatal(err)
+		}
+		toks = append(toks, p.Token)
+	}
+	for i, tok := range toks {
+		_, err := s.ConfirmSubmit(ctx, tok)
+		if i < 2 && err != nil {
+			t.Fatalf("confirm %d: %v", i, err)
+		}
+		if i == 2 && (err == nil || !errors.Is(err, ErrCapExceeded) || !strings.Contains(err.Error(), "submissions today")) {
+			t.Fatalf("third confirm past a cap of 2: %v", err)
+		}
+	}
+}
+
+type testSealer struct{ seals int }
+
+func (ts *testSealer) Seal(label string, v any) ([]byte, error) {
+	ts.seals++
+	b, err := json.Marshal(v)
+	return append([]byte("SEALED:"+label+":"), b...), err
+}
+func (ts *testSealer) Open(label string, b []byte, v any) error {
+	p := "SEALED:" + label + ":"
+	if !strings.HasPrefix(string(b), p) {
+		return errors.New("bad seal")
+	}
+	return json.Unmarshal(b[len(p):], v)
+}
+
+// v0.9.16: with a sealer the A1 state is never written as plaintext, and an
+// older plaintext file is still read (then sealed on the next save).
+func TestA1StateSealed(t *testing.T) {
+	s, _ := a1Service(t)
+	ctx := context.Background()
+	// an old plaintext ledger with one entry
+	old := `{"pending":{},"ledger":[{"time":"` + s.Now().Format(time.RFC3339) + `","job_id":"1","worst_usd":5}]}`
+	if err := os.WriteFile(s.statePath(), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ts := &testSealer{}
+	s.StateSealer = ts
+	p, err := s.PrepareSubmit(ctx, SubmitInput{Script: goodScript})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(s.statePath())
+	if !strings.HasPrefix(string(b), "SEALED:a1-state:") || strings.Contains(string(b), "\n \"pending\"") {
+		t.Fatalf("state not sealed after save: %.60q", b)
+	}
+	if _, err := s.ConfirmSubmit(ctx, p.Token); err != nil {
+		t.Fatalf("confirm via sealed state: %v", err)
+	}
+	st, err := s.loadState()
+	if err != nil || len(st.Ledger) != 2 {
+		t.Fatalf("sealed ledger: %v entries=%d (want the old one + this job)", err, len(st.Ledger))
+	}
+}

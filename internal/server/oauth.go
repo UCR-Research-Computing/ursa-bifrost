@@ -129,9 +129,15 @@ func (a *authState) allowRate(key string, n int) bool {
 	return true
 }
 
+// clientIP is the address rate limits key on. Cloud Run's front end appends the
+// real client address as the LAST X-Forwarded-For entry; anything before it was
+// sent by the client and can be forged (v0.9.16, review finding).
 func clientIP(r *http.Request) string {
 	if f := r.Header.Get("X-Forwarded-For"); f != "" {
-		return strings.TrimSpace(strings.Split(f, ",")[0])
+		parts := strings.Split(f, ",")
+		if last := strings.TrimSpace(parts[len(parts)-1]); last != "" {
+			return last
+		}
 	}
 	return r.RemoteAddr
 }

@@ -29,12 +29,19 @@ two working days and to ship a fix for confirmed issues within a week.
 ## Design notes for reviewers
 
 - No tool runs arbitrary shell; `TestAllowListIsClosed` pins the command list.
-- `scripts/mutation_check.sh` disables each of 116 guards in turn and requires a test
+- `scripts/mutation_check.sh` disables each of 215 guards in turn and requires a test
   to fail.
 - Text from users and programs is returned in `untrusted` blocks.
 - The hosted server is deployed `--allow-unauthenticated` on Cloud Run: all access
   control is in `internal/server` (OAuth 2.1, PKCE, Google ID token checks, users file
   re-read per request). See [docs/CLOUD_PLAN.md](docs/CLOUD_PLAN.md).
+- Sessions, OS Login keys and the A1 state (plans, tokens, spend ledger) are sealed with
+  AES-256-GCM in the data bucket. The hosted server requires pinned login-node host keys.
+- Known and accepted: the hosted server asks each user for the Google `cloud-platform`
+  scope, because the IAP tunnel and OS Login key APIs need it; there is no narrower scope
+  for them. The refresh token is sealed and used only for those two calls, but it carries
+  whatever GCP rights the user has, so a compromise of the server's sealing key would expose
+  them. Project admins can keep their own accounts off the hosted server and use the CLI.
 
 ## Supported versions
 

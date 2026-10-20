@@ -683,26 +683,60 @@ func slurmMinutes(s string) (int, bool) {
 	if s == "infinite" || s == "UNLIMITED" {
 		return 0, false
 	}
-	days := 0
-	if d, rest, ok := strings.Cut(s, "-"); ok {
-		days = atoiDefault(d, 0)
-		s = rest
-		p := strings.Split(s, ":")
-		h := atoiDefault(p[0], 0)
-		m := 0
-		if len(p) > 1 {
-			m = atoiDefault(p[1], 0)
+	// Slurm forms: M, M:S, H:M:S, D-H, D-H:M, D-H:M:S. Every field must be a
+	// non-negative integer; anything else ("1hour") is not a time (v0.9.16:
+	// it used to read as 0 minutes, which hid the no-limit warning and priced
+	// the job at $0). Seconds round up to the next minute.
+	num := func(f string) (int, bool) {
+		if f == "" {
+			return 0, false
 		}
-		return days*1440 + h*60 + m, true
+		for _, c := range f {
+			if c < '0' || c > '9' {
+				return 0, false
+			}
+		}
+		v, err := strconv.Atoi(f)
+		return v, err == nil
+	}
+	up := func(sec int) int {
+		if sec > 0 {
+			return 1
+		}
+		return 0
+	}
+	if d, rest, isDay := strings.Cut(s, "-"); isDay {
+		days, ok := num(d)
+		if !ok {
+			return 0, false
+		}
+		p := strings.Split(rest, ":")
+		if len(p) > 3 {
+			return 0, false
+		}
+		v := make([]int, 3)
+		for i, f := range p {
+			if v[i], ok = num(f); !ok {
+				return 0, false
+			}
+		}
+		return days*1440 + v[0]*60 + v[1] + up(v[2]), true
 	}
 	p := strings.Split(s, ":")
+	v := make([]int, len(p))
+	for i, f := range p {
+		var ok bool
+		if v[i], ok = num(f); !ok {
+			return 0, false
+		}
+	}
 	switch len(p) {
 	case 1:
-		return atoiDefault(p[0], 0), true
-	case 2:
-		return atoiDefault(p[0], 0), true
-	case 3:
-		return atoiDefault(p[0], 0)*60 + atoiDefault(p[1], 0), true
+		return v[0], true
+	case 2: // M:S
+		return v[0] + up(v[1]), true
+	case 3: // H:M:S
+		return v[0]*60 + v[1] + up(v[2]), true
 	}
 	return 0, false
 }

@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (Draft 7; built through bifrost v0.9.15 and ursa-agent 0.4.3) |
-| Status | bifrost v0.9.15, ursa-agent 0.4.3 (live: 0.4.2 until the next agent deploy), 2026-10-20 (spec Draft 7). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23 and docs/CLOUD_PLAN.md record what was built (22 is planned); open questions left in section 15. |
+| Document | Specification and design (Draft 7; built through bifrost v0.9.16 and ursa-agent 0.4.3) |
+| Status | bifrost v0.9.16, ursa-agent 0.4.3 (live: 0.4.2 until the next agent deploy), 2026-10-20 (spec Draft 7). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23 and docs/CLOUD_PLAN.md record what was built (22 is planned); open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -397,8 +397,9 @@ caps: {max_nodes: 4, max_hours: 24, max_cost_usd_per_job: 25, max_cost_usd_per_d
        max_submits_per_day: 20, confirm_ttl_minutes: 10}
 cache_ttl: {queue: 20s, nodes: 30s, acct: 60s, catalog: 1h, modules: 1h}
 limits: {log_lines: 200, list_rows: 200, script_bytes: 65536, untrusted_chars: 16000, calls_per_min: 60}
+  # log_lines: config init writes 200; with no limits block the built-in default is 1000
 audit_path: ~/.local/share/ursa-bifrost/audit.jsonl
-state_path: ~/.local/share/ursa-bifrost/a1.json   # A1 plans, tokens, spend ledger (0600)
+state_path: ~/.local/share/ursa-bifrost/a1.json   # A1 plans, tokens, spend ledger (0600; sealed on the hosted server)
 results_dir: ~/ursa-results                       # laptop downloads
 jobs_root: bifrost-jobs                           # submitted jobs run in ~/bifrost-jobs/<stamp>-<name>
 ```
@@ -411,7 +412,7 @@ Hosted server (`bifrost serve`, Cloud Run; secret `bifrost-config`) adds:
 ```yaml
 backend: iap
 iap: {project: ucr-ursa-major-hpc-cluster, zone: us-central1-a, instance: ucrslurmcl-slurm-login-001,
-      host_keys: [...]}      # pinned login-node host keys
+      host_keys: [...]}      # pinned login-node host keys (required by `serve` since v0.9.16)
 server:
   base_url: https://bifrost-mcp-125853442225.us-central1.run.app
   data_dir: /data            # sealed sessions, SSH keys, per-user ledgers (Cloud Storage volume)
@@ -437,9 +438,10 @@ retention settings.
 - ursa-agent (C4, v0.6.0; dashboard since ursa-agent 0.3.0, section 20): a Gemini agent with
   a chat page and A2A, acting as the signed-in person through bifrost; approvals enforced in
   its code (docs/CLOUD_PLAN.md 2.6). Its web page is a read-only cluster dashboard.
-- deep-research: uses its own SSH path today; moving its Lab cluster calls onto bifrost is
-  decided (Q14) and under way per the migration plan (R1-R3 next). Its warm worker is replaced
-  by the `lab` partition (section 19). Since v0.52.1 its jobs ask for cores on shared partitions.
+- deep-research: its Lab cluster calls go through bifrost (R2, v0.55.0; program client
+  `bifrost-deep-research`). The `lab` partition that replaced its warm worker (section 19) was
+  removed on 2026-10-03; pilots run on `check`, runs on `standard`. Since v0.52.1 its jobs ask
+  for cores on shared partitions.
 - work-watch: optional event alerts, not built (Q15).
 - ServiceNow: `ticket_draft` output is pasted or attached by staff; bifrost never writes to
   ServiceNow.
@@ -1126,6 +1128,7 @@ The remaining seconds are the SSH round trip and the catalog read, not sacct.
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-20 | v0.9.16 | Review fixes (25 adversarial reviews, 5 models x 5 lenses, each finding checked against the code): override partition gets the full static check; max_submits_per_day re-checked at confirm; non-Slurm time strings refused instead of read as 0 min, seconds round up; OAuth rate limits key on the last X-Forwarded-For hop; A1 state sealed (AES-GCM) on the hosted server; `serve` requires iap.host_keys. 7 new mutation guards |
 | 2026-10-20 | agent 0.4.3 | ursa-agent A2A card: top-level `url`, `protocolVersion` and `preferredTransport` (A2A 0.3 fields) were missing because the card listed only a 1.0 interface and the SDK adds the 0.3 fields only for a 0.3 one. The card lists the same JSON-RPC endpoint for 1.0 and 0.3 and keeps the trailing slash (`/a2a/`; `/a2a` redirected). Test asserts url, protocolVersion, skills and the bifrost bearer scheme. No other behaviour change |
 | 2026-10-20 | v0.9.15 | Partition lists: `#SBATCH -p a,b` (Slurm starts the job on whichever partition has a node first) was refused as one unknown name. script_check and job_submit now check each member; limits, the cost estimate and the per-job and day caps use the dearest member (worst case); sbatch gets the list as written. The sbatch option validator accepts up to four comma-joined names and still refuses `a,`, `,a`, `a;id`. Prompted by the cluster's Spot TPU partition (`tpuspot` next to `tpu`) |
 | 2026-10-05 | v0.9.14 | Section 23: list-type accounting reads (jobs_list, my_usage/usage_report, waste_report, health) use plain-text `sacct -P` instead of `--json` (7 days: 19.6 s to 0.2 s, same numbers); storage_usage sizes folders 8 at a time within 40 s (100 s to about 26 s, far fewer unknown); `job_show include_script` explains a missing script (the cluster stores none) |

@@ -44,6 +44,10 @@ type Service struct {
 	// Gate caps work across everyone on the hosted server (accounting runs);
 	// nil = no cap (CLI, local).
 	Gate *Gate
+	// StateSealer, when set (hosted server), encrypts the A1 state file (plans,
+	// tokens, spend ledger) at rest like sessions and keys (v0.9.16). Older
+	// plaintext files are still read and are sealed on the next save.
+	StateSealer StateSealer
 	// MaxInFlight caps this Service's calls running at once (0 = no cap; the
 	// hosted server sets core.MaxInFlight).
 	MaxInFlight int
@@ -483,4 +487,10 @@ func round(v float64, places int) float64 {
 		return float64(int64(v*p+0.5)) / p
 	}
 	return float64(int64(v*p-0.5)) / p
+}
+
+// StateSealer encrypts small records bound to a label (server.Sealer).
+type StateSealer interface {
+	Seal(label string, v any) ([]byte, error)
+	Open(label string, b []byte, v any) error
 }

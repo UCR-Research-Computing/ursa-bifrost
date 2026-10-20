@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -167,6 +168,9 @@ func (l *stateLock) unlock() {
 	stateMu.Unlock()
 }
 
+// stateLabel binds the sealed A1 state so it cannot be swapped with another record kind.
+const stateLabel = "a1-state"
+
 func (s *Service) statePath() string { return config.Expand(s.Cfg.StatePath) }
 
 func (s *Service) loadState() (*a1State, error) {
@@ -178,7 +182,11 @@ func (s *Service) loadState() (*a1State, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(b, st); err != nil {
+	if s.StateSealer != nil && !bytes.HasPrefix(bytes.TrimSpace(b), []byte("{")) {
+		if err := s.StateSealer.Open(stateLabel, b, st); err != nil {
+			return nil, fmt.Errorf("A1 state file %s: %w", s.statePath(), err)
+		}
+	} else if err := json.Unmarshal(b, st); err != nil { // plaintext: CLI, or a pre-0.9.16 server file
 		return nil, fmt.Errorf("A1 state file %s is corrupt: %w", s.statePath(), err)
 	}
 	if st.Pending == nil {
@@ -202,7 +210,13 @@ func (s *Service) saveState(st *a1State) error {
 		}
 	}
 	st.Ledger = keep
-	b, err := json.MarshalIndent(st, "", " ")
+	var b []byte
+	var err error
+	if s.StateSealer != nil {
+		b, err = s.StateSealer.Seal(stateLabel, st)
+	} else {
+		b, err = json.MarshalIndent(st, "", " ")
+	}
 	if err != nil {
 		return err
 	}
@@ -270,6 +284,18 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 	if err != nil {
 		return nil, err
 	}
+	if in.Partition != "" && in.Partition != sc.Request["partition"] {
+		// v0.9.16: an override partition gets the full static check (cores, memory,
+		// GPUs, MaxTime, sharing) against itself, not a filtered copy of the
+		// original partition's issues. The rewritten script is used only for
+		// checking; sbatch still gets --partition from the plan.
+		osc, err := s.ScriptCheck(ctx, withPartition(in.Script, in.Partition))
+		if err != nil {
+			return nil, err
+		}
+		osc.Request["partition"] = sc.Request["partition"] // keep the script's own value for the override note
+		sc = osc
+	}
 	req := sc.Request
 	plan := &SubmitPlan{Warnings: []string{}, Overrides: []string{}}
 
@@ -303,8 +329,8 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 	for _, is := range sc.Issues {
 		switch is.Severity {
 		case "error":
-			if in.Partition != "" && (strings.Contains(is.Message, "partition") || strings.Contains(is.Message, "shares nodes between jobs")) {
-				continue // re-checked below against the override
+			if in.Partition != "" && strings.Contains(is.Message, "does not exist") {
+				continue // the partition list is resolved (and reported) below
 			}
 			blocking = append(blocking, is.Message)
 		case "warning":
@@ -324,13 +350,21 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 	cp, ok := cat.Partition(part)
 	if !ok && len(unknown) == 0 {
 		blocking = append(blocking, fmt.Sprintf("partition %q does not exist", part))
-	} else if ok && s.partitionShared(ctx, part) && !coresAsked(req) {
+	} else if ok && s.partitionShared(ctx, part) && !coresAsked(req) && !sharedRuleReported(blocking) {
 		// the same rule as script_check, against the partition the job will run on
 		// (an override can move a script onto a shared partition)
 		blocking = append(blocking, fmt.Sprintf("%s shares nodes between jobs and the script asks for no cores, so it would get 1 core; add #SBATCH --cpus-per-task=N (or --ntasks-per-node=N for MPI ranks), or --exclusive for the whole node", part))
 	}
 	if len(blocking) > 0 {
-		return nil, fmt.Errorf("script_check found errors; fix them first: %s", strings.Join(blocking, "; "))
+		seen := map[string]bool{}
+		uniq := blocking[:0]
+		for _, b := range blocking {
+			if !seen[b] {
+				seen[b] = true
+				uniq = append(uniq, b)
+			}
+		}
+		return nil, fmt.Errorf("script_check found errors; fix them first: %s", strings.Join(uniq, "; "))
 	}
 
 	// caps
@@ -580,11 +614,17 @@ func (s *Service) ConfirmSubmit(ctx context.Context, tok string) (*Confirmed, er
 		_ = s.saveState(st)
 		return nil, errors.New("stored plan does not match its hash; refusing")
 	}
-	// re-check the day cap at confirm time (another submit may have landed)
-	spent, _ := s.committedToday(st)
+	// re-check the day caps at confirm time (another submit may have landed):
+	// dollars, and the submission count (v0.9.16: plans prepared together could
+	// all be confirmed past max_submits_per_day, since only confirms enter the ledger)
+	spent, n := s.committedToday(st)
 	if spent+p.WorstUSD > s.Cfg.Caps.MaxCostPerDayUSD {
 		_ = s.saveState(st)
 		return nil, fmt.Errorf("%w: day cap reached since the plan was made ($%.2f committed)", ErrCapExceeded, spent)
+	}
+	if s.Cfg.Caps.MaxSubmitsPerDay > 0 && n >= s.Cfg.Caps.MaxSubmitsPerDay {
+		_ = s.saveState(st)
+		return nil, fmt.Errorf("%w: %d submissions today since the plan was made (cap %d)", ErrCapExceeded, n, s.Cfg.Caps.MaxSubmitsPerDay)
 	}
 	script, err := s.withInputs(ctx, p.Script, p.Inputs)
 	if err != nil {
@@ -781,4 +821,48 @@ func (s *Service) invalidateQueue() {
 			delete(s.cache, k)
 		}
 	}
+}
+
+// withPartition returns script with its partition set to part: an existing
+// #SBATCH -p/--partition line is replaced, else one is added after the shebang.
+// Used only to run the static check against an override partition.
+func withPartition(script, part string) string {
+	lines := strings.Split(script, "\n")
+	for i, ln := range lines {
+		t := strings.TrimSpace(ln)
+		if m := reSbatch.FindStringSubmatch(t); m != nil {
+			f := strings.Fields(m[1])
+			for j := 0; j < len(f); j++ {
+				switch {
+				case f[j] == "-p" || f[j] == "--partition":
+					if j+1 < len(f) {
+						f[j+1] = part
+					}
+				case strings.HasPrefix(f[j], "--partition="):
+					f[j] = "--partition=" + part
+				case strings.HasPrefix(f[j], "-p") && len(f[j]) > 2:
+					f[j] = "-p" + part
+				default:
+					continue
+				}
+				lines[i] = "#SBATCH " + strings.Join(f, " ")
+				return strings.Join(lines, "\n")
+			}
+		}
+	}
+	if len(lines) > 0 && strings.HasPrefix(lines[0], "#!") {
+		return lines[0] + "\n#SBATCH --partition=" + part + "\n" + strings.Join(lines[1:], "\n")
+	}
+	return "#SBATCH --partition=" + part + "\n" + script
+}
+
+// sharedRuleReported is true when the static check already refused the script
+// for asking no cores on a shared partition (so the plan does not say it twice).
+func sharedRuleReported(blocking []string) bool {
+	for _, b := range blocking {
+		if strings.Contains(b, "shares nodes between jobs") {
+			return true
+		}
+	}
+	return false
 }

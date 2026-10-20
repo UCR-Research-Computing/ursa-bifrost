@@ -26,6 +26,22 @@ EOF
   if go test -count=1 ./... >/dev/null 2>&1; then echo "SURVIVED  $name"; FAIL=1; else echo "killed    $name"; fi
   restore
 }
+mutate2() { # name file old1 new1 old2 new2: two mutations in one file at once
+  local name=$1 file=$2
+  case "$name" in "${ONLY:-}"*) ;; *) return;; esac
+  if python3 -c '
+import sys
+p, o1, n1, o2, n2 = sys.argv[1:]
+t = open(p).read()
+for o, n in ((o1, n1), (o2, n2)):
+    assert t.count(o) == 1, "pattern not unique in %s: %r" % (p, o)
+    t = t.replace(o, n)
+open(p, "w").write(t)
+' "$file" "$3" "$4" "$5" "$6"
+  then :; else echo "BROKEN    $name (pattern did not apply; nothing was tested)"; FAIL=1; restore; return; fi
+  if go test -count=1 ./... >/dev/null 2>&1; then echo "SURVIVED  $name"; FAIL=1; else echo "killed    $name"; fi
+  restore
+}
 FAIL=0
 mutate "tier check"        internal/policy/audit.go   'if t == tier {' 'if true {'
 mutate "owner check"       internal/core/jobs.go      'if owner != me && !in.AnyUser {' 'if false {'
@@ -170,7 +186,9 @@ mutate "v072 jobs_list config cap"       internal/core/jobs.go '	if limit > s.Cf
 	}
 	var qc' '	var qc'
 mutate "v080 no-core error on shared"   internal/core/cluster.go '		if shared && !cr.CoresAsked {' '		if false {'
-mutate "v080 submit re-checks override"  internal/core/a1.go '	} else if s.partitionShared(ctx, part) && !coresAsked(req) {' '	} else if false {'
+# v080's explicit shared-cores re-check is now backed up by v0.9.16's full static
+# check of the override; the guard disables both, so the pair is what is proven.
+mutate2 "v080 submit re-checks override"  internal/core/a1.go '	} else if ok && s.partitionShared(ctx, part) && !coresAsked(req) && !sharedRuleReported(blocking) {' '	} else if false {' '	if in.Partition != "" && in.Partition != sc.Request["partition"] {' '	if false {'
 mutate "v080 shared price share"         internal/core/a1.go '		share = coreRequest(req, cp, true).NodeShare' '		share = 1'
 mutate "v080 exclusive pays the node"    internal/core/shared.go '	if r.Exclusive || !shared {' '	if !shared {'
 mutate "v080 memory share counts"        internal/core/shared.go '		if m := float64(mem) / float64(nodeMemMB); m > share {' '		if m := 0.0; m > share {'
@@ -343,6 +361,16 @@ mutate "v0914 user validated"      internal/backend/command.go '	if err := Valid
 mutate "v0914 script note"         internal/core/jobs.go '				d.ScriptNote = "Slurm did not store' '				_ = "Slurm did not store'
 mutate "v0914 du parallel"         internal/backend/files.go 'xargs -0 -r -P 8 -n 1' 'xargs -0 -r -P 1 -n 1'
 mutate "v0914 du budget"           internal/backend/files.go 'end=$(( $(date +%s) + 40 ))' 'end=$(( $(date +%s) + 100 ))'
+# v0.9.16 review fixes
+mutate "v0916 override full check"     internal/core/a1.go '	if in.Partition != "" && in.Partition != sc.Request["partition"] {' '	if false {'
+mutate "v0916 confirm submit count"    internal/core/a1.go '	if s.Cfg.Caps.MaxSubmitsPerDay > 0 && n >= s.Cfg.Caps.MaxSubmitsPerDay {' '	if false {'
+mutate "v0916 time refuses junk"       internal/core/cluster.go '			if c < '"'"'0'"'"' || c > '"'"'9'"'"' {' '			if false {'
+mutate "v0916 seconds round up"        internal/core/cluster.go '		return v[0] + up(v[1]), true' '		return v[0], true'
+mutate "v0916 xff last hop"            internal/server/oauth.go '		if last := strings.TrimSpace(parts[len(parts)-1]); last != "" {' '		if last := strings.TrimSpace(parts[0]); last != "" {'
+mutate "v0916 host keys required"      internal/server/server.go '	if cfg.Backend == "iap" && len(cfg.IAP.HostKeys) == 0 {' '	if false {'
+mutate "v0916 state sealed"            internal/core/a1.go '	if s.StateSealer != nil {
+		b, err = s.StateSealer.Seal(stateLabel, st)' '	if false {
+		b, err = s.StateSealer.Seal(stateLabel, st)'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

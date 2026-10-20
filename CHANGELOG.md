@@ -5,6 +5,27 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.9.16 - 2026-10-20
+Fixes from a 25-review adversarial pass (5 models x 5 lenses), each confirmed against the
+code before fixing.
+- `job_submit` with an override partition now runs the full static check against that
+  partition (cores, memory, GPUs, MaxTime, sharing). Before, any check error mentioning
+  "partition" was dropped and only existence and the shared-cores rule were re-checked, so
+  a 20-core script moved onto a 16-core partition planned cleanly.
+- `max_submits_per_day` is re-checked at confirm time. Plans prepared together could all be
+  confirmed past the count (only confirms enter the ledger); the dollar cap already held.
+- Time limits that are not Slurm times (`1hour`, `2h30m`) are no longer read as 0 minutes,
+  which hid the "no --time limit" warning and priced the job at $0. Seconds now round up
+  (`0:45` is 1 minute).
+- OAuth rate limits (`/register`, `/token`) key on the last `X-Forwarded-For` entry (the
+  address Cloud Run's front end appends) instead of the first, which the client controls.
+- The A1 state file (pending plans, tokens, spend ledger) is sealed with AES-256-GCM on the
+  hosted server, like sessions and keys. Existing plaintext files are read and sealed on the
+  next save. The laptop CLI is unchanged.
+- `bifrost serve` refuses to start without `iap.host_keys`; the hosted server no longer
+  falls back to trusting the first host key it sees after a restart. (Production already
+  pins both keys.)
+
 ## agent-v0.4.3 - 2026-10-20
 - ursa-agent's public A2A card (`/a2a/.well-known/agent-card.json`) carries the A2A 0.3
   fields again: top-level `url`, `protocolVersion` and `preferredTransport`, and the 0.3
