@@ -247,11 +247,13 @@ func (h *harness) signIn(email, hd string) (map[string]any, error) {
 	next := resp.Header.Get("Location")
 	h.sawPage = resp.StatusCode == 200
 	if h.sawPage {
-		i := strings.Index(string(page), `href="`)
+		const mark = `class="b" href="`
+		i := strings.Index(string(page), mark)
 		if i < 0 {
 			return nil, fmt.Errorf("authorize: %d %s", resp.StatusCode, page)
 		}
-		next = html.UnescapeString(string(page[i+6 : i+6+strings.Index(string(page[i+6:]), `"`)]))
+		i += len(mark)
+		next = html.UnescapeString(string(page[i : i+strings.Index(string(page[i:]), `"`)]))
 	}
 	// follow Google <-> bifrost hops until the redirect back to the client
 	var final *url.URL

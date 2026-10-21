@@ -369,32 +369,24 @@ func (s *Server) googleURL(p pendingAuth, consent bool) string {
 	return s.google.AuthURL + "?" + v.Encode()
 }
 
-var consentTmpl = template.Must(template.New("c").Parse(`<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>ursa-bifrost sign-in</title>
-<style>body{font-family:system-ui,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1rem;line-height:1.5}
-a.b{display:inline-block;background:#1a73e8;color:#fff;padding:.6rem 1.2rem;border-radius:6px;text-decoration:none}
-code{background:#f3f3f3;padding:0 .3rem}</style></head><body>
-<h1>Sign in to ursa-bifrost</h1>
-<p><b>{{.Client}}</b> wants to use the Ursa Major HPC cluster <b>as you</b>.</p>
-<p>You will sign in with your {{.Domain}} Google account. Google will ask to let ursa-bifrost
-"see, edit, configure and delete your Google Cloud data". bifrost needs that only to open an
+var consentBody = template.Must(template.New("c").Parse(`<p><b>{{.Client}}</b> wants to use the Ursa Major HPC cluster <b>as you</b>.</p>
+<p>You will sign in with your {{.Domain}} Google account. Google will ask to let Ursa Major
+"see, edit, configure and delete your Google Cloud data". It needs that only to open an
 IAP tunnel to the cluster login node and add a short-lived SSH key to your OS Login profile;
 it does nothing else with it. Your Google token stays on the server, encrypted, and is deleted
 when you sign out.</p>
-<p>Everything still runs as your own cluster account, limited to what you can already do with
+<p class="n">Everything still runs as your own cluster account, limited to what you can already do with
 <code>gcloud compute ssh</code>.</p>
-<p><a class="b" href="{{.URL}}">Continue with Google</a></p></body></html>`))
+<p><a class="b" href="{{.URL}}">Continue with Google</a></p>`))
 
 func (s *Server) consentPage(w http.ResponseWriter, c *client, googleURL string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
 	name := c.Name
 	if name == "" {
 		name = "An MCP client"
 	}
-	_ = consentTmpl.Execute(w, map[string]string{"Client": name, "Domain": s.users.Domain(), "URL": googleURL})
+	var b strings.Builder
+	_ = consentBody.Execute(&b, map[string]string{"Client": name, "Domain": s.users.Domain(), "URL": googleURL})
+	rcPage(w, 200, "Ursa Major", "Sign in to Ursa Major", template.HTML(b.String()), false) //nolint:gosec // built by html/template above
 }
 
 // ---- Google callback -------------------------------------------------------------

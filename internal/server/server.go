@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"os"
@@ -288,7 +289,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", health)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
+			if wantsHTML(r) {
+				rcPage(w, 404, "Ursa Major", "Page not found", template.HTML(`<p>There is no page here.</p>`), true)
+				return
+			}
 			http.NotFound(w, r)
+			return
+		}
+		if wantsHTML(r) {
+			body := template.HTML(`<p>This is the MCP server for <b>Ursa Major</b>, UCR Research Computing's HPC cluster. ` + //nolint:gosec // escaped below
+				`It lets an AI app (Claude, ChatGPT, Gemini, Hermes) check and run jobs on the cluster <b>as you</b>.</p>` +
+				`<p>Add this address to your AI app as an MCP server:</p><p><code>` + template.HTMLEscapeString(s.base) + `/mcp</code></p>` +
+				`<p>It signs you in with your ` + template.HTMLEscapeString(s.users.Domain()) + ` Google account. Only people on the Ursa Major user list can sign in.</p>` +
+				`<p class="n">Version ` + template.HTMLEscapeString(version.Version) + `.</p>`)
+			rcPage(w, 200, "Ursa Major", "Ursa Major MCP server", body, false)
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
