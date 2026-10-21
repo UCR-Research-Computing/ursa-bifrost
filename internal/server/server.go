@@ -301,6 +301,8 @@ func (s *Server) Handler() http.Handler {
 				`It lets an AI app (Claude, ChatGPT, Gemini, Hermes) check and run jobs on the cluster <b>as you</b>.</p>` +
 				`<p>Add this address to your AI app as an MCP server:</p><p><code>` + template.HTMLEscapeString(s.base) + `/mcp</code></p>` +
 				`<p>It signs you in with your ` + template.HTMLEscapeString(s.users.Domain()) + ` Google account. Only people on the Ursa Major user list can sign in.</p>` +
+				`<p>Prefer a web page? The <a href="https://ursa-agent-125853442225.us-central1.run.app/">Ursa Major dashboard</a> shows your jobs, costs and storage, and <a href="` + atriumURL + `">Atrium</a> shows Ursa next to your cloud, AI keys and Nautilus. ` +
+				`New to the cluster? Read <a href="https://ucr-research-computing.github.io/services/ursa-major/">about Ursa Major</a>.</p>` +
 				`<p class="n">Version ` + template.HTMLEscapeString(version.Version) + `.</p>`)
 			rcPage(w, 200, "Ursa Major", "Ursa Major MCP server", body, false)
 			return

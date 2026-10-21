@@ -116,7 +116,7 @@ type scriptIn struct {
 type usageIn struct {
 	Since   string `json:"since,omitempty" jsonschema:"start: now-30days (default), now-7days or YYYY-MM-DD"`
 	Until   string `json:"until,omitempty" jsonschema:"end (default now)"`
-	GroupBy string `json:"group_by,omitempty" jsonschema:"partition (default), state or user"`
+	GroupBy string `json:"group_by,omitempty" jsonschema:"partition (default), state, user or day (UTC day the job ended; oldest first)"`
 }
 
 type usageAllIn struct {
@@ -369,7 +369,7 @@ func New(s *core.Service) *mcp.Server {
 		})
 
 	mcp.AddTool(srv, addR1("my_usage", "My usage",
-		"The caller's usage over a period: jobs, failures, node-hours, core-hours, GPU-hours, CPU efficiency and estimated cost, grouped by partition, state or user."),
+		"The caller's usage over a period: jobs, failures, node-hours, core-hours, GPU-hours, CPU efficiency and estimated cost, grouped by partition, state, user or day."),
 		func(ctx context.Context, req *mcp.CallToolRequest, in usageIn) (*mcp.CallToolResult, envelope, error) {
 			r, err := core.Call(ctx, s, clientName(req), "my_usage", "R1", argsOf(in), true, func(ctx context.Context) (*core.Usage, error) {
 				return s.Usage(ctx, core.UsageInput{Since: in.Since, Until: in.Until, GroupBy: in.GroupBy})

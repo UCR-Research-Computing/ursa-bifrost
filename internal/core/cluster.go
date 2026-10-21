@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/backend"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/slurm"
@@ -226,8 +227,8 @@ func (s *Service) Usage(ctx context.Context, in UsageInput) (*Usage, error) {
 	if in.GroupBy == "" {
 		in.GroupBy = "partition"
 	}
-	if in.GroupBy != "partition" && in.GroupBy != "user" && in.GroupBy != "state" {
-		return nil, fmt.Errorf("group_by must be partition, user or state")
+	if in.GroupBy != "partition" && in.GroupBy != "user" && in.GroupBy != "state" && in.GroupBy != "day" {
+		return nil, fmt.Errorf("group_by must be partition, user, state or day")
 	}
 	var c backend.Command
 	var err error
@@ -262,6 +263,8 @@ func (s *Service) Usage(ctx context.Context, in UsageInput) (*Usage, error) {
 			key = j.User
 		case "state":
 			key = j.StateName()
+		case "day": // the UTC day the job ended (else started, else was submitted)
+			key = jobDay(j)
 		}
 		r := rows[key]
 		if r == nil {
@@ -314,7 +317,11 @@ func (s *Service) Usage(ctx context.Context, in UsageInput) (*Usage, error) {
 	for _, r := range rows {
 		u.Rows = append(u.Rows, finish(r))
 	}
-	sort.Slice(u.Rows, func(i, j int) bool { return u.Rows[i].NodeHours > u.Rows[j].NodeHours })
+	if in.GroupBy == "day" { // a time series reads oldest first
+		sort.Slice(u.Rows, func(i, j int) bool { return u.Rows[i].Key < u.Rows[j].Key })
+	} else {
+		sort.Slice(u.Rows, func(i, j int) bool { return u.Rows[i].NodeHours > u.Rows[j].NodeHours })
+	}
 	u.Total = finish(tot)
 	if u.Rows == nil {
 		u.Rows = []UsageRow{}
@@ -332,6 +339,17 @@ func (s *Service) Usage(ctx context.Context, in UsageInput) (*Usage, error) {
 		u.Notes = append(u.Notes, "Dollar figures hidden (show_cost: false).")
 	}
 	return u, nil
+}
+
+// jobDay is the UTC date (YYYY-MM-DD) a job is counted on in group_by=day: when it
+// ended, else when it started, else when it was submitted ("unknown" if none is set).
+func jobDay(j slurm.AcctJob) string {
+	for _, t := range []int64{j.Time.End, j.Time.Start, j.Time.Submission} {
+		if t > 0 {
+			return time.Unix(t, 0).UTC().Format("2006-01-02")
+		}
+	}
+	return "unknown"
 }
 
 func fin(r *UsageRow, showCost bool) {

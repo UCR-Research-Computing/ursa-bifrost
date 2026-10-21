@@ -15,11 +15,14 @@ const rcCSS = `body{margin:0;font-family:'Fira Sans','Helvetica Neue',Arial,sans
 var rcTmpl = template.Must(template.New("rc").Parse(`<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#00287a">
 <title>{{.Title}} | {{.Brand}}</title><style>` + rcCSS + `</style></head><body>
-<div class="u"><div class="w"><a href="https://www.ucr.edu/">UCR Home</a><a href="https://ucr-research-computing.github.io/">Research Computing</a></div></div>
+<div class="u"><div class="w"><a href="https://www.ucr.edu/">UCR Home</a><a href="https://ucr-research-computing.github.io/">Research Computing</a><a href="https://atrium-staging-492106370716.us-central1.run.app/">Atrium</a></div></div>
 <div class="t"><div class="w"><span class="br">{{.Brand}}<small>UCR Research Computing</small></span></div></div>
 <div class="w"><div class="c{{if .Bad}} bad{{end}}"><h1>{{.Title}}</h1>{{.Body}}</div>
 <p class="f"><a href="https://ucr-research-computing.github.io/help/">Help from Research Computing</a></p></div>
 </body></html>`))
+
+// atriumURL is the Research Computing front door (Atrium), linked from every page.
+const atriumURL = "https://atrium-staging-492106370716.us-central1.run.app/"
 
 // rcPage writes one page in the RC look. body is trusted HTML built by the caller with
 // html/template or fixed strings; never pass request text into it unescaped.

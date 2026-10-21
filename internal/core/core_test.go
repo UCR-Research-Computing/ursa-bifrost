@@ -222,6 +222,27 @@ func TestUsage(t *testing.T) {
 	if _, err := s.Usage(context.Background(), UsageInput{GroupBy: "lab"}); err == nil {
 		t.Error("unknown group_by accepted")
 	}
+	// by day: same totals, rows are dates in order
+	d, err := s.Usage(context.Background(), UsageInput{GroupBy: "day"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Total.Jobs != u.Total.Jobs || d.Total.CostUSD != u.Total.CostUSD || len(d.Rows) == 0 {
+		t.Fatalf("by day total %+v vs %+v (%d rows)", d.Total, u.Total, len(d.Rows))
+	}
+	days := 0
+	for i, r := range d.Rows {
+		days += r.Jobs
+		if i > 0 && d.Rows[i-1].Key >= r.Key {
+			t.Errorf("rows out of order: %s then %s", d.Rows[i-1].Key, r.Key)
+		}
+		if r.Key != "unknown" && (len(r.Key) != 10 || r.Key[4] != '-') {
+			t.Errorf("row key %q is not a date", r.Key)
+		}
+	}
+	if days != d.Total.Jobs {
+		t.Errorf("day rows sum %d != total %d", days, d.Total.Jobs)
+	}
 }
 
 // TestScriptCheckRedirectIsNotAModule: the Lab harness runs

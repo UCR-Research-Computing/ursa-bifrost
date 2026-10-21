@@ -198,7 +198,7 @@ fields the assistant would read as instructions.
 | `module_show` | `name`, `mpi?` | What the module sets (paths, environment, dependencies). MPI-built packages (hdf5, fftw, petsc...) exist only under an MPI in the site's hierarchical Lmod, so they are shown after `module load <mpi>` (openmpi by default, or the `mpi` given, which must be one of the package's builds); the answer names the MPI loaded and every build available |
 | `recipes` | `query?` | Known-good recipes from the cluster catalog (modules, run command, partition, notes) plus the site rules |
 | `script_check` | `script` | Static check of a batch script against the cluster: partition exists (each member of a list such as `-p tpuspot,tpu`, checked against the dearest, v0.9.15), limits fit, modules exist and their MPI prerequisite is loaded, GPU request matches partition, a core request on shared partitions (section 19), worst-case cost (share of the node on shared partitions) and `cores` (what the job holds per node); warns on downloading a database already in /data/shared and on big arrays scanning a large one (v0.9.12). No submission |
-| `my_usage` | `since?`, `until?`, `group_by?` | Caller's node-hours, core-hours, CPU efficiency and estimated cost, by partition (default), state or user |
+| `my_usage` | `since?`, `until?`, `group_by?` | Caller's node-hours, core-hours, CPU efficiency and estimated cost, by partition (default), state, user or day |
 | `waste_report` | `since?`, `cpu_threshold?`, `min_node_hours?` | Avoidable spend in the caller's own jobs: low CPU efficiency, idle time before a timeout, warm workers, repeated fast failures, oversized memory requests, idle nodes (details in section 17, P2) |
 
 ### 7.2 Read tier R2 (staff: all users)

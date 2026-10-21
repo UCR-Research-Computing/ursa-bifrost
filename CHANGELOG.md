@@ -5,6 +5,17 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.9.18 - 2026-10-21
+- `my_usage` (and `usage_report`) take `group_by: day`: one row per UTC day a job ended
+  (else started, else was submitted), oldest first, same totals as the other groupings. Atrium's
+  dashboard draws the 30-day Ursa cost and jobs trend from it.
+- Public pages link the Research Computing systems together: the UCR strip on the sign-in, front
+  and not-found pages now links Atrium, and the front page links the Ursa Major dashboard, Atrium
+  and the Ursa Major service page. Programs still get the same plain-text and JSON answers.
+- ursa-agent 0.4.5: the dashboard has the UCR strip every RC page has (UCR Home, Research
+  Computing, Atrium, Get help) and footer links to the Ursa Major service page and RC help; the
+  sign-in card points to Atrium and the service page. Panels, data and behaviour unchanged.
+
 ## v0.9.16 - 2026-10-20
 Fixes from a 25-review adversarial pass (5 models x 5 lenses), each confirmed against the
 code before fixing.
