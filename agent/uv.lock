@@ -2409,7 +2409,7 @@ requires-dist = [
     { name = "google-adk", specifier = ">=2.11,<3" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "itsdangerous", specifier = ">=2.2" },
-    { name = "litellm", specifier = ">=1.103,<2" },
+    { name = "litellm", specifier = ">=1.103,!=1.107.0,<2" },
     { name = "mcp", specifier = ">=1.20,<2" },
     { name = "starlette", specifier = ">=0.46" },
     { name = "uvicorn", specifier = ">=0.34" },
