@@ -735,9 +735,33 @@ async def a2a_decide(request: Request) -> Response:
 A2A_INNER, A2A_APP = build_a2a_app()
 
 
+def warm_up() -> float:
+    """Import LiteLLM and run one mock completion (no network, no cost) so the first person
+    after a cold start does not pay for it (ADK imports LiteLLM lazily; a cold import in a
+    fresh Cloud Run container took 44 s in the same stack, measured 2026-10-23). Never raises."""
+    t0 = time.monotonic()
+    try:
+        import litellm
+
+        asyncio.run(
+            litellm.acompletion(
+                model="openai/warm-up",
+                messages=[{"role": "user", "content": "warm up"}],
+                mock_response="ok",
+                api_key="unused",
+            )
+        )
+    except Exception as e:  # noqa: BLE001 - warm-up must never stop the server
+        log.warning("warm-up failed: %s", e)
+    return time.monotonic() - t0
+
+
 @asynccontextmanager
 async def lifespan(app: Starlette):
     log.info("ursa-agent %s at %s, bifrost %s", __version__, BASE_URL, BIFROST)
+    if os.environ.get("URSA_AGENT_WARMUP", "1") != "0":
+        # uvicorn opens the port only after lifespan startup, so this runs before any traffic
+        log.info("model client warmed in %.1fs", await asyncio.to_thread(warm_up))
     if STORE.enabled:
         log.info("sign-ins kept across restarts in %s (%d expired removed)", STORE.dir, STORE.sweep())
     # the A2A sub-app attaches its routes in its own lifespan

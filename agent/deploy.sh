@@ -53,7 +53,7 @@ else ask "create gs://$BUCKET?" && { run gcloud storage buckets create "gs://$BU
 run gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member "serviceAccount:$SA" --role roles/storage.objectUser >/dev/null
 
 say "3. Image"
-run docker build -t "$IMAGE" .
+run docker build --platform linux/amd64 -t "$IMAGE" .  # Cloud Run is amd64; needed when building on an Apple Silicon Mac
 run docker push "$IMAGE"
 
 say "4. Cloud Run (public URL; every chat/A2A call needs a bifrost sign-in)"

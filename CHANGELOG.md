@@ -5,6 +5,15 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## agent-v0.4.6 - 2026-10-23
+- ursa-agent warms its model client (LiteLLM) at startup with one mock completion (no network,
+  no cost) before the port opens, so the first chat after a cold start no longer pays a
+  20-60 s import. Logs `model client warmed in N s`; `URSA_AGENT_WARMUP=0` turns it off.
+- The agent excludes litellm 1.107.0 (malicious release, LiteLLM incident 2026-10-21); the
+  lock stays on 1.103.2.
+- `agent/deploy.sh` builds the image for linux/amd64 (Cloud Run), so it works from an Apple
+  Silicon Mac.
+
 ## v0.9.18 - 2026-10-21
 - `my_usage` (and `usage_report`) take `group_by: day`: one row per UTC day a job ended
   (else started, else was submitted), oldest first, same totals as the other groupings. Atrium's
