@@ -59,6 +59,7 @@ type SubmitPlan struct {
 	Overrides    []string          `json:"overrides"`        // #SBATCH values bifrost replaced
 	Inputs       []SubmitInputFile `json:"inputs,omitempty"` // staged files the job fetches into inputs/
 	Next         string            `json:"next"`
+	Allocation   *PlanAllocation   `json:"allocation"`
 }
 
 // ActionPlan is what job_cancel/hold/release return before confirmation.
@@ -469,6 +470,11 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 		SpentTodayUS: spent, DayCapUSD: caps.MaxCostPerDayUSD, Scheduler: plan.Scheduler,
 		Warnings: plan.Warnings, Overrides: plan.Overrides, Inputs: shownInputs(inputs),
 		Next: "Show this plan to the user. Only if they approve, call job_submit_confirm with the confirm_token. Nothing has been submitted yet."}
+	allocPlan := s.planAllocation(ctx, worst)
+	plan.Allocation = allocPlan
+	if allocPlan != nil && allocPlan.Warning != "" {
+		plan.Warnings = append(plan.Warnings, allocPlan.Warning)
+	}
 	if len(inputs) > 0 {
 		plan.Next += fmt.Sprintf(" When it starts, the job first downloads %d staged file(s) into inputs/ in its folder.", len(inputs))
 	}

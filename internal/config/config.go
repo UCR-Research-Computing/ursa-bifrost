@@ -131,10 +131,11 @@ type Config struct {
 
 // AllocationLabConfig is optional lab allocation in CLI/local config.
 type AllocationLabConfig struct {
-	ID            string  `yaml:"id"`
-	Name          string  `yaml:"name"`
-	AllocationUSD float64 `yaml:"allocation_usd"`
-	Period        string  `yaml:"period,omitempty"`
+	ID            string   `yaml:"id"`
+	Name          string   `yaml:"name"`
+	AllocationUSD float64  `yaml:"allocation_usd"`
+	Period        string   `yaml:"period,omitempty"`
+	Members       []string `yaml:"members,omitempty"`
 }
 
 // AllocationConfig configures allocation for the local single-user CLI path.
