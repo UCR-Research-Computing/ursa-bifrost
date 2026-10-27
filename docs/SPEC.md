@@ -200,6 +200,7 @@ fields the assistant would read as instructions.
 | `script_check` | `script` | Static check of a batch script against the cluster: partition exists (each member of a list such as `-p tpuspot,tpu`, checked against the dearest, v0.9.15), limits fit, modules exist and their MPI prerequisite is loaded, GPU request matches partition, a core request on shared partitions (section 19), worst-case cost (share of the node on shared partitions) and `cores` (what the job holds per node); warns on downloading a database already in /data/shared and on big arrays scanning a large one (v0.9.12). No submission |
 | `my_usage` | `since?`, `until?`, `group_by?` | Caller's node-hours, core-hours, CPU efficiency and estimated cost, by partition (default), state, user or day |
 | `waste_report` | `since?`, `cpu_threshold?`, `min_node_hours?` | Avoidable spend in the caller's own jobs: low CPU efficiency, idle time before a timeout, warm workers, repeated fast failures, oversized memory requests, idle nodes (details in section 17, P2) |
+| `my_allocation` | none | Caller's current period Ursa Major allocation and use for themselves and their lab (dollars, warn-only) (v0.10.0, section 24) |
 
 ### 7.2 Read tier R2 (staff: all users)
 
@@ -391,6 +392,10 @@ ssh:
 catalog_path: /apps/docs/catalog.json     # ursa-catalog: partitions, prices, modules, recipes
 log_roots: ["/home/{user}/", "/scratch/{user}/"]
 show_cost: true              # false hides every dollar figure
+# show_cost_tiers: [R2]      # tiers that see dollar figures (default unset: all tiers)
+# allocation:                # optional local Ursa allocation for my_allocation
+#   person_usd: 200
+#   lab: {id: synthetic-lab, name: "Synthetic Lab", allocation_usd: 500}
 # usd_per_node_hour: {computehigh: 1.87}  # overrides the catalog price per partition
 tiers: [R1, R2, A1]          # laptop: tiers of the local user
 caps: {max_nodes: 4, max_hours: 24, max_cost_usd_per_job: 25, max_cost_usd_per_day: 75,
@@ -424,6 +429,23 @@ staging: {bucket: ucr-ursa-major-hpc-cluster-bifrost-staging, upload_minutes: 15
           retain_days: 7}
 audit_path: "-"              # stdout -> Cloud Logging
 caps: {..., max_cost_usd_per_day: 50}   # hosted day cap (per person)
+show_cost_tiers: [R2]        # researchers (R1) see work units only; dollars to staff
+```
+
+The hosted `users_file` (`users.yaml`) defines who may sign in, program clients, and allocations:
+
+```yaml
+domain: ucr.edu
+labs:
+  - id: synthetic-lab            # ^[a-z0-9][a-z0-9-]{1,62}$
+    name: Synthetic Lab
+    allocation_usd: 500          # per period; 0 = no lab allocation; <= 1,000,000
+    period: month                # only 'month' accepted: 1st of month 00:00 UTC
+users:
+  - email: alice@ucr.edu
+    tiers: [R1, R2, A1]
+    lab: synthetic-lab           # optional, must reference a defined lab
+    allocation_usd: 200          # optional person allocation, same period
 ```
 
 Planned and not built: a `rest` backend (slurmrestd), Nexus joins for `usage_report`, audit
@@ -1126,11 +1148,11 @@ was not a cache bug.
 
 The remaining seconds are the SSH round trip and the catalog read, not sacct.
 
-## 24. Allocation framing (planned, 2026-10-27)
+## 24. Allocation framing (v0.10.0, 2026-10-27)
 
 Decided by Chuck, 2026-10-27, after a read-only review of the ursa-agent dashboard and Atrium.
 The full plan is in the private Atrium repo (`docs/ALLOCATION_FRAMING_PLAN.md`); this section is
-the bifrost part. Nothing here is built yet.
+the bifrost implementation (phases F4 and F5).
 
 ### 24.1 Why
 
@@ -1157,23 +1179,57 @@ allocation once one exists.
 Sign-in text and the assistant's instruction stop leading with cost ("what your jobs did and
 why"; "uses the whole node / the share it holds"; the worst case is quoted only in plans).
 
-### 24.3 Server
+### 24.3 Server (built in v0.10.0)
 
-- `show_cost_tiers` (default `[R2]`) replaces the single `show_cost` switch for tool output:
-  R1 callers get usage in work units and no dollars; R2 callers and program clients with
-  their own A1 caps keep dollars. `show_cost: false` still hides everything.
-- Ursa allocation (model not decided; Chuck 2026-10-27, "not sure yet"). Leading option:
-  `allocation_usd` and `allocation_period` per person (later per lab) in `users.yaml`, a ledger
-  built from the same list-price usage figures, a new R1 tool `my_allocation` (allocation,
-  used, left, resets), and `job_submit` plans that state the share of the allocation. The per-job
-  and per-day caps (9.7, 21) stay as safety limits; they are not an allocation. Alternatives:
-  no allocation (work units only), or Slurm-native GrpTRESMins on lab accounts (needs Q6).
-- Open: hard stop or warn when an allocation is used up; person, lab or both.
+#### Phase F4: Per-tier cost display (`show_cost_tiers`)
+- `show_cost_tiers: [...]` in config controls which tiers receive dollar figures in tool responses.
+- **Default when unset**: current behaviour (dollars for everyone, all tiers) to avoid breaking existing clients (Atrium staging, dashboard, deep-research Lab client). Hosted config should explicitly set `show_cost_tiers: [R2]` once client updates ship.
+- **Semantics**: dollar fields (`est_cost_usd`, `usd_per_node_hour`, `current_usd_per_hour`, `est_wasted_usd`, `total_est_wasted_usd`, `usd_per_hour`, `worst_case_usd` in `interactive_help`) are included only when the caller holds one of the tiers in `show_cost_tiers`.
+- `show_cost: false` still hides every dollar figure deployment-wide.
+- Plans (`job_submit`, `job_cancel`) ALWAYS retain worst-case cost and cap fields so callers understand the safety caps.
+- Program clients with their own A1 caps (`ProgramClient.MaxCostPerDayUSD > 0`) always retain dollar figures.
+
+#### Phase F5: Ursa allocations (`my_allocation` and `job_submit` plan warnings)
+- **Configuration**:
+  - Hosted `users.yaml`:
+    ```yaml
+    labs:
+      - id: synthetic-lab            # ^[a-z0-9][a-z0-9-]{1,62}$
+        name: Synthetic Lab
+        allocation_usd: 500          # 0..1,000,000
+        period: month                # only 'month' accepted (1st of month 00:00 UTC)
+    users:
+      - email: alice@ucr.edu
+        lab: synthetic-lab           # references defined lab
+        allocation_usd: 200          # personal allocation for the period
+    ```
+  - Laptop / CLI config: optional `allocation:` block with `person_usd` and `lab: {id, name, allocation_usd}`. When omitted, `person` and `lab` in `my_allocation` return null.
+- **New tool `my_allocation` (R1)**: returns exact contract:
+  ```json
+  {"period": "2026-10", "period_start": "2026-10-01T00:00:00Z", "resets_at": "2026-11-01T00:00:00Z",
+   "basis": "list-price estimate", "covered_by": "Research Computing / UCR ITS",
+   "person": {"allocation_usd": 200, "used_usd": 41.2, "left_usd": 158.8, "pct_used": 20.6, "status": "ok"},
+   "lab": {"id": "synthetic-lab", "name": "Synthetic Lab", "allocation_usd": 500, "used_usd": 210.5, "left_usd": 289.5, "pct_used": 42.1, "members": 3, "status": "ok"},
+   "enforcement": "warn", "notes": []}
+  ```
+  - `person` or `lab` is `null` when not configured.
+  - Status is `ok` (<80%), `warn` (80-99.9%), or `over` (>=100%).
+  - `left_usd` is never negative (0 when over).
+  - Rounding: dollars rounded to cents ($0.01), percentages to 0.1%.
+- **Accounting and privacy**:
+  - Used amount is list-price estimate (matching `my_usage`, section 19 share math) for jobs in the current UTC month (`[period_start, resets_at)`).
+  - Lab usage covers all members in the lab via a single `sacct` query (`SacctSummaryUsers`), cached with accounting TTL (`KindAcct`).
+  - Researchers (R1) see only the lab total and member count; per-member rows are never exposed.
+- **Warn-only enforcement**:
+  - `job_submit` plan step adds `allocation: {person_pct_after, lab_pct_after, warning}` computed from worst-case cost.
+  - Warning text is generated when a job could push personal or lab allocation to >= 80% or >= 100% (e.g., `'This job could take your lab to 104% of its Ursa allocation. Allocations are warn-only for now; it will still run.'`).
+  - Allocations NEVER block job submission: confirm tokens are still returned and `job_submit_confirm` succeeds unchanged.
 
 ## Change log
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-27 | v0.10.0-pending | Section 24: allocation framing (phases F4 and F5). `show_cost_tiers` hides dollar fields for callers without staff tiers (default unset keeps today's output for all callers); new R1 tool `my_allocation` reports list-price spend against person and lab allocations (warn-only); `job_submit` plan adds allocation impact and warn-only warning. 4 new mutation guards |
 | 2026-10-27 | Draft 8 (plan) | Section 24: allocation framing. Researchers see work first and money only against an allocation; dollars on R1 dashboard panels move to staff (R2); planned `show_cost_tiers` and `my_allocation`. Not built |
 | 2026-10-20 | v0.9.16 | Review fixes (25 adversarial reviews, 5 models x 5 lenses, each finding checked against the code): override partition gets the full static check; max_submits_per_day re-checked at confirm; non-Slurm time strings refused instead of read as 0 min, seconds round up; OAuth rate limits key on the last X-Forwarded-For hop; A1 state sealed (AES-GCM) on the hosted server; `serve` requires iap.host_keys. 7 new mutation guards |
 | 2026-10-20 | agent 0.4.3 | ursa-agent A2A card: top-level `url`, `protocolVersion` and `preferredTransport` (A2A 0.3 fields) were missing because the card listed only a 1.0 interface and the SDK adds the 0.3 fields only for a 0.3 one. The card lists the same JSON-RPC endpoint for 1.0 and 0.3 and keeps the trailing slash (`/a2a/`; `/a2a` redirected). Test asserts url, protocolVersion, skills and the bifrost bearer scheme. No other behaviour change |
@@ -1347,3 +1403,19 @@ bifrost calls at once) keeps it cheap on the scheduler; token refresh now runs u
 because bifrost rotates refresh tokens and parallel panel loads would otherwise sign the person
 out. The page's JS and CSS moved to files and the CSP dropped `'unsafe-inline'`. The agent's
 instructions no longer say every partition bills whole nodes. 46 tests; 11 guards mutation-checked.
+
+### v0.10.0: allocation framing (F4 & F5)
+Section 24.
+- `show_cost_tiers`: researchers (R1) see work units first; dollar fields (`est_cost_usd`,
+  `usd_per_node_hour`, `current_usd_per_hour`, `est_wasted_usd`, `total_est_wasted_usd`,
+  `usd_per_hour`, `worst_case_usd` in `interactive_help`) are only shown to callers who hold
+  one of the tiers listed in `show_cost_tiers`. When unset, default retains dollars for all
+  callers (backward-compatible). `show_cost: false` hides all dollars. Plans and program
+  clients with their own A1 caps always retain dollars.
+- `my_allocation`: new R1 tool reporting list-price spend, remaining dollars, percent used,
+  and status (`ok`, `warn`, `over`) against person and lab allocations for the current UTC month.
+  Exposes only lab total and member count to R1 callers; per-member figures are never exposed.
+- `job_submit` plan: adds `allocation: {person_pct_after, lab_pct_after, warning}`, warning
+  when a job would take the personal or lab allocation to >= 80% or >= 100%. Allocations are
+  warn-only and never block submission.
+- CLI: `bifrost allocation`. 4 mutation guards.

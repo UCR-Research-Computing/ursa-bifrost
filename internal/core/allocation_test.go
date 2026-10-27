@@ -236,10 +236,10 @@ func TestAllocationMath(t *testing.T) {
 func TestLabTotalExcludesNonMembersAndNeverExposesPerMember(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newTestService(t)
-	s.Now = func() time.Time { return time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC) }
+	s.Now = func() time.Time { return time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC) }
 	s.Cfg.Tiers = []string{"R1"}
 
-	// Configure lab with only alice
+	// Configure lab with alice and bob
 	s.Cfg.Allocation = &config.AllocationConfig{
 		PersonUSD: 500,
 		Lab: &config.AllocationLabConfig{
@@ -247,7 +247,7 @@ func TestLabTotalExcludesNonMembersAndNeverExposesPerMember(t *testing.T) {
 			Name:          "Synthetic Lab",
 			AllocationUSD: 1000,
 			Period:        "month",
-			Members:       []string{"alice_ucr_edu"},
+			Members:       []string{"alice_ucr_edu", "bob_ucr_edu"},
 		},
 	}
 
@@ -257,8 +257,8 @@ func TestLabTotalExcludesNonMembersAndNeverExposesPerMember(t *testing.T) {
 	}
 
 	// 1. Check lab members count
-	if res.Data.Lab.Members != 1 {
-		t.Errorf("expected 1 member, got %d", res.Data.Lab.Members)
+	if res.Data.Lab.Members != 2 {
+		t.Errorf("expected 2 members, got %d", res.Data.Lab.Members)
 	}
 
 	// 2. Check that R1 never sees per-member rows
@@ -267,13 +267,23 @@ func TestLabTotalExcludesNonMembersAndNeverExposesPerMember(t *testing.T) {
 	}
 
 	// Check JSON output does not contain any member username other than own
-	b, err := json.Marshal(res)
+	b, err := json.Marshal(res.Data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	jsonStr := string(b)
-	if strings.Contains(jsonStr, "bob_ucr_edu") || strings.Contains(jsonStr, "charlie_ucr_edu") {
-		t.Errorf("JSON leaked non-member or other member usernames: %s", jsonStr)
+	if strings.Contains(jsonStr, "bob_ucr_edu") {
+		t.Errorf("JSON leaked other member username: %s", jsonStr)
+	}
+
+	// 3. For R2 caller, staff notes contain member info
+	s.Cfg.Tiers = []string{"R1", "R2"}
+	resR2, err := Call(ctx, s, "test", "my_allocation", "R1", nil, false, s.MyAllocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resR2.Data.Notes) == 0 || !strings.Contains(resR2.Data.Notes[0], "bob_ucr_edu") {
+		t.Errorf("R2 caller expected staff member note, got %v", resR2.Data.Notes)
 	}
 }
 

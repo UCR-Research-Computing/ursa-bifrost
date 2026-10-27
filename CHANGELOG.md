@@ -5,6 +5,27 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+v0.10.0 (not tagged yet):
+- **Per-tier cost display (`show_cost_tiers`, phase F4)**: researchers (R1) see work first;
+  dollar fields (`est_cost_usd`, `usd_per_node_hour`, `current_usd_per_hour`, `est_wasted_usd`,
+  totals, `worst_case_usd` in `interactive_help`) are included only when the caller holds one of
+  the tiers listed in `show_cost_tiers`. Default when unset preserves current behaviour (dollars
+  for all callers); hosted config should set `show_cost_tiers: [R2]` once clients ship.
+  `show_cost: false` still hides all. `job_submit`/`job_cancel` plans and program clients with
+  their own A1 caps always retain dollars.
+- **Ursa allocations (`my_allocation`, phase F5)**: per-person and per-lab allocations in
+  `users.yaml` (`labs:` list, `users[].lab`, `users[].allocation_usd`) and CLI config (`allocation:`
+  block). `my_allocation` tool (R1) reports list-price spend, remaining dollars, percent used,
+  and status (`ok`, `warn`, `over`) for the current UTC month.
+- **Privacy**: R1 callers only see their own use and aggregate lab total/members count; per-member
+  usage figures are never exposed to researchers.
+- **Warn-only enforcement**: `job_submit` plans include `allocation: {person_pct_after, lab_pct_after, warning}`,
+  warning when a planned job would push either allocation past 80% or 100%. Allocations are warn-only
+  and never block submission; confirm tokens are returned as normal.
+- **CLI**: subcommand `bifrost allocation` with formatted text output.
+- **Mutation check**: 4 new guards caught (lab ref validation, amount bounds, R1 privacy,
+  show_cost_tiers stripping).
+
 ## agent-v0.4.6 - 2026-10-23
 - ursa-agent warms its model client (LiteLLM) at startup with one mock completion (no network,
   no cost) before the port opens, so the first chat after a cold start no longer pays a

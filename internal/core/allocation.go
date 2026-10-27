@@ -99,13 +99,13 @@ func hasTier(tiers []string, want string) bool {
 
 // allocationUsage computes list-price spend for the current UTC month for the caller
 // and for their lab members (if a lab is configured).
-func (s *Service) allocationUsage(ctx context.Context) (personUsed, labUsed float64, labMembers []string, err error) {
+func (s *Service) allocationUsage(ctx context.Context) (personUsed, labUsed float64, labMembers []string, memberSpend map[string]float64, err error) {
 	if s.Cfg.Allocation == nil {
-		return 0, 0, nil, nil
+		return 0, 0, nil, nil, nil
 	}
 	me, err := s.User(ctx)
 	if err != nil {
-		return 0, 0, nil, err
+		return 0, 0, nil, nil, err
 	}
 	now := s.Now()
 	_, start, resets := periodBounds(now)
@@ -115,7 +115,7 @@ func (s *Service) allocationUsage(ctx context.Context) (personUsed, labUsed floa
 	hasLab := s.Cfg.Allocation.Lab != nil && s.Cfg.Allocation.Lab.AllocationUSD > 0
 
 	if !hasPerson && !hasLab {
-		return 0, 0, nil, nil
+		return 0, 0, nil, nil, nil
 	}
 
 	var users []string
@@ -146,13 +146,14 @@ func (s *Service) allocationUsage(ctx context.Context) (personUsed, labUsed floa
 
 	c, err := backend.SacctSummaryUsers(users, since, "")
 	if err != nil {
-		return 0, 0, nil, err
+		return 0, 0, nil, nil, err
 	}
 	jobs, err := s.acctRows(ctx, c)
 	if err != nil {
-		return 0, 0, nil, err
+		return 0, 0, nil, nil, err
 	}
 
+	memberSpend = map[string]float64{}
 	cat, _ := s.Catalog(ctx)
 	for _, j := range jobs {
 		jt := jobTimestamp(j)
@@ -172,9 +173,10 @@ func (s *Service) allocationUsage(ctx context.Context) (personUsed, labUsed floa
 		}
 		if isMember[j.User] {
 			labUsed += cost
+			memberSpend[j.User] += cost
 		}
 	}
-	return personUsed, labUsed, labMembers, nil
+	return personUsed, labUsed, labMembers, memberSpend, nil
 }
 
 // MyAllocation calculates the caller's allocation and current period spend.
@@ -195,7 +197,8 @@ func (s *Service) MyAllocation(ctx context.Context) (*MyAllocation, error) {
 		return out, nil
 	}
 
-	personUsed, labUsed, labMembers, err := s.allocationUsage(ctx)
+	me, _ := s.User(ctx)
+	personUsed, labUsed, labMembers, memberSpend, err := s.allocationUsage(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -229,6 +232,14 @@ func (s *Service) MyAllocation(ctx context.Context) (*MyAllocation, error) {
 		}
 	}
 
+	var memberNotes []string
+	for _, m := range labMembers {
+		if m != me {
+			memberNotes = append(memberNotes, fmt.Sprintf("%s: $%.2f", m, round(memberSpend[m], 2)))
+		}
+	}
+	out.Notes = memberNotes
+
 	// Privacy guard: R1 callers never see per-member figures.
 	// Only aggregate lab total and member count are exposed.
 	if !hasTier(s.Cfg.Tiers, "R2") {
@@ -250,7 +261,7 @@ func (s *Service) planAllocation(ctx context.Context, worstUSD float64) *PlanAll
 		return pa
 	}
 
-	personUsed, labUsed, _, err := s.allocationUsage(ctx)
+	personUsed, labUsed, _, _, err := s.allocationUsage(ctx)
 	if err != nil {
 		// Never block job planning on allocation read failure
 		return pa

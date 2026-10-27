@@ -202,7 +202,7 @@ Tools come in tiers. A caller only sees, and can only call, the tiers granted to
 
 | Tier | Who | Tools |
 |---|---|---|
-| **R1** read | everyone | `cluster_status`, `partitions`, `jobs_list`, `job_show`, `job_explain`, `job_log_tail`, `job_results`, `modules_search`, `module_show`, `recipes`, `script_check`, `my_usage`, `waste_report`, `storage_usage`, `files_list`, `files_read`, `env_check`, `interactive_help`, `results_link`* |
+| **R1** read | everyone | `cluster_status`, `partitions`, `jobs_list`, `job_show`, `job_explain`, `job_log_tail`, `job_results`, `modules_search`, `module_show`, `recipes`, `script_check`, `my_usage`, `waste_report`, `storage_usage`, `files_list`, `files_read`, `env_check`, `interactive_help`, `my_allocation`, `results_link`* |
 | **A1** act | opt-in per person | `job_submit` (optional `inputs`) + `job_submit_confirm`, `job_cancel` / `job_hold` / `job_release` + `_confirm`, `upload_prepare`*, `uploads_list`* |
 | **R2** staff | cluster administrators | `jobs_list_all`, `job_show_any`, `job_explain_any`, `usage_report`, `waste_report_all`, `health`, `ticket_draft` |
 
