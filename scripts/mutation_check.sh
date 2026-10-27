@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/core/inflight.go internal/core/shared_cache.go internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go internal/config/config.go internal/core/catalog.go internal/core/dbcheck.go internal/slurm/sacctrows.go"
+FILES="internal/core/inflight.go internal/core/shared_cache.go internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go internal/config/config.go internal/core/catalog.go internal/core/dbcheck.go internal/slurm/sacctrows.go internal/core/allocation.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
@@ -371,6 +371,11 @@ mutate "v0916 host keys required"      internal/server/server.go '	if cfg.Backen
 mutate "v0916 state sealed"            internal/core/a1.go '	if s.StateSealer != nil {
 		b, err = s.StateSealer.Seal(stateLabel, st)' '	if false {
 		b, err = s.StateSealer.Seal(stateLabel, st)'
+# v0.10.0 allocation framing (F4 show_cost_tiers, F5 allocations)
+mutate "v010 lab ref validation"           internal/server/store.go 'if x.Lab != "" && !labs[x.Lab] {' 'if false {'
+mutate "v010 amount bounds"                internal/server/store.go 'if l.AllocationUSD < 0 || l.AllocationUSD > MaxAllocationUSD {' 'if false {'
+mutate "v010 R1 never sees per-member figures" internal/core/allocation.go 'if !hasTier(s.Cfg.Tiers, "R2") {' 'if false {'
+mutate "v010 show_cost_tiers stripping"    internal/core/service.go 'stripCostFields(s, data)' '// stripCostFields(s, data)'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL
