@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (Draft 7; built through bifrost v0.9.16 and ursa-agent 0.4.3) |
-| Status | bifrost v0.9.16, ursa-agent 0.4.3 (live: 0.4.2 until the next agent deploy), 2026-10-20 (spec Draft 7). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23 and docs/CLOUD_PLAN.md record what was built (22 is planned); open questions left in section 15. |
+| Document | Specification and design (Draft 8, 2026-10-27: adds planned section 24, allocation framing; built through bifrost v0.9.18 and ursa-agent 0.4.6) |
+| Status | bifrost v0.9.18, ursa-agent 0.4.6 (released tags), 2026-10-27 (spec Draft 8; section 24 planned). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23 and docs/CLOUD_PLAN.md record what was built (22 and 24 are planned); open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -862,7 +862,9 @@ button (`/api/decide`), never a direct confirm.
 | Staff: waste, everyone | `waste_report_all` | top wasted $ across users |
 
 Dollar figures are list-price estimates from bifrost (section 19 for shared partitions) and are
-labelled "est.". Every panel shows its data's `as_of` time.
+labelled "est.". Every panel shows its data's `as_of` time. Planned (section 24, 2026-10-27):
+dollar figures move to staff (R2) views; researchers see work units, and money only against an
+allocation once one exists.
 
 ### 20.3 Load and cache (spec goal G6: cheap on the scheduler)
 
@@ -1124,10 +1126,55 @@ was not a cache bug.
 
 The remaining seconds are the SSH round trip and the catalog read, not sacct.
 
+## 24. Allocation framing (planned, 2026-10-27)
+
+Decided by Chuck, 2026-10-27, after a read-only review of the ursa-agent dashboard and Atrium.
+The full plan is in the private Atrium repo (`docs/ALLOCATION_FRAMING_PLAN.md`); this section is
+the bifrost part. Nothing here is built yet.
+
+### 24.1 Why
+
+Ursa Major through bifrost is for researchers who need special or unusual hardware. They are
+given an allocation and use it; Research Computing and UCR ITS pay the Google Cloud bill. The
+dashboard leads with money anyway: "Spending now $X/h" in the cluster pulse (RC's own running
+cost), an est. cost column on every job, "Est. cost" as the main My usage figure, a panel called
+"Money left on the table", and "Partitions and prices". Researchers should see their work first,
+and money only as a share of their allocation. Section 20's "show dollar figures" (2026-10-02)
+is narrowed: dollars stay on staff (R2) views; researcher (R1) views show them only against an
+allocation once one exists.
+
+### 24.2 Dashboard (ursa-agent)
+
+| Panel | Researchers (R1) | Staff (R2) |
+|---|---|---|
+| Cluster pulse | nodes up, running and waiting jobs, problem nodes; no $/hour | unchanged |
+| My jobs | no est. cost column | cost in the job detail |
+| My usage | leads with jobs, failures, node- and GPU-hours, CPU efficiency; sorted by node-hours; allocation meter once 24.3 exists | dollars kept |
+| Money left on the table | renamed "Unused cores": wasted core- and node-hours with the fix | wasted $ kept |
+| Partitions and prices | renamed "Partitions"; no price column | prices kept |
+| Job plan card | "worst case about $X of your allocation" (once 24.3); the day cap is labelled "daily safety limit" | same |
+
+Sign-in text and the assistant's instruction stop leading with cost ("what your jobs did and
+why"; "uses the whole node / the share it holds"; the worst case is quoted only in plans).
+
+### 24.3 Server
+
+- `show_cost_tiers` (default `[R2]`) replaces the single `show_cost` switch for tool output:
+  R1 callers get usage in work units and no dollars; R2 callers and program clients with
+  their own A1 caps keep dollars. `show_cost: false` still hides everything.
+- Ursa allocation (model not decided; Chuck 2026-10-27, "not sure yet"). Leading option:
+  `allocation_usd` and `allocation_period` per person (later per lab) in `users.yaml`, a ledger
+  built from the same list-price usage figures, a new R1 tool `my_allocation` (allocation,
+  used, left, resets), and `job_submit` plans that state the share of the allocation. The per-job
+  and per-day caps (9.7, 21) stay as safety limits; they are not an allocation. Alternatives:
+  no allocation (work units only), or Slurm-native GrpTRESMins on lab accounts (needs Q6).
+- Open: hard stop or warn when an allocation is used up; person, lab or both.
+
 ## Change log
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-27 | Draft 8 (plan) | Section 24: allocation framing. Researchers see work first and money only against an allocation; dollars on R1 dashboard panels move to staff (R2); planned `show_cost_tiers` and `my_allocation`. Not built |
 | 2026-10-20 | v0.9.16 | Review fixes (25 adversarial reviews, 5 models x 5 lenses, each finding checked against the code): override partition gets the full static check; max_submits_per_day re-checked at confirm; non-Slurm time strings refused instead of read as 0 min, seconds round up; OAuth rate limits key on the last X-Forwarded-For hop; A1 state sealed (AES-GCM) on the hosted server; `serve` requires iap.host_keys. 7 new mutation guards |
 | 2026-10-20 | agent 0.4.3 | ursa-agent A2A card: top-level `url`, `protocolVersion` and `preferredTransport` (A2A 0.3 fields) were missing because the card listed only a 1.0 interface and the SDK adds the 0.3 fields only for a 0.3 one. The card lists the same JSON-RPC endpoint for 1.0 and 0.3 and keeps the trailing slash (`/a2a/`; `/a2a` redirected). Test asserts url, protocolVersion, skills and the bifrost bearer scheme. No other behaviour change |
 | 2026-10-20 | v0.9.15 | Partition lists: `#SBATCH -p a,b` (Slurm starts the job on whichever partition has a node first) was refused as one unknown name. script_check and job_submit now check each member; limits, the cost estimate and the per-job and day caps use the dearest member (worst case); sbatch gets the list as written. The sbatch option validator accepts up to four comma-joined names and still refuses `a,`, `,a`, `a;id`. Prompted by the cluster's Spot TPU partition (`tpuspot` next to `tpu`) |
