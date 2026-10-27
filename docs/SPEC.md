@@ -1231,6 +1231,7 @@ why"; "uses the whole node / the share it holds"; the worst case is quoted only 
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-10-27 | v0.10.1 | `my_allocation` notes always `[]`, never null (first live call). Live: hosted RC pilot lab `rc` $500/month, forsythc $300/month; `show_cost_tiers: [R2]` |
 | 2026-10-27 | agent 0.5.0 | Section 24: allocation framing (dashboard part). Researcher views lead with work; dollars moved to staff (R2); My allocation panel fed by my_allocation; daily safety limit and allocation impact on plan cards |
 | 2026-10-27 | v0.10.0 | Section 24: allocation framing (phases F4 and F5). `show_cost_tiers` hides dollar fields for callers without staff tiers (default unset keeps today's output for all callers); new R1 tool `my_allocation` reports list-price spend against person and lab allocations (warn-only); `job_submit` plan adds allocation impact and warn-only warning. 4 new mutation guards |
 | 2026-10-27 | Draft 8 (plan) | Section 24: allocation framing. Researchers see work first and money only against an allocation; dollars on R1 dashboard panels move to staff (R2); planned `show_cost_tiers` and `my_allocation`. Not built |

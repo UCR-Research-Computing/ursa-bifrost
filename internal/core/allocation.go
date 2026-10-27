@@ -232,7 +232,7 @@ func (s *Service) MyAllocation(ctx context.Context) (*MyAllocation, error) {
 		}
 	}
 
-	var memberNotes []string
+	memberNotes := []string{}
 	for _, m := range labMembers {
 		if m != me {
 			memberNotes = append(memberNotes, fmt.Sprintf("%s: $%.2f", m, round(memberSpend[m], 2)))

@@ -400,3 +400,18 @@ func TestJobSubmitPlanAllocationWarnings(t *testing.T) {
 		}
 	})
 }
+
+func TestMyAllocationNotesNeverNull(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newTestService(t)
+	s.Cfg.Tiers = []string{"R1", "R2"}
+	s.Cfg.Allocation = &config.AllocationConfig{PersonUSD: 100, Lab: &config.AllocationLabConfig{ID: "synthetic-lab", Name: "Synthetic Lab", AllocationUSD: 200, Period: "month"}}
+	res, err := Call(ctx, s, "test", "my_allocation", "R1", nil, false, s.MyAllocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(res.Data)
+	if strings.Contains(string(b), `"notes":null`) {
+		t.Fatalf("notes must be [] not null: %s", b)
+	}
+}

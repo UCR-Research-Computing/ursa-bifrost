@@ -5,6 +5,9 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.10.1 - 2026-10-27
+- `my_allocation`: `notes` is always a list (`[]`), never `null`, as the contract says (found in the first live call).
+
 v0.10.0 and agent 0.5.0 (not tagged yet):
 - **ursa-agent 0.5.0**: researcher dashboard leads with work (jobs, failures, node-hours); dollar figures (cluster $/hour, list prices, est. cost, wasted $) shown to staff (R2) only; new My allocation panel (person and lab, % and $, warn-only); "Money left on the table" becomes "Unused cores" for researchers; plan card labels the day cap a daily safety limit and shows allocation impact.
 - **Per-tier cost display (`show_cost_tiers`, phase F4)**: researchers (R1) see work first;
