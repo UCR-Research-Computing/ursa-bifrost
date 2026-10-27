@@ -112,7 +112,15 @@ async function loadPanel(p, force) {
       else { body.replaceChildren(el('div', 'err', 'The cluster is not answering. ' + (r.body.detail || ''))); meta.textContent = ''; body.dataset.filled = ''; }
       return;
     }
-    if (!r.ok) { body.replaceChildren(el('div', 'err', r.body.error || ('HTTP ' + r.status))); meta.textContent = ''; body.dataset.filled = ''; return; }
+    if (!r.ok) {
+      if (p.id === 'allocation') {
+        const box = $('panel-allocation');
+        if (box) box.hidden = true;
+        meta.textContent = '';
+        return;
+      }
+      body.replaceChildren(el('div', 'err', r.body.error || ('HTTP ' + r.status))); meta.textContent = ''; body.dataset.filled = ''; return;
+    }
     s.retries = 0;
     body.replaceChildren(); body.dataset.filled = '1';
     p.render(body, r.body.data, r.body);
@@ -124,6 +132,12 @@ async function loadPanel(p, force) {
     if (p.after) p.after(r.body.data);
   } catch (e) {
     if (seq !== s.seq) return;
+    if (p.id === 'allocation') {
+      const box = $('panel-allocation');
+      if (box) box.hidden = true;
+      meta.textContent = '';
+      return;
+    }
     body.replaceChildren(el('div', 'err', 'Could not load: ' + e.message)); meta.textContent = '';
   }
 }
@@ -132,11 +146,12 @@ function buildPanel(p) {
   const box = el('section', 'panel ' + (p.width || '') + (p.staff ? ' staff' : ''));
   box.id = 'panel-' + p.id;
   const head = el('div', 'panel-head');
-  const title = el('h2', 'panel-title', p.title);
+  const titleText = typeof p.title === 'function' ? p.title() : p.title;
+  const title = el('h2', 'panel-title', titleText);
   const tools = el('div', 'panel-tools');
   if (p.tools) for (const t of p.tools()) tools.appendChild(t);
   const ask = el('button', 'btn quiet', 'Ask'); ask.title = 'Ask the assistant about this panel';
-  ask.onclick = () => openChat(p.ask ? p.ask() : ('Tell me about my ' + p.title.toLowerCase() + ' on Ursa Major.'));
+  ask.onclick = () => openChat(p.ask ? p.ask() : ('Tell me about my ' + titleText.toLowerCase() + ' on Ursa Major.'));
   const refresh = el('button', 'btn quiet', 'Refresh'); refresh.title = 'Refresh this panel'; refresh.onclick = () => loadPanel(p, true);
   tools.append(ask, refresh);
   const meta = el('span', 'panel-meta');
@@ -174,14 +189,16 @@ const pulse = panel({
       stat('Running jobs', num(d.jobs_running, 0), d.jobs_running ? 'cyan' : ''),
       stat('Pending jobs', num(d.jobs_pending, 0), d.jobs_pending ? 'amber' : ''),
       stat('Nodes up', num(d.nodes_powered_up, 0), '', 'of ' + (d.partitions || []).reduce((a, p) => a + (p.nodes_total || 0), 0)),
-      stat('Spending now', usd(d.current_usd_per_hour) + '/h', d.current_usd_per_hour ? 'amber' : '', 'est., list price'),
+      ME.staff ? stat('Spending now', usd(d.current_usd_per_hour) + '/h', d.current_usd_per_hour ? 'amber' : '', 'est., list price') : null,
       stat('Problem nodes', num(d.problem_nodes, 0), d.problem_nodes ? 'red' : 'green'),
       stat('Idle, billing', num((d.idle_billing_nodes || []).length, 0), (d.idle_billing_nodes || []).length ? 'amber' : '',
         (d.idle_billing_nodes || []).length ? 'up with no job' : 'none'));
     body.appendChild(stats);
     if ((d.idle_billing_nodes || []).length) body.appendChild(append(el('div', 'alert'), el('b', null, 'IDLE'), el('span', null, 'Powered up with no job, still billing: ' + d.idle_billing_nodes.join(', '))));
     const rows = el('div');
-    const hdr = append(el('div', 'partrow dim'), el('span', null, 'partition'), el('span', null, 'nodes powered up'), el('span', 'num', 'run / pend'), el('span', 'num hide-sm', '$/node-h'), el('span', 'num', 'up / total'), el('span', 'use', ''));
+    const hdr = append(el('div', 'partrow dim' + (ME.staff ? '' : ' no-cost')), el('span', null, 'partition'), el('span', null, 'nodes powered up'), el('span', 'num', 'run / pend'),
+      ME.staff ? el('span', 'num hide-sm', '$/node-h') : null,
+      el('span', 'num', 'up / total'), el('span', 'use', ''));
     hdr.classList.add('hdr'); rows.appendChild(hdr);
     for (const p of d.partitions || []) {
       const up = p.powered_up || 0, tot = p.nodes_total || 0;
@@ -189,12 +206,14 @@ const pulse = panel({
         el('span', 'share' + (PARTS_SHARED[p.name] ? '' : ' whole'), PARTS_SHARED[p.name] ? 'shared nodes' : 'whole nodes'));
       const b = bar(tot ? up / tot * 100 : 0, p.down_or_drained ? 'red' : (p.booting ? 'amber' : ''));
       b.title = up + ' up, ' + (p.allocated || 0) + ' allocated, ' + (p.booting || 0) + ' booting, ' + (p.down_or_drained || 0) + ' down';
-      const use = el('span', 'use', p.current_usd_per_hour ? usd(p.current_usd_per_hour) + '/h now' : (p.booting ? p.booting + ' booting' : ''));
-      append(rows, append(el('div', 'partrow'), name, b, el('span', 'num', (p.jobs_running || 0) + ' / ' + (p.jobs_pending || 0)),
-        el('span', 'num hide-sm', p.usd_per_node_hour !== undefined ? usd(p.usd_per_node_hour) : 'n/a'), el('span', 'num', up + ' / ' + tot), use));
+      const useText = ME.staff ? (p.current_usd_per_hour ? usd(p.current_usd_per_hour) + '/h now' : (p.booting ? p.booting + ' booting' : '')) : (p.booting ? p.booting + ' booting' : '');
+      const use = el('span', 'use', useText);
+      append(rows, append(el('div', 'partrow' + (ME.staff ? '' : ' no-cost')), name, b, el('span', 'num', (p.jobs_running || 0) + ' / ' + (p.jobs_pending || 0)),
+        ME.staff ? el('span', 'num hide-sm', p.usd_per_node_hour !== undefined ? usd(p.usd_per_node_hour) : 'n/a') : null,
+        el('span', 'num', up + ' / ' + tot), use));
     }
     body.appendChild(rows);
-    body.appendChild(el('div', 'legend', '* default partition. Shared: a job gets and pays for only the cores and memory it asks for. Whole: every job gets and pays for whole nodes.'));
+    body.appendChild(el('div', 'legend', ME.staff ? '* default partition. Shared: a job gets and pays for only the cores and memory it asks for. Whole: every job gets and pays for whole nodes.' : '* default partition. Shared: a job gets only the cores and memory it asks for. Whole: every job gets whole nodes.'));
     const extra = (d.notes || []).filter((n) => !/^Shared partitions|powered up with no job/.test(n));
     const nn = notes(extra); if (nn) body.appendChild(nn);
   },
@@ -205,7 +224,8 @@ function telemetry(d) {
   const t = $('telemetry'); t.replaceChildren();
   const chip = (label, val, cls) => append(el('span', 'chip' + (cls ? ' ' + cls : '')), el('span', null, label + ' '), el('b', null, val));
   append(t, chip('running', num(d.jobs_running, 0), d.jobs_running ? 'cyan' : ''), chip('pending', num(d.jobs_pending, 0), d.jobs_pending ? 'amber' : ''),
-    chip('nodes up', num(d.nodes_powered_up, 0)), chip('now', usd(d.current_usd_per_hour) + '/h', d.current_usd_per_hour ? 'amber' : ''),
+    chip('nodes up', num(d.nodes_powered_up, 0)),
+    ME.staff ? chip('now', usd(d.current_usd_per_hour) + '/h', d.current_usd_per_hour ? 'amber' : '') : null,
     d.problem_nodes ? chip('problem nodes', d.problem_nodes, 'red') : null);
 }
 
@@ -222,16 +242,19 @@ const jobs = panel({
     const chips = el('div', 'form-row');
     for (const [s, n] of Object.entries(counts).sort((a, b) => b[1] - a[1])) chips.appendChild(append(el('span'), stateChip(s), el('span', 'dim', ' ' + n)));
     body.appendChild(chips);
-    body.appendChild(table([
+    const cols = [
       {label: 'job', get: (j) => j.job_id, cls: 'mono'},
       {label: 'name', get: (j) => j.name, cls: 'name', title: (j) => j.name},
       {label: 'state', get: (j) => stateChip(j.state)},
       {label: 'partition', get: (j) => j.partition, hideSm: true},
       {label: 'cores', get: (j) => j.cpus, num: true, hideSm: true},
       {label: 'elapsed', get: (j) => dur(j.elapsed_s), num: true},
-      {label: 'est. cost', get: (j) => j.est_cost_usd ? usd(j.est_cost_usd) : '-', num: true},
-      {label: 'ended', get: (j) => j.ended ? ago(j.ended) : (j.reason || ''), hideSm: true},
-    ], list, (j) => showJob(j.job_id, false)));
+    ];
+    if (ME.staff) {
+      cols.push({label: 'est. cost', get: (j) => j.est_cost_usd ? usd(j.est_cost_usd) : '-', num: true});
+    }
+    cols.push({label: 'ended', get: (j) => j.ended ? ago(j.ended) : (j.reason || ''), hideSm: true});
+    body.appendChild(table(cols, list, (j) => showJob(j.job_id, false)));
   },
 });
 
@@ -247,7 +270,7 @@ async function showJob(id, any) {
   add('nodes', (j.node_count || '') + (j.nodes ? '  (' + j.nodes + ')' : '')); add('cores', j.cpus);
   add('time limit', j.time_limit_min ? j.time_limit_min + ' min' : ''); add('elapsed', dur(j.elapsed_s));
   add('submitted', when(j.submitted)); add('started', when(j.started)); add('ended', when(j.ended));
-  if (j.est_cost_usd) add('est. cost', usd(j.est_cost_usd));
+  if (ME.staff && j.est_cost_usd) add('est. cost', usd(j.est_cost_usd));
   if (j.efficiency) {
     const e = j.efficiency;
     add('CPU efficiency', (e.cpu_percent !== undefined ? e.cpu_percent + '%' : '-') + (e.core_seconds_allocated ? ' of ' + num(e.core_seconds_allocated / 3600, 2) + ' core-h' : ''));
@@ -280,6 +303,66 @@ async function showJob(id, any) {
   body.appendChild(append(el('div', 'form-row spaced'), askb));
 }
 
+// ---- My allocation
+let ALLOCATION_DATA = null;
+
+function renderAllocMeter(container, label, item, isLab) {
+  if (!item) return;
+  const pct = item.used_pct !== undefined ? item.used_pct : (item.pct !== undefined ? item.pct : (item.limit_usd ? (item.used_usd / item.limit_usd * 100) : 0));
+  const used = item.used_usd !== undefined ? item.used_usd : (item.used || 0);
+  const limit = item.limit_usd !== undefined ? item.limit_usd : (item.allocation_usd !== undefined ? item.allocation_usd : (item.total_usd !== undefined ? item.total_usd : (item.allocation || 0)));
+  const resets = item.resets || item.reset_date || item.resets_at;
+
+  const mBox = el('div', 'alloc-meter');
+  const top = el('div', 'alloc-head');
+  let labelText = label;
+  if (isLab) {
+    const memCount = item.member_count !== undefined ? item.member_count : (item.members !== undefined ? (Array.isArray(item.members) ? item.members.length : item.members) : null);
+    labelText = (item.name || item.lab || label) + (memCount !== null && memCount !== undefined ? ' (' + memCount + (memCount === 1 ? ' member' : ' members') + ')' : '');
+  }
+  append(top, el('span', 'alloc-label', labelText));
+  mBox.appendChild(top);
+
+  const bClass = pct >= 100 ? 'red' : (pct >= 80 ? 'amber' : '');
+  mBox.appendChild(bar(Math.min(pct, 100), bClass));
+
+  const details = [];
+  details.push(pct.toFixed(1) + '% used');
+  details.push(usd(used) + ' of ' + usd(limit));
+  if (resets) details.push('resets ' + resets);
+
+  const sub = el('div', 'alloc-sub dim');
+  sub.textContent = details.join(' · ');
+  mBox.appendChild(sub);
+
+  if (pct >= 100) {
+    mBox.appendChild(el('div', 'alloc-warn red', 'over allocation (warn only: jobs still run)'));
+  }
+  container.appendChild(mBox);
+}
+
+const allocation = panel({
+  id: 'allocation', title: 'My allocation', width: 'w4',
+  url: () => '/api/panel/allocation',
+  ask: () => 'How much of my Ursa Major allocation have I used, and when does it reset?',
+  render(body, d) {
+    ALLOCATION_DATA = d;
+    const box = $('panel-allocation');
+    if (!d || (!d.person && !d.lab && !d.allocation_usd)) {
+      if (box) box.hidden = true;
+      return;
+    }
+    const person = d.person || (!d.lab && d.allocation_usd !== undefined ? d : null);
+    if (!person && !d.lab) {
+      if (box) box.hidden = true;
+      return;
+    }
+    if (box) box.hidden = false;
+    if (person) renderAllocMeter(body, 'You', person, false);
+    if (d.lab) renderAllocMeter(body, 'Lab', d.lab, true);
+  },
+});
+
 // ---- My month (usage)
 panel({
   id: 'usage', title: 'My usage', width: 'w4',
@@ -291,37 +374,73 @@ panel({
     return [s, by];
   },
   url() { return '/api/panel/usage?range=' + this.range + '&by=' + this.by; },
-  ask: () => 'Summarise my Ursa Major usage and cost this month, and how I could spend less.',
+  ask: () => 'Summarise my Ursa Major usage this month.',
   render(body, d) {
     const t = d.total || {};
-    append(body, append(el('div', 'stats'),
-      stat('Est. cost', usd(t.est_cost_usd), 'amber'), stat('Jobs', num(t.jobs, 0), '', (t.failed || 0) + ' failed'),
-      stat('Node-hours', num(t.node_hours, 1), '', num(t.core_hours, 0) + ' core-h'),
-      stat('CPU efficiency', t.cpu_efficiency_percent !== undefined ? num(t.cpu_efficiency_percent, 0) + '%' : '-',
-        t.cpu_efficiency_percent < 30 ? 'red' : (t.cpu_efficiency_percent < 60 ? 'amber' : 'green'))));
-    const rows = (d.rows || []).slice().sort((a, b) => (b.est_cost_usd || 0) - (a.est_cost_usd || 0));
-    const max = Math.max(...rows.map((r) => r.est_cost_usd || 0), 0.01);
-    body.appendChild(table([
-      {label: d.group_by || 'key', get: (r) => r.key, cls: 'mono'},
-      {label: 'jobs', get: (r) => r.jobs, num: true},
-      {label: 'est. cost', get: (r) => usd(r.est_cost_usd), num: true},
-      {label: '', get: (r) => bar((r.est_cost_usd || 0) / max * 100, 'amber')},
-    ], rows));
+    const stats = el('div', 'stats');
+    if (ME.staff) {
+      append(stats,
+        stat('Est. cost', usd(t.est_cost_usd), 'amber'),
+        stat('Jobs', num(t.jobs, 0), '', (t.failed || 0) + ' failed'),
+        stat('Node-hours', num(t.node_hours, 1), '', num(t.core_hours, 0) + ' core-h'),
+        stat('CPU efficiency', t.cpu_efficiency_percent !== undefined ? num(t.cpu_efficiency_percent, 0) + '%' : '-',
+          t.cpu_efficiency_percent < 30 ? 'red' : (t.cpu_efficiency_percent < 60 ? 'amber' : 'green')));
+    } else {
+      append(stats,
+        stat('Jobs', num(t.jobs, 0)),
+        stat('Failures', num(t.failed, 0), t.failed ? 'amber' : ''),
+        stat('Node-hours', num(t.node_hours, 1), '', num(t.core_hours, 0) + ' core-h'));
+      if (t.gpu_hours) {
+        stats.appendChild(stat('GPU-hours', num(t.gpu_hours, 1)));
+      }
+      stats.appendChild(stat('CPU efficiency', t.cpu_efficiency_percent !== undefined ? num(t.cpu_efficiency_percent, 0) + '%' : '-',
+        t.cpu_efficiency_percent < 30 ? 'red' : (t.cpu_efficiency_percent < 60 ? 'amber' : 'green')));
+    }
+    body.appendChild(stats);
+
+    if (ME.staff) {
+      const rows = (d.rows || []).slice().sort((a, b) => (b.est_cost_usd || 0) - (a.est_cost_usd || 0));
+      const max = Math.max(...rows.map((r) => r.est_cost_usd || 0), 0.01);
+      body.appendChild(table([
+        {label: d.group_by || 'key', get: (r) => r.key, cls: 'mono'},
+        {label: 'jobs', get: (r) => r.jobs, num: true},
+        {label: 'est. cost', get: (r) => usd(r.est_cost_usd), num: true},
+        {label: '', get: (r) => bar((r.est_cost_usd || 0) / max * 100, 'amber')},
+      ], rows));
+    } else {
+      const rows = (d.rows || []).slice().sort((a, b) => (b.node_hours || 0) - (a.node_hours || 0));
+      const max = Math.max(...rows.map((r) => r.node_hours || 0), 0.01);
+      body.appendChild(table([
+        {label: d.group_by || 'key', get: (r) => r.key, cls: 'mono'},
+        {label: 'jobs', get: (r) => r.jobs, num: true},
+        {label: 'node-h', get: (r) => num(r.node_hours, 1), num: true},
+        {label: '', get: (r) => bar((r.node_hours || 0) / max * 100, '')},
+      ], rows));
+    }
     append(body, notes(d.notes));
   },
 });
 
 // ---- Waste
 panel({
-  id: 'waste', title: 'Money left on the table', width: 'w8', lazy: true, lazyLabel: 'Check my jobs',
+  id: 'waste', title: () => (ME.staff ? 'Money left on the table' : 'Unused cores'), width: 'w8', lazy: true, lazyLabel: 'Check my jobs',
   lazyNote: 'Looks for idle, failed-fast and timed-out jobs in your accounting.',
   tools() { return [rangeSelect(this, [['7d', '7 days'], ['30d', '30 days']], '7d')]; },
   url() { return '/api/panel/waste?range=' + this.range; },
   ask: () => 'Go through my waste report on Ursa Major and tell me the top things to change.',
   render(body, d) {
-    append(body, append(el('div', 'stats'),
-      stat('Est. wasted', usd(d.total_est_wasted_usd), d.total_est_wasted_usd ? 'red' : 'green'),
-      stat('Wasted node-h', num(d.total_wasted_node_hours, 1)), stat('Jobs scanned', num(d.jobs_scanned, 0))));
+    const stats = el('div', 'stats');
+    if (ME.staff) {
+      append(stats,
+        stat('Est. wasted', usd(d.total_est_wasted_usd), d.total_est_wasted_usd ? 'red' : 'green'),
+        stat('Wasted node-h', num(d.total_wasted_node_hours, 1)),
+        stat('Jobs scanned', num(d.jobs_scanned, 0)));
+    } else {
+      append(stats,
+        stat('Wasted node-h', num(d.total_wasted_node_hours, 1), d.total_wasted_node_hours ? 'amber' : 'green'),
+        stat('Jobs scanned', num(d.jobs_scanned, 0)));
+    }
+    body.appendChild(stats);
     const kinds = Object.entries(d.count_by_kind || {});
     if (kinds.length) { const r = el('div', 'form-row'); for (const [k, n] of kinds) r.appendChild(el('span', 'chip amber', k + ' ' + n)); body.appendChild(r); }
     const items = (d.items || []).slice(0, 8);
@@ -329,7 +448,13 @@ panel({
     for (const it of items) {
       // node-level items (idle-node) have no job and no user
       const what = it.job_id ? 'job ' + it.job_id : 'idle node';
-      const head = append(el('div', 'ft'), el('span', null, usd(it.est_wasted_usd) + '  ' + what + '  '), el('span', 'dim', it.kind + ', ' + (it.partition || '')));
+      const head = el('div', 'ft');
+      if (ME.staff) {
+        append(head, el('span', null, usd(it.est_wasted_usd) + '  ' + what + '  '), el('span', 'dim', it.kind + ', ' + (it.partition || '')));
+      } else {
+        const wastedH = it.wasted_node_hours !== undefined ? num(it.wasted_node_hours, 1) + ' node-h wasted  ' : '';
+        append(head, el('span', null, wastedH + what + '  '), el('span', 'dim', it.kind + ', ' + (it.partition || '')));
+      }
       let open = null;
       if (it.job_id) { open = el('button', 'row-btn', 'open job'); open.onclick = () => showJob(it.job_id, false); }
       append(body, append(el('div', 'finding'), head, el('div', 'fe', it.detail || ''), el('div', null, it.suggestion || ''), open));
@@ -362,21 +487,24 @@ panel({
 
 // ---- Partitions + interactive helper
 panel({
-  id: 'partitions', title: 'Partitions and prices', width: 'w8',
+  id: 'partitions', title: () => (ME.staff ? 'Partitions and prices' : 'Partitions'), width: 'w8',
   url: () => '/api/panel/partitions',
-  ask: () => 'Which Ursa Major partition should I use for my work, and what will it cost?',
+  ask: () => 'Which Ursa Major partition should I use for my work?',
   render(body, d) {
     const list = Array.isArray(d) ? d : [];
-    body.appendChild(table([
+    const cols = [
       {label: 'partition', get: (p) => append(el('span', 'mono'), el('span', null, p.name + (p.default ? '*' : '')), el('br'), el('span', 'share' + (PARTS_SHARED[p.name] ? '' : ' whole'), PARTS_SHARED[p.name] ? 'shared' : 'whole node'))},
       {label: 'cores', get: (p) => p.cpus_per_node, num: true},
       {label: 'memory', get: (p) => p.mem_gb_per_node ? p.mem_gb_per_node + ' GB' : '-', num: true},
       {label: 'GPU', get: (p) => p.gpus_per_node ? p.gpus_per_node + ' x ' + (p.gpu_type || 'GPU') : '-', hideSm: true},
-      {label: '$/node-h', get: (p) => p.usd_per_node_hour !== null && p.usd_per_node_hour !== undefined ? usd(p.usd_per_node_hour) : 'n/a', num: true},
-      {label: 'use for', get: (p) => p.use_for, hideSm: true},
-    ], list));
+    ];
+    if (ME.staff) {
+      cols.push({label: '$/node-h', get: (p) => p.usd_per_node_hour !== null && p.usd_per_node_hour !== undefined ? usd(p.usd_per_node_hour) : 'n/a', num: true});
+    }
+    cols.push({label: 'use for', get: (p) => p.use_for, hideSm: true});
+    body.appendChild(table(cols, list));
     // interactive session helper
-    body.appendChild(el('h4', 'dim', 'Interactive session: the exact command and its cost'));
+    body.appendChild(el('h4', 'dim', ME.staff ? 'Interactive session: the exact command and its cost' : 'Interactive session: the exact command'));
     const row = el('div', 'form-row');
     const sel = el('select'); sel.setAttribute('aria-label', 'Partition');
     for (const p of list) { const o = el('option', null, p.name); o.value = p.name; if (p.default) o.selected = true; sel.appendChild(o); }
@@ -397,7 +525,19 @@ panel({
         const cp = el('button', 'btn ghost', 'Copy'); cp.onclick = () => copyText(c);
         out.appendChild(append(el('div', 'cmd'), el('code', null, c), cp));
       }
-      out.appendChild(el('div', null, 'Worst case ' + usd(h.worst_case_usd) + ' at ' + usd(h.usd_per_hour) + '/h for ' + (h.time_limit || '')));
+      if (ME.staff) {
+        out.appendChild(el('div', null, 'Worst case ' + usd(h.worst_case_usd) + ' at ' + usd(h.usd_per_hour) + '/h for ' + (h.time_limit || '')));
+      } else {
+        const pAlloc = ALLOCATION_DATA && (ALLOCATION_DATA.person || (!ALLOCATION_DATA.lab && ALLOCATION_DATA.allocation_usd !== undefined ? ALLOCATION_DATA : null));
+        const limit = pAlloc ? (pAlloc.limit_usd ?? pAlloc.allocation_usd ?? pAlloc.total_usd ?? pAlloc.allocation) : null;
+        if (limit && limit > 0 && h.worst_case_usd !== undefined && h.worst_case_usd !== null) {
+          const pct = (h.worst_case_usd / limit) * 100;
+          const pctStr = pct < 0.1 && pct > 0 ? '<0.1%' : pct.toFixed(1) + '%';
+          out.appendChild(el('div', null, 'Worst case ~' + pctStr + ' of your allocation for ' + (h.time_limit || '')));
+        } else if (h.time_limit) {
+          out.appendChild(el('div', null, 'Time limit ' + h.time_limit));
+        }
+      }
       for (const w of h.warnings || []) out.appendChild(el('div', 'finding', w));
       if (h.connect) out.appendChild(el('div', 'note', 'Connect first: ' + h.connect));
     };
@@ -541,9 +681,23 @@ function plans(list) {
     const s = p.summary || {}, box = el('div', 'plan');
     box.appendChild(el('h3', null, 'Approve this ' + (s.action || p.tool) + '?'));
     const t = el('table');
+    let spentTodayStr = undefined;
+    if (s.committed_today_usd !== undefined) {
+      spentTodayStr = usd(s.committed_today_usd) + ' of ' + usd(s.day_cap_usd) + ' daily safety limit';
+    }
+    let allocStr = undefined;
+    if (s.allocation) {
+      const a = s.allocation;
+      const parts = [];
+      if (a.person_pct_after !== undefined && a.person_pct_after !== null) parts.push('you ~' + Math.round(a.person_pct_after) + '%');
+      if (a.lab_pct_after !== undefined && a.lab_pct_after !== null) parts.push('lab ~' + Math.round(a.lab_pct_after) + '%');
+      const pctText = parts.length ? 'After this job: ' + parts.join(' / ') + ' of allocation' : '';
+      allocStr = [pctText, a.warning].filter(Boolean).join(' · ');
+    }
     const rows = [['job', s.job_id || s.job_name], ['partition', s.partition], ['nodes', s.nodes], ['time limit', s.time_limit],
       ['worst case', s.worst_case_usd !== undefined ? usd(s.worst_case_usd) : undefined],
-      ['spent today', s.committed_today_usd !== undefined ? usd(s.committed_today_usd) + ' of ' + usd(s.day_cap_usd) : undefined],
+      ['spent today', spentTodayStr],
+      ['allocation', allocStr],
       ['scheduler', s.scheduler_test], ['effect', s.effect], ['folder', s.remote_dir], ['warnings', (s.warnings || []).join('; ') || undefined], ['expires', p.expires_at]];
     for (const [k, v] of rows) { if (v === undefined || v === null || v === '') continue; const r = el('tr'); append(r, el('td', null, k), el('td', null, String(v))); t.appendChild(r); }
     box.appendChild(t);
@@ -565,7 +719,7 @@ function plans(list) {
 let greeted = false;
 function openChat(prefill) {
   $('drawer').hidden = false;
-  if (!greeted) { greeted = true; say('bot', 'Hi. Ask me about Ursa Major: running jobs, failures, partitions, modules, costs. I can plan a job for you; nothing runs until you press Approve.'); }
+  if (!greeted) { greeted = true; say('bot', 'Hi. Ask me about Ursa Major: running jobs, failures, partitions, modules. I can plan a job for you; nothing runs until you press Approve.'); }
   if (prefill) { $('q').value = prefill; }
   $('q').focus();
 }

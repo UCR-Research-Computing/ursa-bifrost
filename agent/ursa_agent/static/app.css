@@ -153,11 +153,22 @@ table.t td.name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; w
 .bar > i { display: block; height: 100%; background: var(--cyan); }
 .bar.amber > i { background: var(--gold); } .bar.red > i { background: var(--red); } .bar.green > i { background: var(--green); }
 .partrow { display: grid; grid-template-columns: 130px minmax(80px, 260px) 80px 80px 80px minmax(0, 1fr); gap: 14px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.partrow.no-cost { grid-template-columns: 130px minmax(80px, 260px) 80px 80px minmax(0, 1fr); }
 .partrow .use { color: var(--amber); font-size: 11px; padding-left: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .partrow:last-child { border-bottom: 0; }
 .partrow .pn { font-family: var(--mono); }
 .partrow.hdr { font-size: 10px; }
 .form-row.spaced { margin-top: 14px; }
+
+/* allocation meters */
+.alloc-meter { margin-bottom: 12px; }
+.alloc-meter:last-child { margin-bottom: 0; }
+.alloc-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; font-size: 12px; }
+.alloc-label { font-weight: 600; color: var(--text); }
+.alloc-sub { font-size: 11px; margin-top: 5px; color: var(--dim); }
+.alloc-warn { font-size: 11px; margin-top: 4px; font-weight: 600; }
+.alloc-warn.red { color: var(--red); }
+.alloc-warn.amber { color: var(--amber); }
 
 /* findings, waste, suggestions */
 .finding { border-left: 3px solid var(--amber); background: var(--bg-2); padding: 8px 10px; border-radius: 0 6px 6px 0; margin: 8px 0; }
@@ -251,6 +262,7 @@ table.t td.name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; w
   .util a:nth-child(2) { display: none; }
   .foot-links a:first-child { display: none; }
   .partrow { grid-template-columns: 96px minmax(50px, 1fr) 54px 60px; }
+  .partrow.no-cost { grid-template-columns: 96px minmax(50px, 1fr) 54px 60px; }
   .partrow .use { display: none; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .btn { padding: 7px 12px; }
