@@ -240,11 +240,11 @@ type InteractiveInput struct {
 type InteractiveHelp struct {
 	Partition    string   `json:"partition"`
 	TimeLimit    string   `json:"time_limit"`
-	Connect      string   `json:"connect"`        // how to reach the login node
-	Command      string   `json:"command"`        // one-step: shell on a compute node
-	Alternative  string   `json:"alternative"`    // salloc, then srun
-	USDPerHour   float64  `json:"usd_per_hour"`   // whole nodes, or the share held on shared partitions
-	WorstCaseUSD float64  `json:"worst_case_usd"` // if the session runs to the limit
+	Connect      string   `json:"connect"`                  // how to reach the login node
+	Command      string   `json:"command"`                  // one-step: shell on a compute node
+	Alternative  string   `json:"alternative"`              // salloc, then srun
+	USDPerHour   float64  `json:"usd_per_hour,omitempty"`   // whole nodes, or the share held on shared partitions
+	WorstCaseUSD float64  `json:"worst_case_usd,omitempty"` // if the session runs to the limit
 	Warnings     []string `json:"warnings"`
 	Notes        []string `json:"notes"`
 }

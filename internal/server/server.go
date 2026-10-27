@@ -202,6 +202,7 @@ func (s *Server) conn(u *User, p *ProgramClient) *userConn {
 	svc.StateSealer = s.store.s // A1 plans and ledger sealed at rest (v0.9.16)
 	if p != nil {
 		svc.Program = p.ID
+		svc.ProgramOwnCaps = p.MaxCostPerDayUSD > 0
 	}
 	c := &userConn{svc: svc, srv: mcpserver.New(svc), sig: sig, last: time.Now()}
 	s.conns[key] = c

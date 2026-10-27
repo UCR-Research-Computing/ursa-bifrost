@@ -101,25 +101,26 @@ type Staging struct {
 
 // Config is the whole file.
 type Config struct {
-	Cluster     string             `yaml:"cluster"`
-	ClusterUser string             `yaml:"cluster_user,omitempty"` // default: `id -un` on the login node
-	Backend     string             `yaml:"backend"`                // ssh | iap | fixture
-	FixturesDir string             `yaml:"fixtures_dir,omitempty"`
-	SSH         SSH                `yaml:"ssh"`
-	IAP         IAPConfig          `yaml:"iap"`
-	Server      ServerConfig       `yaml:"server"`
-	CatalogPath string             `yaml:"catalog_path"`
-	LogRoots    []string           `yaml:"log_roots"` // allowed log prefixes; {user} expands
-	Costs       map[string]float64 `yaml:"usd_per_node_hour,omitempty"`
-	ShowCost    bool               `yaml:"show_cost"`
-	Tiers       []string           `yaml:"tiers"` // tiers granted to the local user
-	TTL         TTL                `yaml:"cache_ttl"`
-	Limits      Limits             `yaml:"limits"`
-	AuditPath   string             `yaml:"audit_path"`
-	Caps        Caps               `yaml:"caps"`
-	StatePath   string             `yaml:"state_path"`  // A1 plans, tokens and spend ledger
-	ResultsDir  string             `yaml:"results_dir"` // local folder for downloaded results
-	JobsRoot    string             `yaml:"jobs_root"`   // remote folder under $HOME for submitted jobs
+	Cluster       string             `yaml:"cluster"`
+	ClusterUser   string             `yaml:"cluster_user,omitempty"` // default: `id -un` on the login node
+	Backend       string             `yaml:"backend"`                // ssh | iap | fixture
+	FixturesDir   string             `yaml:"fixtures_dir,omitempty"`
+	SSH           SSH                `yaml:"ssh"`
+	IAP           IAPConfig          `yaml:"iap"`
+	Server        ServerConfig       `yaml:"server"`
+	CatalogPath   string             `yaml:"catalog_path"`
+	LogRoots      []string           `yaml:"log_roots"` // allowed log prefixes; {user} expands
+	Costs         map[string]float64 `yaml:"usd_per_node_hour,omitempty"`
+	ShowCost      bool               `yaml:"show_cost"`
+	ShowCostTiers []string           `yaml:"show_cost_tiers,omitempty"`
+	Tiers         []string           `yaml:"tiers"` // tiers granted to the local user
+	TTL           TTL                `yaml:"cache_ttl"`
+	Limits        Limits             `yaml:"limits"`
+	AuditPath     string             `yaml:"audit_path"`
+	Caps          Caps               `yaml:"caps"`
+	StatePath     string             `yaml:"state_path"`  // A1 plans, tokens and spend ledger
+	ResultsDir    string             `yaml:"results_dir"` // local folder for downloaded results
+	JobsRoot      string             `yaml:"jobs_root"`   // remote folder under $HOME for submitted jobs
 	// EnvPartition is where env_check runs its one-core job (never the login node).
 	EnvPartition string  `yaml:"env_check_partition"`
 	Staging      Staging `yaml:"staging"`

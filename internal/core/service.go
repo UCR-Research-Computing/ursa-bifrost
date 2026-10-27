@@ -41,6 +41,10 @@ type Service struct {
 	// acts for, or empty for a person's own clients. Audit records then read
 	// "program:<id>/<mcp client>".
 	Program string
+	// ProgramOwnCaps is true when the Service acts for a program client with
+	// its own A1 caps (ProgramClient.MaxCostPerDayUSD > 0). Such programs always
+	// get cost figures even if show_cost_tiers would otherwise hide them.
+	ProgramOwnCaps bool
 	// Gate caps work across everyone on the hosted server (accounting runs);
 	// nil = no cap (CLI, local).
 	Gate *Gate
@@ -390,9 +394,80 @@ func Call[T any](ctx context.Context, s *Service, client, tool, tier string, arg
 		finish(d, err, 0)
 		return zero, err
 	}
+	stripCostFields(s, data)
 	res := wrap(s, t, data)
 	finish("allowed", nil, approxSize(res))
 	return res, nil
+}
+
+// canSeeCost reports whether this Service caller should see dollar figures.
+func (s *Service) canSeeCost() bool {
+	if !s.Cfg.ShowCost {
+		return false
+	}
+	if s.ProgramOwnCaps {
+		return true
+	}
+	if len(s.Cfg.ShowCostTiers) == 0 {
+		return true
+	}
+	for _, have := range s.Cfg.Tiers {
+		for _, want := range s.Cfg.ShowCostTiers {
+			if have == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// stripCostFields strips dollar figures from tool outputs when the caller
+// does not hold a tier in show_cost_tiers (or show_cost is false).
+func stripCostFields(s *Service, data any) {
+	if s.canSeeCost() {
+		return
+	}
+	switch v := data.(type) {
+	case *ClusterStatus:
+		if v != nil {
+			v.BurnPerHour = nil
+			for i := range v.Partitions {
+				v.Partitions[i].USDPerHour = nil
+				v.Partitions[i].BurnPerHour = nil
+			}
+		}
+	case []PartitionInfo:
+		for i := range v {
+			v[i].USD = nil
+		}
+	case []JobSummary:
+		for i := range v {
+			v[i].CostUSD = 0
+		}
+	case *JobDetail:
+		if v != nil {
+			v.CostUSD = 0
+		}
+	case *Usage:
+		if v != nil {
+			for i := range v.Rows {
+				v.Rows[i].CostUSD = 0
+			}
+			v.Total.CostUSD = 0
+		}
+	case *WasteReport:
+		if v != nil {
+			v.TotalWasteUS = 0
+			for i := range v.Items {
+				v.Items[i].CostUSD = 0
+			}
+		}
+	case *InteractiveHelp:
+		if v != nil {
+			v.USDPerHour = 0
+			v.WorstCaseUSD = 0
+		}
+	}
 }
 
 // acctRows runs a plain-text accounting summary (backend.SacctSummary*) and
