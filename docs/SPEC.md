@@ -1166,7 +1166,7 @@ and money only as a share of their allocation. Section 20's "show dollar figures
 is narrowed: dollars stay on staff (R2) views; researcher (R1) views show them only against an
 allocation once one exists.
 
-### 24.2 Dashboard (ursa-agent) (built on branch feat/dashboard-allocation, agent 0.5.0)
+### 24.2 Dashboard (ursa-agent 0.5.0)
 
 | Panel | Researchers (R1) | Staff (R2) |
 |---|---|---|

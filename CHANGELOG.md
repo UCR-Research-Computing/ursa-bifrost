@@ -5,7 +5,8 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
-v0.10.0 (not tagged yet):
+v0.10.0 and agent 0.5.0 (not tagged yet):
+- **ursa-agent 0.5.0**: researcher dashboard leads with work (jobs, failures, node-hours); dollar figures (cluster $/hour, list prices, est. cost, wasted $) shown to staff (R2) only; new My allocation panel (person and lab, % and $, warn-only); "Money left on the table" becomes "Unused cores" for researchers; plan card labels the day cap a daily safety limit and shows allocation impact.
 - **Per-tier cost display (`show_cost_tiers`, phase F4)**: researchers (R1) see work first;
   dollar fields (`est_cost_usd`, `usd_per_node_hour`, `current_usd_per_hour`, `est_wasted_usd`,
   totals, `worst_case_usd` in `interactive_help`) are included only when the caller holds one of
