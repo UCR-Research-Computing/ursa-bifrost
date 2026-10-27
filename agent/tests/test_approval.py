@@ -50,6 +50,16 @@ def test_plan_token_is_parked_and_hidden_from_model():
     assert pend[0]["confirm_tool"] == "job_submit_confirm"
 
 
+def test_plan_carries_allocation_summary():
+    ctx = Ctx()
+    alloc = {"person_pct_after": 20.6, "lab_pct_after": 15.0, "warning": "near allocation"}
+    shown = approval.after_tool(tool("job_submit"), {"script": "x"}, ctx, plan_response(allocation=alloc))
+    assert shown is not None
+    assert shown["plan"]["allocation"] == alloc
+    pend = approval.list_pending(ctx.state)
+    assert len(pend) == 1 and pend[0]["summary"]["allocation"] == alloc
+
+
 def test_take_is_single_use():
     ctx = Ctx()
     approval.after_tool(tool("job_cancel"), {"job_id": "9"}, ctx, plan_response(token="bf1-t2", job_id="9"))

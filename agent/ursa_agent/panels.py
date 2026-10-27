@@ -30,6 +30,7 @@ READ_TOOLS = frozenset(
         "uploads_list",
         "interactive_help",
         "modules_search",
+        "my_allocation",
         # R2 (staff); bifrost registers these only for R2 users
         "health",
         "jobs_list_all",
@@ -124,6 +125,12 @@ def _query(q: dict[str, str]) -> dict[str, Any]:
     return {"query": v}
 
 
+def _no_args(q: dict[str, str]) -> dict[str, Any]:
+    if q:
+        raise BadArgs("allocation takes no arguments")
+    return {}
+
+
 @dataclass(frozen=True)
 class Panel:
     tool: str
@@ -139,6 +146,7 @@ PANELS: dict[str, Panel] = {
     "jobs": Panel("jobs_list", 60, lambda q: {"since": _range(q, "7d"), "limit": 50}, keyed=("range",)),
     "job": Panel("job_show", 60, lambda q: {"job_id": _job(q)}, keyed=("job",)),
     "explain": Panel("job_explain", 300, lambda q: {"job_id": _job(q)}, keyed=("job",)),
+    "allocation": Panel("my_allocation", 600, _no_args),
     "usage": Panel(
         "my_usage",
         600,

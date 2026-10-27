@@ -63,6 +63,17 @@ def test_panel_returns_data_with_the_persons_token(client):
     assert client.get("/api/panel/jobs?range=30d").json()["cached"] is True and len(client.calls) == 1
 
 
+def test_allocation_panel_endpoint(client):
+    r = client.get("/api/panel/allocation")
+    assert r.status_code == 200
+    j = r.json()
+    assert j["tool"] == "my_allocation" and j["data"]["args"] == {}
+    assert client.calls[-1] == ("tok-1", "my_allocation", {})
+    # arguments are rejected with 400
+    r_bad = client.get("/api/panel/allocation?range=30d")
+    assert r_bad.status_code == 400
+
+
 def test_bad_args_are_400_and_never_reach_bifrost(client):
     r = client.get("/api/panel/job?job=1;ls")
     assert r.status_code == 400 and client.calls == []

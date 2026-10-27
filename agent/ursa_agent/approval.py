@@ -106,6 +106,7 @@ def summarize(tool: str, data: dict[str, Any]) -> dict[str, Any]:
         "state",
         "remote_dir",
         "expires_at",
+        "allocation",
     ]
     out = {k: data[k] for k in keys if k in data}
     out.setdefault("action", tool.removeprefix("job_"))

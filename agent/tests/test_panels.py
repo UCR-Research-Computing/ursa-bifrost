@@ -99,6 +99,14 @@ def test_staff_user_filter_is_checked():
         panels.resolve("alljobs", {"user": "x;y"})
 
 
+def test_allocation_panel_accepts_no_args_and_calls_my_allocation():
+    p, args, key = panels.resolve("allocation", {})
+    assert p.tool == "my_allocation" and args == {} and key == "allocation?"
+    for bad in [{"range": "7d"}, {"user": "alice"}, {"q": "1"}]:
+        with pytest.raises(panels.BadArgs):
+            panels.resolve("allocation", bad)
+
+
 def test_unkeyed_query_values_do_not_reach_the_tool():
     # extra query parameters are ignored: they cannot add tool arguments
     _, args, key = panels.resolve("pulse", {"job_id": "1", "confirm_token": "t"})
