@@ -257,6 +257,20 @@ func SacctSummaryUser(user, since, until string) (Command, error) {
 	return sacctSummary([]string{"-u", user}, since, until)
 }
 
+// SacctSummaryUsers lists multiple users' jobs between since and until ("" = now) as
+// plain-text rows for slurm.ParseSacctRows.
+func SacctSummaryUsers(users []string, since, until string) (Command, error) {
+	if len(users) == 0 {
+		return Command{}, errors.New("users required")
+	}
+	for _, u := range users {
+		if err := ValidUser(u); err != nil {
+			return Command{}, err
+		}
+	}
+	return sacctSummary([]string{"-u", strings.Join(users, ",")}, since, until)
+}
+
 // SacctSummaryAll is SacctSummaryUser for every user (staff tier, health).
 func SacctSummaryAll(since, until string) (Command, error) {
 	return sacctSummary([]string{"-a"}, since, until)

@@ -90,6 +90,7 @@ func TestAllowListIsClosed(t *testing.T) {
 	td, _ := TarDir("/home/alice/bifrost-jobs/x", nil)
 	sqj, _ := SqueueJobs([]string{"1", "2"})
 	saj, _ := SacctJobs([]string{"1", "2"})
+	sam, _ := SacctSummaryUsers([]string{"alice", "bob"}, "now-1days", "")
 	writes := map[string]bool{}
 	for _, c := range []Command{sb, sc, ho, re} {
 		writes[c.String()] = true
@@ -97,19 +98,19 @@ func TestAllowListIsClosed(t *testing.T) {
 			t.Errorf("%v must be marked write", c.argv)
 		}
 	}
-	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), PartitionSharing(), Nodes(), cat, tl, ms, to, lf, hd, td, sqj, saj} {
+	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), PartitionSharing(), Nodes(), cat, tl, ms, to, lf, hd, td, sqj, saj, sam} {
 		if c.Write() {
 			t.Errorf("read command marked write: %v", c.argv)
 		}
 	}
-	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), Nodes(), cat, tl, ms, to, sb, sc, ho, re, lf, hd, td, sqj, saj} {
+	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), Nodes(), cat, tl, ms, to, sb, sc, ho, re, lf, hd, td, sqj, saj, sam} {
 		if !allowed[c.argv[0]] {
 			t.Errorf("unexpected program %q", c.argv[0])
 		}
 		if c.argv[0] == "scontrol" && (len(c.argv) < 2 || (c.argv[1] != "show" && c.argv[1] != "hold" && c.argv[1] != "release")) {
 			t.Errorf("scontrol may only show, hold or release: %v", c.argv)
 		}
-		if c.argv[0] == "bash" && !strings.HasPrefix(c.argv[2], "module -t show ") && c.argv[2] != submitTemplate && c.argv[2] != envTemplate && c.argv[2] != treeTemplate {
+		if c.argv[0] == "bash" && !strings.HasPrefix(c.argv[2], "module -t show ") && c.argv[2] != submitTemplate && c.argv[2] != envTemplate && c.argv[2] != treeTemplate && c.argv[2] != sacctSummaryTemplate {
 			t.Errorf("bash only runs module show or the fixed submit template: %v", c.argv)
 		}
 		if c.argv[0] == "sbatch" && c.argv[1] != "--test-only" {
@@ -331,5 +332,35 @@ func TestDuTemplateShape(t *testing.T) {
 		if !strings.Contains(duTemplate, want) {
 			t.Errorf("du template lacks %q", want)
 		}
+	}
+}
+
+func TestSacctSummaryUsers(t *testing.T) {
+	c, err := SacctSummaryUsers([]string{"alice_ucr_edu", "bob_ucr_edu"}, "2026-10-01", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.argv[0] != "bash" || c.argv[1] != "-c" {
+		t.Fatalf("unexpected argv: %v", c.argv)
+	}
+	// Verify -u alice_ucr_edu,bob_ucr_edu is passed to the template
+	foundU := false
+	for i, arg := range c.argv {
+		if arg == "-u" && i+1 < len(c.argv) && c.argv[i+1] == "alice_ucr_edu,bob_ucr_edu" {
+			foundU = true
+			break
+		}
+	}
+	if !foundU {
+		t.Errorf("-u alice_ucr_edu,bob_ucr_edu not found in argv: %v", c.argv)
+	}
+
+	// Empty users
+	if _, err := SacctSummaryUsers(nil, "now-7days", ""); err == nil {
+		t.Error("empty users accepted")
+	}
+	// Invalid username
+	if _, err := SacctSummaryUsers([]string{"alice", "bob;id"}, "now-7days", ""); err == nil {
+		t.Error("invalid username accepted")
 	}
 }
