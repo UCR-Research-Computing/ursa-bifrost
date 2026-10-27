@@ -61,7 +61,7 @@ func TestToolsR1(t *testing.T) {
 	cs := connect(t)
 	tools := toolNames(t, cs)
 	for _, want := range []string{"cluster_status", "partitions", "jobs_list", "job_show", "job_explain", "job_log_tail", "modules_search", "module_show", "recipes", "script_check", "my_usage", "waste_report", "job_results",
-		"storage_usage", "files_list", "files_read", "env_check", "interactive_help"} {
+		"storage_usage", "files_list", "files_read", "env_check", "interactive_help", "my_allocation"} {
 		tl, ok := tools[want]
 		if !ok {
 			t.Errorf("missing tool %s", want)

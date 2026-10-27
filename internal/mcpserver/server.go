@@ -386,6 +386,13 @@ func New(s *core.Service) *mcp.Server {
 			return nil, toEnvelope(r), err
 		})
 
+	mcp.AddTool(srv, addR1("my_allocation", "My allocation",
+		"Your Ursa Major compute allocation and current period usage, both for yourself and your lab. Allocations are list-price estimates in dollars; enforcement is warn-only."),
+		func(ctx context.Context, req *mcp.CallToolRequest, _ noInput) (*mcp.CallToolResult, envelope, error) {
+			r, err := core.Call(ctx, s, clientName(req), "my_allocation", "R1", nil, true, s.MyAllocation)
+			return nil, toEnvelope(r), err
+		})
+
 	mcp.AddTool(srv, addR1("job_results", "Job results",
 		"Files in one of the caller's job folders (the job's working directory): a paged listing (offset/limit, prefix, pattern) with total_files and next_offset; one text file read in chunks (read, read_offset, read_bytes) or searched (read + grep), returned as untrusted data; on the laptop CLI, download to results_dir/<job_id>. Nothing changes on the cluster."),
 		func(ctx context.Context, req *mcp.CallToolRequest, in resultsIn) (*mcp.CallToolResult, envelope, error) {

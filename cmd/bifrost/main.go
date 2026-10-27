@@ -51,6 +51,7 @@ Usage:
   bifrost module [--mpi M] <name>          module show (MPI-built ones under their MPI)
   bifrost recipes [query]                  known-good recipes and site rules
   bifrost check <script.sh|->              static check of a batch script
+  bifrost allocation                       your Ursa Major allocation and use
   bifrost usage [--since T] [--until T] [--by partition|state|user] [--all]
   bifrost waste [--since T] [--cpu PCT] [--all] [--user U]   avoidable spend
   bifrost health                           down/drained nodes, stockouts, stuck jobs (R2)
@@ -265,6 +266,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		r, err := core.Call(ctx, svc, "cli", tool, tier, map[string]any{"since": *since, "until": *until, "by": *by, "user": *user, "all": *all}, false,
 			func(ctx context.Context) (*core.Usage, error) { return svc.Usage(ctx, in) })
 		return out(stdout, stderr, g, r, err, func(w io.Writer) { printUsage(w, r.Data) })
+	case "allocation":
+		r, err := core.Call(ctx, svc, "cli", "my_allocation", "R1", nil, false,
+			func(ctx context.Context) (*core.MyAllocation, error) { return svc.MyAllocation(ctx) })
+		return out(stdout, stderr, g, r, err, func(w io.Writer) { printAllocation(w, r.Data) })
 	case "waste":
 		fs := newFlags("waste")
 		since := fs.String("since", "now-7days", "start")

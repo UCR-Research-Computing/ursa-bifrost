@@ -250,9 +250,9 @@ func printCheck(w io.Writer, c *core.ScriptCheck) {
 func printUsage(w io.Writer, u *core.Usage) {
 	fmt.Fprintf(w, "Usage since %s by %s\n\n", u.Since, u.GroupBy)
 	t := tw(w)
-	fmt.Fprintln(t, strings.ToUpper(u.GroupBy)+"\tJOBS\tFAILED\tNODE-H\tCORE-H\tGPU-H\tCPU EFF\tEST $")
+	fmt.Fprintln(t, strings.ToUpper(u.GroupBy)+"	JOBS	FAILED	NODE-H	CORE-H	GPU-H	CPU EFF	EST $")
 	row := func(r core.UsageRow) {
-		fmt.Fprintf(t, "%s\t%d\t%d\t%.2f\t%.1f\t%.2f\t%.1f%%\t%.2f\n", r.Key, r.Jobs, r.Failed, r.NodeHours, r.CoreHours, r.GPUHours, r.CPUPercent, r.CostUSD)
+		fmt.Fprintf(t, "%s	%d	%d	%.2f	%.1f	%.2f	%.1f%%	%.2f\n", r.Key, r.Jobs, r.Failed, r.NodeHours, r.CoreHours, r.GPUHours, r.CPUPercent, r.CostUSD)
 	}
 	for _, r := range u.Rows {
 		row(r)
@@ -261,6 +261,32 @@ func printUsage(w io.Writer, u *core.Usage) {
 	t.Flush()
 	for _, n := range u.Notes {
 		fmt.Fprintln(w, "\nnote:", n)
+	}
+}
+
+func printAllocation(w io.Writer, a *core.MyAllocation) {
+	if a == nil {
+		return
+	}
+	fmt.Fprintf(w, "Ursa Major allocation for period %s (resets %s)\n", a.Period, a.ResetsAt)
+	fmt.Fprintf(w, "Basis: %s, covered by %s\n\n", a.Basis, a.CoveredBy)
+	if a.Person != nil {
+		fmt.Fprintf(w, "Person: $%.2f of $%.2f used ($%.2f left, %.1f%%) [%s]\n",
+			a.Person.UsedUSD, a.Person.AllocationUSD, a.Person.LeftUSD, a.Person.PctUsed, a.Person.Status)
+	} else {
+		fmt.Fprintln(w, "Person: no personal allocation configured")
+	}
+	if a.Lab != nil {
+		fmt.Fprintf(w, "Lab %s (%s): $%.2f of $%.2f used ($%.2f left, %.1f%%, %d members) [%s]\n",
+			a.Lab.ID, a.Lab.Name, a.Lab.UsedUSD, a.Lab.AllocationUSD, a.Lab.LeftUSD, a.Lab.PctUsed, a.Lab.Members, a.Lab.Status)
+	} else {
+		fmt.Fprintln(w, "Lab: no lab allocation configured")
+	}
+	if len(a.Notes) > 0 {
+		fmt.Fprintln(w)
+		for _, n := range a.Notes {
+			fmt.Fprintf(w, "note: %s\n", n)
+		}
 	}
 }
 

@@ -35,6 +35,7 @@ func TestCLIJSONIsPureJSON(t *testing.T) {
 	for _, args := range [][]string{
 		{"status"}, {"partitions"}, {"jobs"}, {"job", "show", "236"}, {"job", "explain", "236"},
 		{"job", "log", "236"}, {"modules", "gcc"}, {"recipes", "gromacs"}, {"usage"}, {"waste"},
+		{"allocation"},
 	} {
 		out, errOut, code := runCLI(t, append(args, "--json", "--config", cfg)...)
 		if code != 0 {
@@ -61,6 +62,17 @@ func TestCLIErrorsAsJSON(t *testing.T) {
 	out, _, code = runCLI(t, "job", "show", "1;id", "--json", "--config", cfg)
 	if code != 1 || !strings.Contains(out, "expected digits") {
 		t.Fatalf("code %d out %s", code, out)
+	}
+}
+
+func TestCLIAllocation(t *testing.T) {
+	cfg := testConfig(t, "R1")
+	out, errOut, code := runCLI(t, "allocation", "--config", cfg)
+	if code != 0 {
+		t.Fatalf("exit %d: %s %s", code, out, errOut)
+	}
+	if !strings.Contains(out, "Ursa Major allocation for period") {
+		t.Errorf("expected allocation header in output: %s", out)
 	}
 }
 
