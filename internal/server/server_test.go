@@ -1150,6 +1150,63 @@ func TestUsersFileRejectsBadProgramCaps(t *testing.T) {
 	}
 }
 
+func TestUsersFileAllocationValidation(t *testing.T) {
+	goodYAML := `domain: ucr.edu
+labs:
+  - id: synthetic-lab
+    name: Synthetic Lab
+    allocation_usd: 500
+    period: month
+users:
+  - email: alice@ucr.edu
+    tiers: [R1, R2, A1]
+    lab: synthetic-lab
+    allocation_usd: 200
+  - email: bob@ucr.edu
+    tiers: [R1]
+    lab: synthetic-lab
+`
+
+	f := filepath.Join(t.TempDir(), "good.yaml")
+	_ = os.WriteFile(f, []byte(goodYAML), 0o600)
+	users, err := LoadUsers(f)
+	if err != nil {
+		t.Fatalf("good allocation YAML failed: %v", err)
+	}
+	lab := users.Lab("synthetic-lab")
+	if lab == nil || lab.Name != "Synthetic Lab" || lab.AllocationUSD != 500 || lab.Period != "month" {
+		t.Fatalf("unexpected lab: %+v", lab)
+	}
+	members := users.LabClusterUsers("synthetic-lab")
+	if len(members) != 2 || members[0] != "alice_ucr_edu" || members[1] != "bob_ucr_edu" {
+		t.Fatalf("unexpected members: %v", members)
+	}
+
+	badCases := map[string]string{
+		"bad lab id uppercase":    strings.Replace(goodYAML, "id: synthetic-lab", "id: SyntheticLab", 1),
+		"bad lab id leading dash": strings.Replace(goodYAML, "id: synthetic-lab", "id: -synthetic-lab", 1),
+		"bad lab id underscore":   strings.Replace(goodYAML, "id: synthetic-lab", "id: synthetic_lab", 1),
+		"unknown lab ref":         strings.Replace(goodYAML, "lab: synthetic-lab", "lab: unknown-lab", 1),
+		"negative lab amount":     strings.Replace(goodYAML, "allocation_usd: 500", "allocation_usd: -1", 1),
+		"oversized lab amount":    strings.Replace(goodYAML, "allocation_usd: 500", "allocation_usd: 1000001", 1),
+		"negative user amount":    strings.Replace(goodYAML, "allocation_usd: 200", "allocation_usd: -5", 1),
+		"oversized user amount":   strings.Replace(goodYAML, "allocation_usd: 200", "allocation_usd: 1000005", 1),
+		"period not month":        strings.Replace(goodYAML, "period: month", "period: year", 1),
+		"duplicate lab id":        strings.Replace(goodYAML, "labs:\n", "labs:\n  - id: synthetic-lab\n    name: Dupe\n    allocation_usd: 100\n    period: month\n", 1),
+	}
+
+	for name, bad := range badCases {
+		if bad == goodYAML {
+			t.Fatalf("%s: replacement did not apply", name)
+		}
+		f := filepath.Join(t.TempDir(), "bad.yaml")
+		_ = os.WriteFile(f, []byte(bad), 0o600)
+		if _, err := LoadUsers(f); err == nil {
+			t.Errorf("%s: accepted bad allocation config", name)
+		}
+	}
+}
+
 // TestProgramAndPersonInterleaved: the person's own client and a program for
 // the same person, used alternately, each keep their own tools and budget (one
 // shared connection slot would flip tiers or reset the budget on every call).

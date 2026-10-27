@@ -35,7 +35,24 @@ type User struct {
 	MaxCostPerJobUSD float64 `yaml:"max_cost_usd_per_job,omitempty"`
 	MaxNodes         int     `yaml:"max_nodes,omitempty"`
 	Disabled         bool    `yaml:"disabled,omitempty"`
+
+	Lab           string  `yaml:"lab,omitempty"`
+	AllocationUSD float64 `yaml:"allocation_usd,omitempty"`
+	ClusterUser   string  `yaml:"cluster_user,omitempty"`
 }
+
+// Lab is a research group with an Ursa Major allocation.
+type Lab struct {
+	ID            string  `yaml:"id"`
+	Name          string  `yaml:"name"`
+	AllocationUSD float64 `yaml:"allocation_usd"`
+	Period        string  `yaml:"period"`
+}
+
+// MaxAllocationUSD bounds lab and person allocations (at most $1,000,000).
+const MaxAllocationUSD = 1000000.0
+
+var labIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 
 // ProgramClient is a pre-registered OAuth client for a program (Ultra, a
 // dashboard, a batch job) rather than a person's chat client. It signs in as a
@@ -75,6 +92,7 @@ var programIDRe = regexp.MustCompile(`^[a-z][a-z0-9-]{2,40}$`)
 type UsersFile struct {
 	// Domain every user must belong to (Google hd claim), e.g. ucr.edu.
 	Domain  string          `yaml:"domain"`
+	Labs    []Lab           `yaml:"labs,omitempty"`
 	Users   []User          `yaml:"users"`
 	Clients []ProgramClient `yaml:"clients,omitempty"`
 }
@@ -116,6 +134,22 @@ func (u *Users) reload() error {
 	if f.Domain == "" {
 		return errors.New("users file: domain is required (e.g. ucr.edu)")
 	}
+	labs := map[string]bool{}
+	for _, l := range f.Labs {
+		if !labIDRe.MatchString(l.ID) {
+			return fmt.Errorf("users file: lab id %q must match ^[a-z0-9][a-z0-9-]{1,62}$", l.ID)
+		}
+		if labs[l.ID] {
+			return fmt.Errorf("users file: lab id %q is listed twice", l.ID)
+		}
+		labs[l.ID] = true
+		if l.Period != "month" {
+			return fmt.Errorf("users file: lab %s period must be \"month\"", l.ID)
+		}
+		if l.AllocationUSD < 0 || l.AllocationUSD > MaxAllocationUSD {
+			return fmt.Errorf("users file: lab %s allocation_usd must be 0-%.0f", l.ID, MaxAllocationUSD)
+		}
+	}
 	for i, x := range f.Users {
 		f.Users[i].Email = strings.ToLower(strings.TrimSpace(x.Email))
 		if !strings.HasSuffix(f.Users[i].Email, "@"+f.Domain) {
@@ -125,6 +159,12 @@ func (u *Users) reload() error {
 			if t != "R1" && t != "R2" && t != "A1" {
 				return fmt.Errorf("users file: %s has unknown tier %q", x.Email, t)
 			}
+		}
+		if x.Lab != "" && !labs[x.Lab] {
+			return fmt.Errorf("users file: user %s references unknown lab %q", x.Email, x.Lab)
+		}
+		if x.AllocationUSD < 0 || x.AllocationUSD > MaxAllocationUSD {
+			return fmt.Errorf("users file: user %s allocation_usd must be 0-%.0f", x.Email, MaxAllocationUSD)
 		}
 	}
 	if err := checkClients(f.Clients); err != nil {
@@ -192,6 +232,46 @@ func (u *Users) Program(id string) *ProgramClient {
 		}
 	}
 	return nil
+}
+
+// Lab returns the lab with this id, or nil if unknown.
+func (u *Users) Lab(id string) *Lab {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	_ = u.reload()
+	for _, l := range u.f.Labs {
+		if l.ID == id {
+			x := l
+			return &x
+		}
+	}
+	return nil
+}
+
+// LabClusterUsers returns the cluster usernames of all members in labID.
+func (u *Users) LabClusterUsers(labID string) []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	_ = u.reload()
+	var out []string
+	seen := map[string]bool{}
+	for _, usr := range u.f.Users {
+		if usr.Lab == labID && !usr.Disabled {
+			cu := usr.ClusterUser
+			if cu == "" {
+				cu = emailToClusterUser(usr.Email)
+			}
+			if cu != "" && !seen[cu] {
+				seen[cu] = true
+				out = append(out, cu)
+			}
+		}
+	}
+	return out
+}
+
+func emailToClusterUser(email string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(email, "@", "_"), ".", "_")
 }
 
 // isProgramID reports whether id is listed as a program client at all

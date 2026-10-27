@@ -124,7 +124,23 @@ type Config struct {
 	// EnvPartition is where env_check runs its one-core job (never the login node).
 	EnvPartition string  `yaml:"env_check_partition"`
 	Staging      Staging `yaml:"staging"`
-	Path         string  `yaml:"-"`
+	// Allocation configures optional Ursa Major allocations (local single-user CLI path).
+	Allocation *AllocationConfig `yaml:"allocation,omitempty"`
+	Path       string            `yaml:"-"`
+}
+
+// AllocationLabConfig is optional lab allocation in CLI/local config.
+type AllocationLabConfig struct {
+	ID            string  `yaml:"id"`
+	Name          string  `yaml:"name"`
+	AllocationUSD float64 `yaml:"allocation_usd"`
+	Period        string  `yaml:"period,omitempty"`
+}
+
+// AllocationConfig configures allocation for the local single-user CLI path.
+type AllocationConfig struct {
+	PersonUSD float64              `yaml:"person_usd,omitempty"`
+	Lab       *AllocationLabConfig `yaml:"lab,omitempty"`
 }
 
 // Duration is a time.Duration that reads "20s" / "10m" in YAML.
