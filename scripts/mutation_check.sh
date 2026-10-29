@@ -376,6 +376,15 @@ mutate "v010 lab ref validation"           internal/server/store.go 'if x.Lab !=
 mutate "v010 amount bounds"                internal/server/store.go 'if l.AllocationUSD < 0 || l.AllocationUSD > MaxAllocationUSD {' 'if false {'
 mutate "v010 R1 never sees per-member figures" internal/core/allocation.go 'if !hasTier(s.Cfg.Tiers, "R2") {' 'if false {'
 mutate "v010 show_cost_tiers stripping"    internal/core/service.go 'stripCostFields(s, data)' '// stripCostFields(s, data)'
+# v0.10.4 job arrays count every task (ported from ClusterWand v0.5.1)
+mutate "v0104 array cost counts tasks"  internal/core/a1.go '	worst := round(price*float64(nodes)*share*float64(mins)/60*float64(tasks), 2)' '	worst := round(price*float64(nodes)*share*float64(mins)/60, 2)'
+mutate "v0104 array uncountable"        internal/core/a1.go '		if !ok {
+			return nil, fmt.Errorf("--array=%s: cannot count' '		if false {
+			return nil, fmt.Errorf("--array=%s: cannot count'
+mutate "v0104 array short flag"         internal/core/cluster.go '"A": "account", "a": "array"}' '"A": "account"}'
+mutate "v0104 array step guard"         internal/core/dbcheck.go '		if b < a || step < 1 {' '		if b < a {'
+mutate "v0104 hetjob refused"           internal/core/a1.go '	if req["hetjob"] != "" || req["packjob"] != "" {' '	if false {'
+mutate "v0104 script_check array"       internal/core/cluster.go '					c = round(c*float64(n), 2)' '					_ = n'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

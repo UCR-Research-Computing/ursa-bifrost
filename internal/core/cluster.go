@@ -536,6 +536,15 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 		}
 		if price, ok := s.price(cat, part); ok && hasTime && s.Cfg.ShowCost {
 			c := round(price*float64(nodes)*cr.NodeShare*float64(mins)/60, 2)
+			if spec := sc.Request["array"]; spec != "" {
+				// every array task is a job of this size (v0.10.4)
+				if n, ok := arrayTasks(spec); ok {
+					c = round(c*float64(n), 2)
+					add("info", 0, "job array of %d tasks: the estimate counts every task", n)
+				} else {
+					add("warning", 0, "--array=%s: cannot count its tasks, so the estimate is for one task; job_submit refuses specs it cannot count", spec)
+				}
+			}
 			sc.EstCostUSD = &c
 		}
 		if shared {
@@ -594,7 +603,7 @@ func parseSbatch(opts string, req map[string]string) {
 			break
 		}
 		key, val, hasEq := strings.Cut(strings.TrimLeft(o, "-"), "=")
-		short := map[string]string{"p": "partition", "N": "nodes", "n": "ntasks", "c": "cpus-per-task", "t": "time", "J": "job-name", "G": "gpus", "o": "output", "e": "error", "A": "account"}
+		short := map[string]string{"p": "partition", "N": "nodes", "n": "ntasks", "c": "cpus-per-task", "t": "time", "J": "job-name", "G": "gpus", "o": "output", "e": "error", "A": "account", "a": "array"}
 		if !strings.HasPrefix(o, "--") && strings.HasPrefix(o, "-") && len(o) >= 2 {
 			k := o[1:2]
 			if long, ok := short[k]; ok {
