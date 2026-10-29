@@ -4,6 +4,8 @@ All notable changes. Versions follow [semver](https://semver.org); every release
 tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC.md).
 
 ## Unreleased
+- **A1 state with a sealer is opened as sealed first** (`loadState`): an AES-GCM sealed ledger whose random nonce began with `{` (1 save in 256) was misread as corrupt plaintext JSON, and every later `job_submit` for that person failed with "A1 state file ... is corrupt" until the file was removed. Plaintext (CLI, pre-0.9.16 server files) is now the fallback only when the sealed open fails. Found live 2026-10-29.
+- Tests: `newTestService` uses a temp `state_path`, so day-cap tests no longer read the developer's real `~/.local/share/ursa-bifrost/a1.json`.
 
 ## v0.10.1 - 2026-10-27
 - `my_allocation`: `notes` is always a list (`[]`), never `null`, as the contract says (found in the first live call).

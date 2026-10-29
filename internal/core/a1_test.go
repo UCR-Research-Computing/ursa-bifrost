@@ -710,3 +710,39 @@ func TestA1StateSealed(t *testing.T) {
 		t.Fatalf("sealed ledger: %v entries=%d (want the old one + this job)", err, len(st.Ledger))
 	}
 }
+
+// braceSealer is a sealer whose output starts with '{' (as a random AES-GCM nonce does for
+// 1 save in 256) and is not valid JSON. v0.10.1 read such a file as corrupt plaintext.
+type braceSealer struct{}
+
+func (braceSealer) Seal(label string, v any) ([]byte, error) {
+	b, err := json.Marshal(v)
+	return append([]byte("{\xa8\x01:"+label+":"), b...), err
+}
+func (braceSealer) Open(label string, b []byte, v any) error {
+	p := "{\xa8\x01:" + label + ":"
+	if !strings.HasPrefix(string(b), p) {
+		return errors.New("bad seal")
+	}
+	return json.Unmarshal(b[len(p):], v)
+}
+
+func TestA1StateSealedStartingWithBrace(t *testing.T) {
+	s, _ := a1Service(t)
+	s.StateSealer = braceSealer{}
+	ctx := context.Background()
+	p, err := s.PrepareSubmit(ctx, SubmitInput{Script: goodScript})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(s.statePath())
+	if len(raw) == 0 || raw[0] != '{' {
+		t.Fatalf("test setup: sealed state should start with '{', got %q", raw[:min(8, len(raw))])
+	}
+	if _, err := s.ConfirmSubmit(ctx, p.Token); err != nil {
+		t.Fatalf("confirm with a '{'-prefixed sealed state: %v", err)
+	}
+	if _, err := s.loadState(); err != nil {
+		t.Fatalf("load '{'-prefixed sealed state: %v", err)
+	}
+}
