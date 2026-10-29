@@ -135,6 +135,40 @@ func arrayConcurrency(spec string) int {
 	return total
 }
 
+var reArrayPart = regexp.MustCompile(`^(\d{1,7})(?:-(\d{1,7})(?::(\d{1,7}))?)?$`)
+
+// arrayTasks counts the tasks an --array spec creates (every index, whatever the
+// %N limit on how many run at once). ok is false when any part of the spec is not
+// a plain index, range or stepped range: the caller then cannot bound the cost.
+// Ported from ClusterWand v0.5.1.
+func arrayTasks(spec string) (n int, ok bool) {
+	spec, _, _ = strings.Cut(strings.TrimSpace(spec), "%")
+	if spec == "" {
+		return 0, false
+	}
+	for _, part := range strings.Split(spec, ",") {
+		m := reArrayPart.FindStringSubmatch(part)
+		if m == nil {
+			return 0, false
+		}
+		if m[2] == "" {
+			n++
+			continue
+		}
+		a, _ := strconv.Atoi(m[1])
+		b, _ := strconv.Atoi(m[2])
+		step := 1
+		if m[3] != "" {
+			step, _ = strconv.Atoi(m[3])
+		}
+		if b < a || step < 1 {
+			return 0, false
+		}
+		n += (b-a)/step + 1
+	}
+	return n, true
+}
+
 func sizeText(gb float64) string {
 	switch {
 	case gb >= 1000:

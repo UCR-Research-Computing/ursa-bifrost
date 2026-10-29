@@ -746,3 +746,62 @@ func TestA1StateSealedStartingWithBrace(t *testing.T) {
 		t.Fatalf("load '{'-prefixed sealed state: %v", err)
 	}
 }
+
+// TestSubmitArrayCountsEveryTask: a job array is many jobs from one sbatch; the
+// worst case and the caps count every task (ClusterWand v0.5.1 review finding,
+// ported in v0.10.4: a 1000-task array of 1-hour computehigh jobs was planned at
+// $1.87 against the $25 per-job cap).
+func TestSubmitArrayCountsEveryTask(t *testing.T) {
+	s, fx := a1Service(t)
+	ctx := context.Background()
+	withArray := func(spec string) string {
+		return strings.Replace(goodScript, "#SBATCH -J hello", "#SBATCH -J hello\n#SBATCH "+spec, 1)
+	}
+	for _, spec := range []string{"--array=1-1000", "--array 1-1000%4", "-a 1-1000", "-a1-1000"} {
+		if _, err := s.PrepareSubmit(ctx, SubmitInput{Script: withArray(spec)}); !errors.Is(err, ErrCapExceeded) || !strings.Contains(err.Error(), "1000 array tasks") {
+			t.Errorf("%s: got %v, want the per-job cap over 1000 tasks", spec, err)
+		}
+	}
+	// 10 tasks x 1.87 = 18.70: under the $25 cap, and the plan says so
+	plan, err := s.PrepareSubmit(ctx, SubmitInput{Script: withArray("--array=0-9")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.WorstCaseUSD != 18.7 || !strings.Contains(strings.Join(plan.Warnings, " "), "10 tasks") {
+		t.Errorf("plan worst %v warnings %v", plan.WorstCaseUSD, plan.Warnings)
+	}
+	// a spec that cannot be counted, and heterogeneous jobs, are refused
+	for _, bad := range []string{withArray("--array=1-1000:0"), withArray("--array=$N"),
+		strings.Replace(goodScript, "#SBATCH -J hello", "#SBATCH -J hello\n#SBATCH hetjob\n#SBATCH -N 4", 1),
+		strings.Replace(goodScript, "#SBATCH -J hello", "#SBATCH -J hello\n#SBATCH packjob", 1)} {
+		if _, err := s.PrepareSubmit(ctx, SubmitInput{Script: bad}); err == nil {
+			t.Errorf("accepted: %q", bad)
+		}
+	}
+	for _, c := range fx.Calls {
+		if strings.Contains(c, "exec sbatch --parsable") {
+			t.Fatalf("submitted: %s", c)
+		}
+	}
+	// script_check's estimate agrees with the plan
+	sc, err := s.ScriptCheck(ctx, withArray("--array=0-9"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sc.EstCostUSD == nil || *sc.EstCostUSD != 18.7 {
+		t.Errorf("script_check estimate %v", sc.EstCostUSD)
+	}
+}
+
+func TestArrayTasks(t *testing.T) {
+	for spec, want := range map[string]int{"1-1000": 1000, "1-1000%4": 1000, "0-9": 10, "1,3,5": 3, "1-10:2": 5, "0-15:4,20": 5, "7": 1} {
+		if got, ok := arrayTasks(spec); !ok || got != want {
+			t.Errorf("arrayTasks(%q) = %d, %v; want %d", spec, got, ok, want)
+		}
+	}
+	for _, spec := range []string{"", "x", "5-1", "1-10:0", "1-", "$N", "1--3", "%4"} {
+		if _, ok := arrayTasks(spec); ok {
+			t.Errorf("arrayTasks(%q) accepted", spec)
+		}
+	}
+}

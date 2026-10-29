@@ -5,6 +5,9 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.10.4 - 2026-10-29
+- **Job arrays count every task against the A1 cost caps** (`job_submit`, `script_check`): a 1000-task `--array` of 1-hour computehigh jobs was planned at $1.87 against the $25 per-job cap (real worst case $1,870), and `-a` was not read at all. The worst case, the per-job cap, the day cap and the `script_check` estimate now multiply by the number of tasks; array specs that cannot be counted, and heterogeneous jobs (`hetjob`/`packjob`, whose later components escape the enforced flags), are refused. Found by the ClusterWand v0.5.1 review; ported here. 6 mutation guards.
+
 ## v0.10.3 - 2026-10-29
 - **A1 state with a sealer is opened as sealed first** (`loadState`): an AES-GCM sealed ledger whose random nonce began with `{` (1 save in 256) was misread as corrupt plaintext JSON, and every later `job_submit` for that person failed with "A1 state file ... is corrupt" until the file was removed. Plaintext (CLI, pre-0.9.16 server files) is now the fallback only when the sealed open fails. Found live 2026-10-29.
 - Tests: `newTestService` uses a temp `state_path`, so day-cap tests no longer read the developer's real `~/.local/share/ursa-bifrost/a1.json`.
