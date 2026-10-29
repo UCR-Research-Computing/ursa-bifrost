@@ -29,6 +29,9 @@ func newTestService(t *testing.T, tiers ...string) (*Service, *backend.Fixture) 
 		cfg.Tiers = tiers
 	}
 	cfg.AuditPath = filepath.Join(t.TempDir(), "audit.jsonl")
+	// never read the developer's real A1 ledger (~/.local/share/ursa-bifrost/a1.json): tests
+	// that check day caps otherwise fail whenever the dev has submitted jobs today
+	cfg.StatePath = filepath.Join(t.TempDir(), "a1.json")
 	s, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)

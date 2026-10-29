@@ -183,11 +183,19 @@ func (s *Service) loadState() (*a1State, error) {
 	if err != nil {
 		return nil, err
 	}
-	if s.StateSealer != nil && !bytes.HasPrefix(bytes.TrimSpace(b), []byte("{")) {
-		if err := s.StateSealer.Open(stateLabel, b, st); err != nil {
-			return nil, fmt.Errorf("A1 state file %s: %w", s.statePath(), err)
+	// With a sealer, try the sealed form first. A sealed file is binary (nonce + AES-GCM), and
+	// its first byte is '{' for 1 random nonce in 256, so the old "starts with { = plaintext"
+	// test misread such files as corrupt JSON (v0.10.2 fix). Plaintext (CLI, or a pre-0.9.16
+	// server file) is the fallback only when the sealed open fails.
+	if s.StateSealer != nil {
+		if oerr := s.StateSealer.Open(stateLabel, b, st); oerr != nil {
+			plain := &a1State{}
+			if !bytes.HasPrefix(bytes.TrimSpace(b), []byte("{")) || json.Unmarshal(b, plain) != nil {
+				return nil, fmt.Errorf("A1 state file %s: %w", s.statePath(), oerr)
+			}
+			st = plain
 		}
-	} else if err := json.Unmarshal(b, st); err != nil { // plaintext: CLI, or a pre-0.9.16 server file
+	} else if err := json.Unmarshal(b, st); err != nil { // plaintext: CLI
 		return nil, fmt.Errorf("A1 state file %s is corrupt: %w", s.statePath(), err)
 	}
 	if st.Pending == nil {
