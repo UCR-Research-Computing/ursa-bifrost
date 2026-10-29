@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "ursa-bifrost: AI assistant access to Slurm clusters through typed, audited MCP tools"
+type: software
+authors:
+  - family-names: "Forsyth III"
+    given-names: "Charles E."
+    orcid: "https://orcid.org/0000-0003-4872-0296"
+    affiliation: "University of California, Riverside"
+  - name: "UCR Research Computing"
+repository-code: "https://github.com/UCR-Research-Computing/ursa-bifrost"
+license: MIT
+keywords:
+  - "Model Context Protocol"
+  - "Slurm"
+  - "HPC"
+  - "AI assistants"
+  - "research computing"
+references:
+  - type: report
+    title: "Field Note describing this software"
+    doi: "10.5281/zenodo.23752286"
+    authors:
+      - family-names: "Forsyth III"
+        given-names: "Charles E."
