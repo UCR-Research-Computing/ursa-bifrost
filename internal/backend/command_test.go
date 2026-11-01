@@ -69,7 +69,7 @@ func TestAllowListIsClosed(t *testing.T) {
 	// Every constructor's program must be one of these. If you add a command,
 	// add it here deliberately.
 	allowed := map[string]bool{"id": true, "squeue": true, "sacct": true, "sinfo": true, "scontrol": true, "cat": true, "tail": true, "bash": true,
-		"sbatch": true, "scancel": true, "find": true, "head": true, "tar": true, "realpath": true, "df": true, "curl": true, "srun": true}
+		"sbatch": true, "scancel": true, "find": true, "head": true, "tar": true, "realpath": true, "df": true, "curl": true, "srun": true, "sacctmgr": true}
 	u, _ := SqueueUser("alice")
 	j, _ := SqueueJob("1")
 	st, _ := SqueueStart("1")
@@ -91,6 +91,7 @@ func TestAllowListIsClosed(t *testing.T) {
 	sqj, _ := SqueueJobs([]string{"1", "2"})
 	saj, _ := SacctJobs([]string{"1", "2"})
 	sam, _ := SacctSummaryUsers([]string{"alice", "bob"}, "now-1days", "")
+	asc, _ := AssocAccounts("alice")
 	writes := map[string]bool{}
 	for _, c := range []Command{sb, sc, ho, re} {
 		writes[c.String()] = true
@@ -98,12 +99,12 @@ func TestAllowListIsClosed(t *testing.T) {
 			t.Errorf("%v must be marked write", c.argv)
 		}
 	}
-	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), PartitionSharing(), Nodes(), cat, tl, ms, to, lf, hd, td, sqj, saj, sam} {
+	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), PartitionSharing(), Nodes(), cat, tl, ms, to, lf, hd, td, sqj, saj, sam, asc} {
 		if c.Write() {
 			t.Errorf("read command marked write: %v", c.argv)
 		}
 	}
-	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), Nodes(), cat, tl, ms, to, sb, sc, ho, re, lf, hd, td, sqj, saj, sam} {
+	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), Nodes(), cat, tl, ms, to, sb, sc, ho, re, lf, hd, td, sqj, saj, sam, asc} {
 		if !allowed[c.argv[0]] {
 			t.Errorf("unexpected program %q", c.argv[0])
 		}
@@ -112,6 +113,10 @@ func TestAllowListIsClosed(t *testing.T) {
 		}
 		if c.argv[0] == "bash" && !strings.HasPrefix(c.argv[2], "module -t show ") && c.argv[2] != submitTemplate && c.argv[2] != envTemplate && c.argv[2] != treeTemplate && c.argv[2] != sacctSummaryTemplate {
 			t.Errorf("bash only runs module show or the fixed submit template: %v", c.argv)
+		}
+		// sacctmgr: read-only `show assoc` of one validated user, nothing else (v0.10.5)
+		if c.argv[0] == "sacctmgr" && (len(c.argv) != 7 || c.argv[3] != "show" || c.argv[4] != "assoc" || !strings.HasPrefix(c.argv[5], "user=") || c.argv[6] != "format=account") {
+			t.Errorf("sacctmgr may only show one user's associations: %v", c.argv)
 		}
 		if c.argv[0] == "sbatch" && c.argv[1] != "--test-only" {
 			t.Errorf("bare sbatch must be --test-only: %v", c.argv)
@@ -362,5 +367,16 @@ func TestSacctSummaryUsers(t *testing.T) {
 	// Invalid username
 	if _, err := SacctSummaryUsers([]string{"alice", "bob;id"}, "now-7days", ""); err == nil {
 		t.Error("invalid username accepted")
+	}
+}
+
+func TestAssocAccountsValidates(t *testing.T) {
+	if c, err := AssocAccounts("alice_ucr_edu"); err != nil || c.Public() || c.Write() {
+		t.Fatalf("good user: %v public=%v write=%v", err, c.Public(), c.Write())
+	}
+	for _, bad := range []string{"", "a b", "x;id", "$(id)", "-u", "user=root"} {
+		if _, err := AssocAccounts(bad); err == nil {
+			t.Errorf("AssocAccounts(%q) should be refused", bad)
+		}
 	}
 }

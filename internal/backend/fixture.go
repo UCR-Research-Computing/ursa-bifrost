@@ -41,6 +41,8 @@ type Fixture struct {
 	MPIOnly []string
 	// Fail makes a program fail ("scancel": "Invalid job id").
 	Fail map[string]string
+	// Accounts is the fake `sacctmgr show assoc` answer (nil = ["staff"]).
+	Accounts []string
 	// Paths are fake files outside job folders (files_list/files_read): absolute
 	// path -> content. A path ending in "/" is a folder. Links maps a path to
 	// the path realpath resolves it to.
@@ -83,6 +85,12 @@ func (f *Fixture) Run(_ context.Context, c Command) ([]byte, error) {
 	switch a[0] {
 	case "id":
 		return []byte(f.User + "\n"), nil
+	case "sacctmgr":
+		// AssocAccounts: the test's Accounts, else one account named "staff"
+		if f.Accounts != nil {
+			return []byte(strings.Join(f.Accounts, "\n") + "\n"), nil
+		}
+		return []byte("staff\n"), nil
 	case "squeue":
 		b, err := read("squeue.json")
 		if err != nil {

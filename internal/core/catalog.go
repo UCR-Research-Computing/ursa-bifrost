@@ -40,19 +40,41 @@ type Catalog struct {
 
 // CatalogPartition is one partition as described by the catalog.
 type CatalogPartition struct {
-	Name          string   `json:"name"`
-	Default       bool     `json:"default"`
-	MaxNodes      int      `json:"max_nodes"`
-	CPUsPerNode   int      `json:"cpus_per_node"`
-	MemGBPerNode  float64  `json:"mem_gb_per_node"`
-	GPUsPerNode   int      `json:"gpus_per_node"`
-	GPUType       *string  `json:"gpu_type"`
-	TimeLimit     string   `json:"time_limit"`
-	State         string   `json:"state"`
-	USDPerNodeHr  *float64 `json:"usd_per_node_hour"`
-	Spot          bool     `json:"spot"`
-	UseFor        string   `json:"use_for"`
-	OnDemandBoots bool     `json:"-"`
+	Name         string   `json:"name"`
+	Default      bool     `json:"default"`
+	MaxNodes     int      `json:"max_nodes"`
+	CPUsPerNode  int      `json:"cpus_per_node"`
+	MemGBPerNode float64  `json:"mem_gb_per_node"`
+	GPUsPerNode  int      `json:"gpus_per_node"`
+	GPUType      *string  `json:"gpu_type"`
+	TimeLimit    string   `json:"time_limit"`
+	State        string   `json:"state"`
+	USDPerNodeHr *float64 `json:"usd_per_node_hour"`
+	Spot         bool     `json:"spot"`
+	UseFor       string   `json:"use_for"`
+	// AllowedAccounts is Slurm's AllowAccounts for the partition, published by ursa-catalog
+	// since 2026-11-01: nil/empty = open to every account; otherwise only these accounts
+	// may submit (lab-only and Tier 1 partitions). v0.10.5.
+	AllowedAccounts []string `json:"allowed_accounts,omitempty"`
+	OnDemandBoots   bool     `json:"-"`
+}
+
+// Restricted reports whether only some Slurm accounts may use the partition.
+func (p CatalogPartition) Restricted() bool { return len(p.AllowedAccounts) > 0 }
+
+// Allows reports whether one of accounts may use the partition.
+func (p CatalogPartition) Allows(accounts []string) bool {
+	if !p.Restricted() {
+		return true
+	}
+	for _, a := range accounts {
+		for _, ok := range p.AllowedAccounts {
+			if a == ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Recipe is a known-good way to run a package.

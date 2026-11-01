@@ -127,6 +127,16 @@ func ValidSince(s string) error {
 // Whoami is `id -un`.
 func Whoami() Command { return Command{argv: []string{"id", "-un"}, kind: KindCatalog} }
 
+// AssocAccounts is the Slurm accounts one user may charge: read-only
+// `sacctmgr -n -P show assoc user=<u> format=account`. Used to warn before a job names a
+// partition whose AllowAccounts excludes the caller (v0.10.5). Per-person output (never public).
+func AssocAccounts(user string) (Command, error) {
+	if err := ValidUser(user); err != nil {
+		return Command{}, err
+	}
+	return Command{argv: []string{"sacctmgr", "-n", "-P", "show", "assoc", "user=" + user, "format=account"}, kind: KindCatalog}, nil
+}
+
 // SqueueUser lists one user's queued and running jobs.
 func SqueueUser(user string) (Command, error) {
 	if err := ValidUser(user); err != nil {

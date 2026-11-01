@@ -21,6 +21,7 @@ type Facts struct {
 	Partition     string
 	ElapsedSec    int64
 	LimitMin      int64 // 0 = none/infinite
+	PartMaxMin    int64 // the partition's MaxTime (catalog time_limit) in minutes; 0 = unknown/none
 	CPUsAlloc     int64
 	CPUSeconds    float64 // total user+system CPU time
 	MemReqMB      int64   // requested/allocated memory (MB)
@@ -171,7 +172,7 @@ func Explain(f Facts) []Finding {
 			ev = append(ev, fmt.Sprintf("time limit %s, ran %s", minutes(f.LimitMin), dur(f.ElapsedSec)))
 		}
 		add(Finding{Rule: "timeout", Severity: Error, Title: "Job hit its time limit", Evidence: ev,
-			Suggestion: "Raise --time (partitions have no maximum here), or checkpoint and resubmit. If it should have finished sooner, check it was not stuck waiting (I/O, a download, a lock)."})
+			Suggestion: timeoutSuggestion(f) + " If it should have finished sooner, check it was not stuck waiting (I/O, a download, a lock)."})
 	case "NODE_FAIL":
 		add(Finding{Rule: "node-fail", Severity: Error, Title: "The node failed under the job",
 			Evidence:   []string{"state NODE_FAIL", fmt.Sprintf("restart count %d", f.RestartCnt)},
@@ -206,12 +207,12 @@ func Explain(f Facts) []Finding {
 		}
 		if m := regexp.MustCompile(`oom-kill|Out Of Memory|out of memory|MemoryError|(?m)Killed\s*$`).FindString(tail); m != "" && st != "OUT_OF_MEMORY" {
 			add(Finding{Rule: "oom-log", Severity: Error, Title: "Out-of-memory kill in the log",
-				Evidence: []string{"log: " + clip(lineOf(tail, m), 200), memEvidence(f)}, Suggestion: memSuggestion(f)})
+				Evidence: []string{LogEvidence + clip(lineOf(tail, m), 200), memEvidence(f)}, Suggestion: memSuggestion(f)})
 		}
 		if st != "TIMEOUT" && regexp.MustCompile(`DUE TO TIME LIMIT`).MatchString(tail) {
 			add(Finding{Rule: "timeout", Severity: Error, Title: "Job hit its time limit",
-				Evidence:   []string{"log: " + clip(lineOf(tail, "DUE TO TIME LIMIT"), 200)},
-				Suggestion: "Raise --time or checkpoint and resubmit."})
+				Evidence:   []string{LogEvidence + clip(lineOf(tail, "DUE TO TIME LIMIT"), 200)},
+				Suggestion: timeoutSuggestion(f)})
 		}
 		matched := 0
 		for _, r := range logRules {
@@ -224,7 +225,7 @@ func Explain(f Facts) []Finding {
 				continue
 			}
 			last := locs[len(locs)-1]
-			ev := []string{"log: " + clip(lineAt(tail, last[0]), 240)}
+			ev := []string{LogEvidence + clip(lineAt(tail, last[0]), 240)}
 			if len(locs) > 1 {
 				ev = append(ev, fmt.Sprintf("%d matching lines", len(locs)))
 			}
@@ -449,6 +450,35 @@ func mb(v int64) string {
 }
 
 func minutes(m int64) string { return dur(m * 60) }
+
+// LogEvidence prefixes evidence lines quoted from a job's log: text a program on the
+// cluster wrote, so a client must treat it as data, never as instructions (the server's
+// instructions name this prefix). v0.10.5.
+const LogEvidence = "untrusted log line: "
+
+// timeoutSuggestion gives the partition's real ceiling when the catalog knows it. Since
+// 2026-10-21 every Ursa partition has a MaxTime (30 d, 7 d on spot, 24 h on Tier 1, 15 min on
+// check); the old text said "partitions have no maximum here".
+func timeoutSuggestion(f Facts) string {
+	if f.PartMaxMin > 0 {
+		if f.LimitMin > 0 && f.LimitMin >= f.PartMaxMin {
+			return fmt.Sprintf("The job already had %s's maximum (%s): checkpoint and resubmit (a job array or a dependency chain), or split the work.", f.Partition, longDur(f.PartMaxMin))
+		}
+		return fmt.Sprintf("Raise --time (at most %s on %s), or checkpoint and resubmit.", longDur(f.PartMaxMin), f.Partition)
+	}
+	return "Raise --time (within the partition's time limit; see partitions), or checkpoint and resubmit."
+}
+
+// longDur: 43200 -> "30 days", 1440 -> "24 hours", 15 -> "15 minutes".
+func longDur(m int64) string {
+	switch {
+	case m >= 2880 && m%1440 == 0:
+		return fmt.Sprintf("%d days", m/1440)
+	case m >= 60 && m%60 == 0:
+		return fmt.Sprintf("%d hours", m/60)
+	}
+	return fmt.Sprintf("%d minutes", m)
+}
 
 func dur(sec int64) string {
 	h, m, s := sec/3600, (sec%3600)/60, sec%60

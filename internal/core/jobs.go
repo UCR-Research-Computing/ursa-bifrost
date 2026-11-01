@@ -477,6 +477,9 @@ func (s *Service) JobExplain(ctx context.Context, jobID string, anyUser bool, li
 	if cat, err := s.Catalog(ctx); err == nil {
 		if p, ok := cat.Partition(d.Partition); ok {
 			f.SpotPartition = p.Spot
+			if m, ok := slurmMinutes(p.TimeLimit); ok {
+				f.PartMaxMin = int64(m)
+			}
 			// GPUs are not in AccountingStorageTRES on Ursa Major; partitions are
 			// whole-node, so a gpul4 job holds the node's GPU.
 			if f.GPUsAlloc == 0 && p.GPUsPerNode > 0 {

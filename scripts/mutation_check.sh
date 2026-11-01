@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.26.8} PYTHONDONTWRITEBYTECODE=1
 BK=$(mktemp -d)
-FILES="internal/core/inflight.go internal/core/shared_cache.go internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go internal/config/config.go internal/core/catalog.go internal/core/dbcheck.go internal/slurm/sacctrows.go internal/core/allocation.go"
+FILES="internal/core/inflight.go internal/core/shared_cache.go internal/policy/audit.go internal/core/jobs.go internal/backend/command.go internal/core/service.go internal/policy/redact.go internal/core/a1.go internal/core/results.go internal/slurm/types.go internal/core/cluster.go internal/backend/iap.go internal/rules/rules.go internal/server/oauth.go internal/server/server.go internal/server/store.go internal/server/google.go internal/core/files.go internal/core/staged.go internal/core/helpers.go internal/backend/files.go internal/staging/staging.go internal/core/p2.go internal/core/shared.go internal/config/config.go internal/core/catalog.go internal/core/dbcheck.go internal/slurm/sacctrows.go internal/core/allocation.go internal/mcpserver/server.go"
 for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
@@ -385,6 +385,16 @@ mutate "v0104 array short flag"         internal/core/cluster.go '"A": "account"
 mutate "v0104 array step guard"         internal/core/dbcheck.go '		if b < a || step < 1 {' '		if b < a {'
 mutate "v0104 hetjob refused"           internal/core/a1.go '	if req["hetjob"] != "" || req["packjob"] != "" {' '	if false {'
 mutate "v0104 script_check array"       internal/core/cluster.go '					c = round(c*float64(n), 2)' '					_ = n'
+# v0.10.5 usability panel: partition access, timeout advice, untrusted log evidence, submit_confirm destructive
+mutate "v0105 access warns outsider"     internal/core/service.go '	if mine == nil || p.Allows(mine) {' '	if true {'
+mutate "v0105 access no guessing"        internal/core/service.go '	if mine == nil || p.Allows(mine) {' '	if p.Allows(mine) {'
+mutate "v0105 allows matches account"    internal/core/catalog.go '			if a == ok {' '			if a != ok {'
+mutate "v0105 timeout at max"            internal/rules/rules.go '		if f.LimitMin > 0 && f.LimitMin >= f.PartMaxMin {' '		if false {'
+mutate "v0105 log evidence prefix"       internal/rules/rules.go 'const LogEvidence = "untrusted log line: "' 'const LogEvidence = "log: "'
+mutate "v0105 assoc validates user"      internal/backend/command.go 'func AssocAccounts(user string) (Command, error) {
+	if err := ValidUser(user); err != nil {' 'func AssocAccounts(user string) (Command, error) {
+	if err := ValidUser(user); false && err != nil {'
+mutate "v0105 submit_confirm destructive" internal/mcpserver/server.go 'Tokens are single use and expire.", true),' 'Tokens are single use and expire.", false),'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL
