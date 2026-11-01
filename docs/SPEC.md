@@ -827,7 +827,7 @@ all 22, and 333 + 335 (4 cores each) ran together on one `lab` node. The cluster
 (`ursa-catalog`) publishes `exclusive` and `oversubscribe` per partition; `ursa-cost` prices
 the share held. Spent-cost totals were unchanged by the switch ($127.8x over 30 days), since
 earlier jobs held whole nodes. Live checks found three bugs, fixed in v0.8.1 (release notes).
-Cluster record: nexus `ops/hpc-cluster/SPEC.md` 1.1.
+Cluster record: `ops/hpc-cluster/SPEC.md` 1.1 in nexus at the time; since 2026-11-01 the cluster spec is `SPEC.md` in `charles-forsyth/ucr-slurm-production`.
 
 ### 19.4 Not changed
 
