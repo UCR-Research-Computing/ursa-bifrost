@@ -318,6 +318,47 @@ func (s *Service) User(ctx context.Context) (string, error) {
 	return u, nil
 }
 
+// Accounts is the Slurm accounts the cluster user may charge (sacctmgr show assoc),
+// cached like the catalog. An error or an empty answer returns nil: callers then skip the
+// partition-access warning rather than guess (v0.10.5).
+func (s *Service) Accounts(ctx context.Context) []string {
+	u, err := s.User(ctx)
+	if err != nil {
+		return nil
+	}
+	c, err := backend.AssocAccounts(u)
+	if err != nil {
+		return nil
+	}
+	b, err := s.run(ctx, c)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, l := range strings.Split(string(b), "\n") {
+		if a := strings.TrimSpace(l); a != "" && !seen[a] {
+			seen[a] = true
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// accessIssue says why the caller cannot use a restricted partition, or "" when they can
+// (or when their accounts cannot be read: no guessing). v0.10.5.
+func (s *Service) accessIssue(ctx context.Context, p CatalogPartition) string {
+	if !p.Restricted() {
+		return ""
+	}
+	mine := s.Accounts(ctx)
+	if mine == nil || p.Allows(mine) {
+		return ""
+	}
+	return fmt.Sprintf("partition %s is open only to Slurm accounts %s; your accounts are %s, so sbatch would refuse the job. Pick an open partition (see partitions)",
+		p.Name, strings.Join(p.AllowedAccounts, ", "), strings.Join(mine, ", "))
+}
+
 // Catalog fetches (and caches) the cluster catalog.
 func (s *Service) Catalog(ctx context.Context) (*Catalog, error) {
 	c, err := backend.Catalog(s.Cfg.CatalogPath)

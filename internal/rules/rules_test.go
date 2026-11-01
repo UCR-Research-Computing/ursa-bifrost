@@ -76,9 +76,35 @@ func TestTimeoutFromStateAndLog(t *testing.T) {
 	if !strings.Contains(strings.Join(f.Evidence, " "), "1h30m") {
 		t.Errorf("evidence: %v", f.Evidence)
 	}
+	// v0.10.5: never claim partitions have no maximum (every Ursa partition has a MaxTime)
+	if strings.Contains(f.Suggestion, "no maximum") {
+		t.Errorf("suggestion still says partitions have no maximum: %s", f.Suggestion)
+	}
+	// with the partition's MaxTime known, the advice names it
+	fs = Explain(Facts{State: "TIMEOUT", Partition: "standard", LimitMin: 90, PartMaxMin: 43200, ElapsedSec: 5400})
+	if f = want(t, fs, "timeout"); !strings.Contains(f.Suggestion, "at most 30 days on standard") {
+		t.Errorf("suggestion should name the 30-day limit: %s", f.Suggestion)
+	}
+	// already at the maximum: raising --time cannot help
+	fs = Explain(Facts{State: "TIMEOUT", Partition: "spot", LimitMin: 10080, PartMaxMin: 10080, ElapsedSec: 604800})
+	if f = want(t, fs, "timeout"); strings.Contains(f.Suggestion, "Raise --time") || !strings.Contains(f.Suggestion, "7 days") {
+		t.Errorf("at the maximum the advice must be checkpoint/split, naming 7 days: %s", f.Suggestion)
+	}
 	// FAILED state but the log shows Slurm's time-limit message
 	fs = Explain(Facts{State: "FAILED", Log: "slurmstepd: error: *** JOB 9 ON n1 CANCELLED AT 2026 DUE TO TIME LIMIT ***\n"})
-	want(t, fs, "timeout")
+	f = want(t, fs, "timeout")
+	// log-derived evidence is marked untrusted (v0.10.5)
+	if len(f.Evidence) == 0 || !strings.HasPrefix(f.Evidence[0], LogEvidence) {
+		t.Errorf("log evidence should start with %q: %v", LogEvidence, f.Evidence)
+	}
+}
+
+func TestLongDur(t *testing.T) {
+	for m, w := range map[int64]string{43200: "30 days", 10080: "7 days", 1440: "24 hours", 15: "15 minutes", 90: "90 minutes", 120: "2 hours"} {
+		if g := longDur(m); g != w {
+			t.Errorf("longDur(%d) = %q, want %q", m, g, w)
+		}
+	}
 }
 
 func TestOOM(t *testing.T) {
@@ -274,5 +300,13 @@ func TestIllegalInstruction(t *testing.T) {
 		if f.Rule == "illegal-instruction" {
 			t.Error("segfault misread as illegal instruction")
 		}
+	}
+}
+
+// The prefix is part of the contract: the MCP instructions tell clients that evidence
+// starting with it is untrusted log text.
+func TestLogEvidencePrefixIsMarkedUntrusted(t *testing.T) {
+	if LogEvidence != "untrusted log line: " {
+		t.Fatalf("LogEvidence changed to %q; update the server instructions with it", LogEvidence)
 	}
 }

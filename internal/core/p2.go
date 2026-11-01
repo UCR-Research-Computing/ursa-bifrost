@@ -545,8 +545,8 @@ func replyText(t *TicketDraft, errs []rules.Finding, ex *Explanation) string {
 		for _, f := range errs {
 			b.WriteString("- " + f.Title)
 			for _, ev := range f.Evidence {
-				if strings.HasPrefix(ev, "log: ") {
-					b.WriteString(" (the log shows: " + strings.TrimPrefix(ev, "log: ") + ")")
+				if strings.HasPrefix(ev, rules.LogEvidence) {
+					b.WriteString(" (the log shows: " + strings.TrimPrefix(ev, rules.LogEvidence) + ")")
 					break
 				}
 			}

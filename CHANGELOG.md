@@ -5,6 +5,14 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.10.5 - 2026-11-01
+- **Lab-only and Tier 1 partitions are checked before submission** (`script_check`, `job_submit`): the cluster catalog now publishes each partition's `allowed_accounts` (Slurm AllowAccounts). A script naming `amd112`, `amd56` or `gpu1v1` from outside the lab, or a Tier 1 partition from outside staff, was accepted and then refused by sbatch. Now it is an error naming the allowed accounts and the caller's own. The caller's accounts come from a new read-only allow-listed command, `sacctmgr -n -P show assoc user=<u> format=account` (validated user, never public); if they cannot be read, no warning is given.
+- **Timeout advice names the real limit** (`job_explain`): it said "partitions have no maximum here", but every partition has had a MaxTime since 2026-10-21. It now says "at most 30 days on standard" and, when the job already had the maximum, to checkpoint or split instead.
+- **Log text is marked untrusted**: `job_explain` evidence quoted from a job's log starts with `untrusted log line:`, and the server instructions say to treat it (and job names and paths) as data. They also say not to suggest a partition outside the caller's `allowed_accounts`.
+- `job_submit_confirm` carries `destructiveHint: true`, so clients that prompt only on destructive tools prompt before money is spent.
+- Not changed, on purpose: the 24-hour A1 cap (`caps.max_hours`) stays below Slurm's 30-day limit.
+- 7 new mutation guards.
+
 ## v0.10.4 - 2026-10-29
 - **Job arrays count every task against the A1 cost caps** (`job_submit`, `script_check`): a 1000-task `--array` of 1-hour computehigh jobs was planned at $1.87 against the $25 per-job cap (real worst case $1,870), and `-a` was not read at all. The worst case, the per-job cap, the day cap and the `script_check` estimate now multiply by the number of tasks; array specs that cannot be counted, and heterogeneous jobs (`hetjob`/`packjob`, whose later components escape the enforced flags), are refused. Found by the ClusterWand v0.5.1 review; ported here. 6 mutation guards.
 

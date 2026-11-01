@@ -287,6 +287,14 @@ func TestA1ToolsOnlyWithTier(t *testing.T) {
 	if d := tools["job_cancel_confirm"].Annotations.DestructiveHint; d == nil || !*d {
 		t.Error("job_cancel_confirm should be marked destructive")
 	}
+	// v0.10.5: confirming a submission spends money, so clients that prompt only on
+	// destructive tools must prompt here too
+	if d := tools["job_submit_confirm"].Annotations.DestructiveHint; d == nil || !*d {
+		t.Error("job_submit_confirm should be marked destructive")
+	}
+	if d := tools["job_submit"].Annotations.DestructiveHint; d == nil || *d {
+		t.Error("job_submit only plans (nothing runs); it should not be marked destructive")
+	}
 }
 
 func TestSubmitOverMCP(t *testing.T) {

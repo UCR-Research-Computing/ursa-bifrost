@@ -842,3 +842,57 @@ func TestScriptCheckPartitionList(t *testing.T) {
 		t.Errorf("unknown member of a list not caught: %s", issues(sc))
 	}
 }
+
+// v0.10.5: a partition with allowed_accounts (lab-only, Tier 1) is an error in script_check
+// (and so blocks job_submit) for a caller outside the list, and passes for a member. When the
+// caller's accounts cannot be read, no warning is given (no guessing).
+func TestScriptCheckRestrictedPartition(t *testing.T) {
+	s, fx := newTestService(t)
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS("../../testdata")); err != nil {
+		t.Fatal(err)
+	}
+	var cat map[string]any
+	b, _ := os.ReadFile(filepath.Join(dir, "catalog.json"))
+	if err := json.Unmarshal(b, &cat); err != nil {
+		t.Fatal(err)
+	}
+	parts := cat["partitions"].([]any)
+	lab := map[string]any{}
+	for k, v := range parts[0].(map[string]any) {
+		lab[k] = v
+	}
+	lab["name"], lab["allowed_accounts"], lab["max_nodes"], lab["cpus_per_node"] = "gpu1v1", []string{"chiaenc"}, 4, 4
+	cat["partitions"] = append(parts, lab)
+	b, _ = json.Marshal(cat)
+	if err := os.WriteFile(filepath.Join(dir, "catalog.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fx.Dir = dir
+	script := "#!/bin/bash\n#SBATCH -p gpu1v1\n#SBATCH -c 4\n#SBATCH -t 01:00:00\npython x.py\n"
+
+	fx.Accounts = []string{"staff"}
+	sc, err := s.ScriptCheck(context.Background(), script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sc.OK || !strings.Contains(issues(sc), "open only to Slurm accounts chiaenc") {
+		t.Fatalf("outsider should get an access error: ok=%v %s", sc.OK, issues(sc))
+	}
+
+	s2, fx2 := newTestService(t)
+	fx2.Dir, fx2.Accounts = dir, []string{"staff", "chiaenc"}
+	if sc, _ = s2.ScriptCheck(context.Background(), script); strings.Contains(issues(sc), "open only") {
+		t.Errorf("lab member wrongly warned: %s", issues(sc))
+	}
+
+	s3, fx3 := newTestService(t)
+	fx3.Dir, fx3.Fail = dir, map[string]string{"sacctmgr": "unreachable"}
+	if sc, _ = s3.ScriptCheck(context.Background(), script); strings.Contains(issues(sc), "open only") {
+		t.Errorf("unknown accounts must not produce a warning: %s", issues(sc))
+	}
+	// an open partition never consults the accounts
+	if sc, _ = s.ScriptCheck(context.Background(), "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -c 4\n#SBATCH -t 01:00:00\npython x.py\n"); strings.Contains(issues(sc), "open only") {
+		t.Errorf("open partition flagged: %s", issues(sc))
+	}
+}

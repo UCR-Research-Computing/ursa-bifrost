@@ -484,6 +484,11 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 		if sc.Request["partition"] == "" {
 			add("info", 0, "no partition given; Slurm will use the default (%s)", part)
 		}
+		// lab-only / Tier 1 partitions (catalog allowed_accounts, v0.10.5): sbatch refuses
+		// a job from an account outside the list, so say so before anyone waits on it
+		if msg := s.accessIssue(ctx, p); msg != "" {
+			add("error", 0, "%s", msg)
+		}
 		// the partition's MaxTime (catalog time_limit, e.g. check's 15:00): a longer
 		// --time is held by Slurm forever with reason PartitionTimeLimit (v0.9.9)
 		if maxMin, ok := slurmMinutes(p.TimeLimit); ok && hasTime && maxMin > 0 && mins > maxMin {
