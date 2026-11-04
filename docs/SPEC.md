@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (Draft 8, 2026-10-27: adds planned section 24, allocation framing; built through bifrost v0.9.18 and ursa-agent 0.4.6) |
-| Status | bifrost v0.9.18, ursa-agent 0.4.6 (released tags), 2026-10-27 (spec Draft 8; section 24 planned). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23 and docs/CLOUD_PLAN.md record what was built (22 and 24 are planned); open questions left in section 15. |
+| Document | Specification and design (Draft 9, 2026-11-04: adds section 25, job_wait and watcher ergonomics; built through bifrost v0.10.6 and ursa-agent 0.5.0) |
+| Status | bifrost v0.10.6, ursa-agent 0.5.0 (released tags), 2026-11-04 (spec Draft 9). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23-25 and docs/CLOUD_PLAN.md record what was built (22 is planned); open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -201,6 +201,7 @@ fields the assistant would read as instructions.
 | `my_usage` | `since?`, `until?`, `group_by?` | Caller's node-hours, core-hours, CPU efficiency and estimated cost, by partition (default), state, user or day |
 | `waste_report` | `since?`, `cpu_threshold?`, `min_node_hours?` | Avoidable spend in the caller's own jobs: low CPU efficiency, idle time before a timeout, warm workers, repeated fast failures, oversized memory requests, idle nodes (details in section 17, P2) |
 | `my_allocation` | none | Caller's current period Ursa Major allocation and use for themselves and their lab (dollars, warn-only) (v0.10.0, section 24) |
+| `job_wait` | `job_ids[]`, `timeout_s?`, `poll_s?` | Blocks until every listed job leaves PENDING/RUNNING/CONFIGURING/COMPLETING/REQUEUED or timeout; returns per-job final state, exit code, elapsed, and the last ~20 log lines for any job that failed; `timed_out: true` with current states otherwise (section 25) |
 
 ### 7.2 Read tier R2 (staff: all users)
 
@@ -229,8 +230,8 @@ annotations say not read-only (`job_cancel_confirm` is also marked destructive).
 | `upload_prepare` | `filename`, `bytes` | A signed upload link (15 min) for one file into your private staging area, plus a ready `curl` command; changes nothing on the cluster (section 18.1). Needs `staging` |
 | `uploads_list` | none | Your staged uploads: id, name, size, when they are deleted. Needs `staging` |
 
-Count on the hosted server with all tiers (verified with `tools/list`, 2026-10-02): 19 R1,
-7 R2 and 10 A1 tools, 36 in all.
+Count on the hosted server with all tiers (verified with `tools/list`): 21 R1,
+7 R2 and 10 A1 tools, 38 in all.
 
 ### 7.4 Never exposed
 
@@ -277,6 +278,7 @@ Log rules (regular expressions over the redacted log tail):
 | `oom-log` | out-of-memory kill messages in the log |
 | `install-ladder` | deep-research's software setup found no working install method |
 | `container` | Apptainer image could not be pulled or opened |
+| `illegal-instruction` | a program used a CPU instruction this node does not have (AVX-512 on AVX2-only standard/spot nodes) |
 | `tool-crash` | assertion failure or segfault |
 | `glibc` | binary needs a newer glibc than Rocky 8 (2.28) |
 | `module-missing` | `module: command not found`, `Unable to locate a modulefile` |
@@ -292,7 +294,7 @@ Log rules (regular expressions over the redacted log tail):
 | `disk-full` | no space left or quota exceeded |
 | `permission` | permission denied |
 | `command-not-found` | `command not found` / make's `Command not found` (tailored fixes: python3, mpirun, nvcc) |
-| `python-error` | a Python traceback in the script's own code (NameError, TypeError...) |
+| `python-error` | a Python traceback in the script's own code (Traceback, NameError, TypeError, AttributeError, *Error...) |
 
 Planned and not built: "GPU idle" (no per-job GPU accounting: GPUs are not in
 `AccountingStorageTRES`) and "login-node misuse" (would need process data from the login
@@ -744,6 +746,8 @@ hosted server keeps refusing that and points to `results_link`.
 
 A page is also capped at 64,000 characters; when it is, the window shrinks at a line
 boundary and the line numbers say exactly what was returned, so paging never skips text.
+
+On an active job (PENDING, RUNNING, CONFIGURING, COMPLETING, REQUEUED) whose log file does not exist yet on cluster storage, `job_log_tail` returns an empty window (`lines: 0`, `total_lines: 0`, `untrusted: ""`) with `note: "no log yet (job <state>/just started)"` rather than returning an error ("not a regular file", bash exit 4). Once the job finishes, a missing log file remains an error.
 
 ### 18.4 Helper tools instead of a shell (R1)
 
@@ -1227,10 +1231,45 @@ why"; "uses the whole node / the share it holds"; the worst case is quoted only 
   - Warning text is generated when a job could push personal or lab allocation to >= 80% or >= 100% (e.g., `'This job could take your lab to 104% of its Ursa allocation. Allocations are warn-only for now; it will still run.'`).
   - Allocations NEVER block job submission: confirm tokens are still returned and `job_submit_confirm` succeeds unchanged.
 
+## 25. job_wait and watcher ergonomics (v0.10.6, 2026-11-04)
+
+### 25.1 Waiting for jobs (`job_wait`)
+
+AI agents and automated workflows driving batch jobs previously had to poll `jobs_list` in an ad-hoc loop or fall back to client-side shell scripts. `job_wait` provides a dedicated read tool (R1) that blocks until a batch of jobs completes:
+
+- **Inputs**:
+  - `job_ids`: list of 1-100 job IDs (caller's own jobs only; foreign jobs are rejected or not returned).
+  - `timeout_s`: integer timeout in seconds (default 300, min 1, max 840, strictly capped below Cloud Run's 900 s request deadline).
+  - `poll_s`: polling interval in seconds (default 15, min 5, max 300).
+- **Behavior**:
+  - Reuses the uncached `jobs_list job_ids` query path (`squeue -j` and `sacct -j`), ensuring fresh status directly from Slurm without waiting for cache TTLs.
+  - Active states (`PENDING`, `RUNNING`, `CONFIGURING`, `COMPLETING`, `REQUEUED`, `SUSPENDED`) keep the tool waiting. Once all requested jobs transition to a terminal state (`COMPLETED`, `FAILED`, `CANCELLED`, `TIMEOUT`, `NODE_FAIL`, `OUT_OF_MEMORY`, `PREEMPTED`), the call completes immediately without waiting for the full timeout.
+  - **In-flight and SSH safety**: respects the server's per-caller in-flight cap (counts as 1 active call). Does not hold SSH sessions or database slots while sleeping between polling rounds.
+  - **Returns**:
+    - `jobs[]`: per-job `job_id`, terminal `state`, `exit_code`, job `elapsed_s`.
+    - For any job that failed (non-zero exit code or failed/timeout/node_fail/oom state), automatically captures the last ~20 lines of stdout in `log_tail_untrusted`.
+    - `timed_out: true` when the deadline is reached before all jobs complete, reporting current in-progress states.
+- **CLI**: `bifrost wait <job_id>... [--timeout 300] [--poll 15] [--json]`.
+
+### 25.2 Early log tails (`job_log_tail`)
+
+When a job is just submitted or still pending/starting, its stdout/stderr log file on cluster storage has not been created yet by Slurmd. Previously, `job_log_tail` failed with `reading ...: bash exited 4: ...: not a regular file`.
+`job_log_tail` now inspects the job's state: if the job exists and is still active (`PENDING`, `RUNNING`, `CONFIGURING`, `COMPLETING`, `REQUEUED`), it returns an empty log window with `note: "no log yet (job <state>/just started)"`. If the job has reached a terminal state and still has no log, the error is preserved.
+
+### 25.3 Cluster software hints in `script_check`
+
+- **Bare Apptainer detection**: on Ursa Major compute nodes, Apptainer/Singularity is provided via Lmod (`module load apptainer`), unlike the login node which has the RPM installed system-wide. A script calling `apptainer` or `singularity` without a prior `module load apptainer` receives a warning before submission.
+- **CUDA container hint**: `module load cuda` (or `cuda/<version>`) errors because the cluster does not package CUDA as an Lmod module. The error now includes actionable guidance naming prebuilt CUDA containers from the catalog (`/apps/containers/cuda-12.4-devel.sif`, `pytorch-2.5.1-cuda12.4.sif`) and noting that PyPI PyTorch wheels bundle their own CUDA runtime.
+
+### 25.4 Python traceback detection (`job_explain`)
+
+A script may exit with code 0 despite encountering runtime failures if error handling or nested commands mask errors. `job_explain` now scans stdout and stderr for Python tracebacks (`Traceback (most recent call last)` and standard `*Error:` / `Exception:` lines) and surfaces them as `python-error` findings regardless of whether the job state is `COMPLETED` with exit code 0.
+
 ## Change log
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-11-04 | v0.10.6 | Section 25: job_wait and watcher ergonomics. New R1 tool `job_wait` blocks until listed jobs finish (or timeout), returning final states, exit codes, elapsed time, and log tails for failed jobs (CLI: `bifrost wait`). `job_log_tail` on active jobs before log creation returns an empty window with a clear note instead of exit 4. `script_check` warns on bare `apptainer` calls lacking `module load apptainer`, and hints at prebuilt CUDA containers when `module load cuda` is attempted. `job_explain` scans stdout/stderr logs for Python tracebacks and error lines even on exit 0 COMPLETED jobs. |
 | 2026-11-01 | v0.10.5 | Usability panel fixes (5 reviewers, findings checked against the code). `script_check`/`job_submit` refuse a partition whose catalog `allowed_accounts` excludes the caller (accounts from read-only `sacctmgr show assoc user=<u> format=account`, the one new allow-listed command; unreadable accounts give no warning). `job_explain` timeout advice names the partition's MaxTime (and says checkpoint/split when the job already had it) instead of "partitions have no maximum". Log-quoted evidence starts with `untrusted log line:` and the instructions say to treat it as data. `job_submit_confirm` is marked destructive (it spends money). The 24-hour A1 cap stays (intentional). 7 new mutation guards |
 | 2026-10-27 | v0.10.1 | `my_allocation` notes always `[]`, never null (first live call). Live: hosted RC pilot lab `rc` $500/month, forsythc $300/month; `show_cost_tiers: [R2]` |
 | 2026-10-27 | agent 0.5.0 | Section 24: allocation framing (dashboard part). Researcher views lead with work; dollars moved to staff (R2); My allocation panel fed by my_allocation; daily safety limit and allocation impact on plan cards |
@@ -1444,3 +1483,18 @@ running costs and cluster $/hour move to staff (R2) views.
   displays allocation impact and warning if provided.
 - Sign-in text and assistant instruction updated to neutral wording ("what your jobs did and why",
   whole vs shared node usage without billing phrasing).
+
+### v0.10.5: usability panel fixes
+- `script_check` and `job_submit` refuse partitions whose catalog `allowed_accounts` excludes the caller (using read-only `sacctmgr -n -P show assoc user=<u> format=account`).
+- `job_explain` timeout advice names the partition's MaxTime instead of stating partitions have no maximum limit.
+- Log evidence lines in `job_explain` use the `untrusted log line:` prefix.
+- `job_submit_confirm` marked with `destructiveHint: true`.
+- 7 mutation guards.
+
+### v0.10.6: job_wait and watcher ergonomics
+Section 25.
+- `job_wait`: new R1 tool and CLI command (`bifrost wait`) blocking until listed jobs finish or timeout, returning final states, exit codes, elapsed times, and last 20 log lines for failed jobs.
+- `job_log_tail`: returns an empty window with note `no log yet (job <state>/just started)` for active jobs before log creation instead of bash exit 4 ("not a regular file").
+- `script_check`: warns on bare `apptainer`/`singularity` calls lacking a prior `module load apptainer`; hints at catalog CUDA containers and PyPI wheels when `module load cuda` is attempted.
+- `job_explain`: scans stdout/stderr logs for Python tracebacks and error lines even when a job completed with exit code 0.
+- 6 mutation guards.
