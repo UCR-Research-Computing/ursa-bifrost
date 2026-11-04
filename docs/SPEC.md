@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (Draft 9, 2026-11-04: adds section 25, job_wait and watcher ergonomics; 25.5 in v0.10.7; 25.6 in v0.10.8; built through bifrost v0.10.8 and ursa-agent 0.5.0) |
-| Status | bifrost v0.10.8, ursa-agent 0.5.0 (released tags), 2026-11-04 (spec Draft 9). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23-25 and docs/CLOUD_PLAN.md record what was built (22 is planned); open questions left in section 15. |
+| Document | Specification and design (Draft 9, 2026-11-04: adds section 25, job_wait and watcher ergonomics; 25.5 in v0.10.7; 25.6 in v0.10.8; 25.7 in v0.10.9; built through bifrost v0.10.9 and ursa-agent 0.5.0) |
+| Status | bifrost v0.10.9, ursa-agent 0.5.0 (released tags), 2026-11-04 (spec Draft 9). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23-25 and docs/CLOUD_PLAN.md record what was built (22 is planned); open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -1273,6 +1273,10 @@ A script may exit with code 0 despite encountering runtime failures if error han
 
 The CLI's ssh connection reuse (`ControlMaster`) puts its socket at `<dir>/bifrost-<hash>`. `<dir>` is `$XDG_RUNTIME_DIR`, else the temp dir, but only if the whole path fits a Unix socket (103 bytes usable on macOS); otherwise `/tmp`. macOS's per-user temp dir (`/var/folders/.../T/`) is too long, and before v0.10.8 every CLI command on a Mac failed with "unix_listener: path ... too long for Unix domain socket" (found 2026-11-04). The hosted MCP service runs on Linux and was not affected.
 
+### 25.7 Requeued jobs in `job_explain` (v0.10.9)
+
+When a cloud node fails to boot or dies (a GCP stockout or internal error), Slurm requeues the job and holds it with reason `BeginTime`. `job_explain` used to read that as "submitted with a start time in the future (--begin)". Since v0.10.9 a PENDING job with `BeginTime` and a restart count above zero gets a `requeued` warning instead ("Job was requeued after node failures", with the restart count and a pointer to `cluster_status`); `BeginTime` with no restarts still reads as a real `--begin`. Found 2026-11-04 on job 1675 (restarts 5, two gpul4 nodes DOWN with a stockout and a GCP internal error).
+
 ## Change log
 
 | Date | Version | Change |
@@ -1280,6 +1284,7 @@ The CLI's ssh connection reuse (`ControlMaster`) puts its socket at `<dir>/bifro
 | 2026-11-04 | v0.10.6 | Section 25: job_wait and watcher ergonomics. New R1 tool `job_wait` blocks until listed jobs finish (or timeout), returning final states, exit codes, elapsed time, and log tails for failed jobs (CLI: `bifrost wait`). `job_log_tail` on active jobs before log creation returns an empty window with a clear note instead of exit 4. `script_check` warns on bare `apptainer` calls lacking `module load apptainer`, and hints at prebuilt CUDA containers when `module load cuda` is attempted. `job_explain` scans stdout/stderr logs for Python tracebacks and error lines even on exit 0 COMPLETED jobs. |
 | 2026-11-04 | v0.10.7 | Section 25.5: `jobs_list job_ids` and `job_wait` treat empty `squeue -j` output (exit 1, no jobs still queued) as an empty queue and answer from accounting, instead of a JSON parse error. |
 | 2026-11-04 | v0.10.8 | Section 25.6: the CLI's ssh control socket falls back to `/tmp` when `$XDG_RUNTIME_DIR` or the temp dir is too long for a Unix socket (every CLI command failed on macOS). |
+| 2026-11-04 | v0.10.9 | Section 25.7: `job_explain` reports a requeued job (BeginTime with restarts > 0) as requeued after node failures, not as a `--begin` start time. |
 | 2026-11-01 | v0.10.5 | Usability panel fixes (5 reviewers, findings checked against the code). `script_check`/`job_submit` refuse a partition whose catalog `allowed_accounts` excludes the caller (accounts from read-only `sacctmgr show assoc user=<u> format=account`, the one new allow-listed command; unreadable accounts give no warning). `job_explain` timeout advice names the partition's MaxTime (and says checkpoint/split when the job already had it) instead of "partitions have no maximum". Log-quoted evidence starts with `untrusted log line:` and the instructions say to treat it as data. `job_submit_confirm` is marked destructive (it spends money). The 24-hour A1 cap stays (intentional). 7 new mutation guards |
 | 2026-10-27 | v0.10.1 | `my_allocation` notes always `[]`, never null (first live call). Live: hosted RC pilot lab `rc` $500/month, forsythc $300/month; `show_cost_tiers: [R2]` |
 | 2026-10-27 | agent 0.5.0 | Section 24: allocation framing (dashboard part). Researcher views lead with work; dollars moved to staff (R2); My allocation panel fed by my_allocation; daily safety limit and allocation impact on plan cards |
@@ -1517,4 +1522,9 @@ Section 25.5.
 ### v0.10.8: CLI works on macOS again
 Section 25.6.
 - The ssh control socket falls back to `/tmp` when the runtime or temp dir would make its path longer than a Unix socket allows; on macOS every CLI command failed with "path too long for Unix domain socket".
+- 1 mutation guard.
+
+### v0.10.9: requeued jobs explained
+Section 25.7.
+- `job_explain`: a pending job held with `BeginTime` after Slurm requeued it (restarts > 0) is reported as "requeued after node failures", not as a `--begin` start time.
 - 1 mutation guard.

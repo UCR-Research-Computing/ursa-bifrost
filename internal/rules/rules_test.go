@@ -326,3 +326,21 @@ func TestLogEvidencePrefixIsMarkedUntrusted(t *testing.T) {
 		t.Fatalf("LogEvidence changed to %q; update the server instructions with it", LogEvidence)
 	}
 }
+
+// TestRequeuedBeginTime: a requeued job pends with reason BeginTime; explain must say
+// "requeued after node failures", not "you set --begin" (v0.10.9, job 1675).
+func TestRequeuedBeginTime(t *testing.T) {
+	got := Explain(Facts{State: "PENDING", Reason: "BeginTime", RestartCnt: 5, Partition: "gpul4"})
+	if len(got) == 0 || got[0].Rule != "requeued" {
+		t.Fatalf("want requeued finding first, got %+v", got)
+	}
+	for _, f := range got {
+		if f.Rule == "pending" {
+			t.Fatalf("must not also claim a --begin start time: %+v", f)
+		}
+	}
+	plain := Explain(Facts{State: "PENDING", Reason: "BeginTime"})
+	if len(plain) == 0 || plain[0].Rule != "pending" {
+		t.Fatalf("a never-requeued BeginTime job is a real --begin: %+v", plain)
+	}
+}
