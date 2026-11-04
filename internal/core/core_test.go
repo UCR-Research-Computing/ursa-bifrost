@@ -598,6 +598,25 @@ func TestModuleShowLoadsMPIFirst(t *testing.T) {
 	}
 }
 
+// TestJobsListByIDsEmptyQueue: squeue -j prints nothing (exit 1) when none of the
+// asked-for jobs are still queued; jobs_list must fall back to accounting instead of
+// failing with "parsing Slurm JSON: unexpected end of JSON input" (v0.10.7).
+func TestJobsListByIDsEmptyQueue(t *testing.T) {
+	s, fx := newTestService(t)
+	fx.EmptySqueueByID = true
+	js, err := s.JobsList(context.Background(), JobsListInput{JobIDs: []string{"229", "261"}})
+	if err != nil {
+		t.Fatalf("empty squeue -j output must not be an error: %v", err)
+	}
+	got := map[string]string{}
+	for _, j := range js {
+		got[j.JobID] = j.State
+	}
+	if got["229"] != "FAILED" || got["261"] != "COMPLETED" {
+		t.Fatalf("finished jobs should come back from sacct: got %v", got)
+	}
+}
+
 // TestJobsListByIDs: a watcher asks for its active jobs in one call (v0.9.3, B4).
 func TestJobsListByIDs(t *testing.T) {
 	s, fx := newTestService(t)

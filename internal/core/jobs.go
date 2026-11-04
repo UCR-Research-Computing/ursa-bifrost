@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -121,6 +122,11 @@ func (s *Service) JobsList(ctx context.Context, in JobsListInput) ([]JobSummary,
 	b, err := s.run(ctx, qc)
 	if err != nil {
 		return nil, err
+	}
+	// squeue -j exits 1 with no output when none of the asked-for jobs are still
+	// queued (SqueueJobs accepts exit 1): that is an empty queue, not bad JSON.
+	if byID && len(bytes.TrimSpace(b)) == 0 {
+		b = []byte(`{"jobs":[]}`)
 	}
 	if err := slurm.Decode(b, &q); err != nil {
 		return nil, err
