@@ -132,6 +132,7 @@ PROBLEMS FOUND  partition cpu  worst-case cost $X.XX  (1 cores, 6% of a node)
 bifrost status                    nodes powered up/down, queue, $/hour being spent now
 bifrost partitions                partitions, cores, memory, GPUs, prices, what each is for
 bifrost jobs [--state FAILED]     your jobs (queue + recent accounting)
+bifrost wait 265 266              wait for batch jobs to finish (terminal state or timeout)
 bifrost job show 236              merged squeue + sacct record, efficiency, steps
 bifrost job explain 236           deterministic diagnosis with evidence and a fix
 bifrost job log 236 [--stderr]    redacted log window (--start N to page, --grep RE to search)
@@ -202,7 +203,7 @@ Tools come in tiers. A caller only sees, and can only call, the tiers granted to
 
 | Tier | Who | Tools |
 |---|---|---|
-| **R1** read | everyone | `cluster_status`, `partitions`, `jobs_list`, `job_show`, `job_explain`, `job_log_tail`, `job_results`, `modules_search`, `module_show`, `recipes`, `script_check`, `my_usage`, `waste_report`, `storage_usage`, `files_list`, `files_read`, `env_check`, `interactive_help`, `my_allocation`, `results_link`* |
+| **R1** read | everyone | `cluster_status`, `partitions`, `jobs_list`, `job_show`, `job_explain`, `job_log_tail`, `job_wait`, `job_results`, `modules_search`, `module_show`, `recipes`, `script_check`, `my_usage`, `waste_report`, `storage_usage`, `files_list`, `files_read`, `env_check`, `interactive_help`, `my_allocation`, `results_link`* |
 | **A1** act | opt-in per person | `job_submit` (optional `inputs`) + `job_submit_confirm`, `job_cancel` / `job_hold` / `job_release` + `_confirm`, `upload_prepare`*, `uploads_list`* |
 | **R2** staff | cluster administrators | `jobs_list_all`, `job_show_any`, `job_explain_any`, `usage_report`, `waste_report_all`, `health`, `ticket_draft` |
 

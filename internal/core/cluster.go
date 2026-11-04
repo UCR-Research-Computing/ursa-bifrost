@@ -389,11 +389,13 @@ var (
 	reAllCores = regexp.MustCompile(`os\.cpu_count\(\)|multiprocessing\.cpu_count\(\)|nproc\s+--all|/proc/cpuinfo`)
 	// compiler flags that emit AVX-512 (or tune for a host that has it); the e2 nodes
 	// behind standard/spot/check run AVX2 only, so such a binary dies with SIGILL
-	reMPIRun   = regexp.MustCompile(`\b(srun|mpirun|mpiexec)\b`)
-	reAVX512   = regexp.MustCompile(`-mavx512\w*|-march=(?:native|skylake-avx512|icelake\w*|sapphirerapids|cascadelake|cooperlake|tigerlake|znver4|znver5|x86-64-v4)\b|-xCORE-AVX512|-xHost\b`)
-	reSbatch   = regexp.MustCompile(`^#SBATCH\s+(.*)$`)
-	reModLoad  = regexp.MustCompile(`\bmodule\s+(?:load|add)\s+([^;&|#\n]+)`)
-	reMemValue = regexp.MustCompile(`^(\d+)([KMGT]?)B?$`)
+	reMPIRun        = regexp.MustCompile(`\b(srun|mpirun|mpiexec)\b`)
+	reAVX512        = regexp.MustCompile(`-mavx512\w*|-march=(?:native|skylake-avx512|icelake\w*|sapphirerapids|cascadelake|cooperlake|tigerlake|znver4|znver5|x86-64-v4)\b|-xCORE-AVX512|-xHost\b`)
+	reSbatch        = regexp.MustCompile(`^#SBATCH\s+(.*)$`)
+	reModLoad       = regexp.MustCompile(`\bmodule\s+(?:load|add)\s+([^;&|#\n]+)`)
+	reMemValue      = regexp.MustCompile(`^(\d+)([KMGT]?)B?$`)
+	reApptainerCmd  = regexp.MustCompile(`(?i)(?:^|[;&|(\s])(apptainer|singularity)\b`)
+	reModuleLoadCmd = regexp.MustCompile(`(?i)\bmodule\s+(?:load|add)\s+[^;&|\n]*`)
 )
 
 // ScriptCheck checks a batch script against the cluster's partitions and modules.
@@ -416,6 +418,8 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 		add("error", 1, "first line must be a shebang such as #!/bin/bash (sbatch rejects scripts without one)")
 	}
 	bodyStarted := false
+	apptainerLoaded := false
+	apptainerWarned := false
 	for i, raw := range lines {
 		ln := strings.TrimSpace(raw)
 		if m := reSbatch.FindStringSubmatch(ln); m != nil {
@@ -434,6 +438,9 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 		}
 		for _, m := range reModLoad.FindAllStringSubmatch(raw, -1) {
 			for _, mod := range moduleWords(m[1]) {
+				if mod == "apptainer" || strings.HasPrefix(mod, "apptainer/") {
+					apptainerLoaded = true
+				}
 				sc.Modules = append(sc.Modules, mod)
 				ok, _ := cat.ModuleExists(mod)
 				needs, satisfied := mpiSatisfied(lines[:i+1], cat.ModuleRequires(mod))
@@ -443,11 +450,23 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 					if c := cat.Closest(mod, 3); len(c) > 0 {
 						msg += "; closest: " + strings.Join(c, ", ")
 					}
+					if mod == "cuda" || strings.HasPrefix(mod, "cuda/") {
+						msg += "; for CUDA use containers (/apps/containers/cuda-12.4-devel.sif, /apps/containers/pytorch-2.5.1-cuda12.4.sif) or PyPI torch wheels (bring their own CUDA)"
+					}
 					add("error", i+1, msg, mod)
 				case !satisfied:
 					add("error", i+1, "module %q is MPI-built and needs `%s` first", mod, needs)
 				}
 			}
+		}
+		codeLn := raw
+		if idx := strings.Index(codeLn, " #"); idx >= 0 && !strings.ContainsAny(codeLn[:idx], "'\"") {
+			codeLn = codeLn[:idx]
+		}
+		noMod := reModuleLoadCmd.ReplaceAllString(codeLn, "")
+		if m := reApptainerCmd.FindStringSubmatch(noMod); m != nil && !apptainerLoaded && !apptainerWarned {
+			add("warning", i+1, "calls %s without a prior 'module load apptainer' (compute nodes only have apptainer via the module; the login node has the RPM)", m[1])
+			apptainerWarned = true
 		}
 		if strings.Contains(raw, "--partition=") || strings.Contains(raw, "sbatch ") && i > 0 && !strings.HasPrefix(ln, "#") {
 			if strings.Contains(raw, "sbatch ") {

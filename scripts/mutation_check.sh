@@ -395,6 +395,13 @@ mutate "v0105 assoc validates user"      internal/backend/command.go 'func Assoc
 	if err := ValidUser(user); err != nil {' 'func AssocAccounts(user string) (Command, error) {
 	if err := ValidUser(user); false && err != nil {'
 mutate "v0105 submit_confirm destructive" internal/mcpserver/server.go 'Tokens are single use and expire.", true),' 'Tokens are single use and expire.", false),'
+# v0.10.6 job_wait and watcher ergonomics
+mutate "v0106 log no log yet"              internal/core/jobs.go 'lt.Note = "no log yet (job " + d.State + "/just started)"' 'lt.Note = ""'
+mutate "v0106 script_check apptainer mod"  internal/core/cluster.go 'if mod == "apptainer" || strings.HasPrefix(mod, "apptainer/") {' 'if false {'
+mutate "v0106 script_check cuda hint"      internal/core/cluster.go 'if mod == "cuda" || strings.HasPrefix(mod, "cuda/") {' 'if false {'
+mutate "v0106 python traceback scan"       internal/rules/rules.go '(?m)(?:Traceback \(most recent call last\):?|^(?:[A-Za-z0-9_]*Error|Exception): .+$)' '(?m)^NameError: .+$'
+mutate "v0106 job_wait active check"       internal/core/jobs.go 'case "PENDING", "RUNNING", "CONFIGURING", "COMPLETING", "REQUEUED", "SUSPENDED":' 'case "NEVER_ACTIVE":'
+mutate "v0106 job_wait failure log"        internal/core/jobs.go 'if isJobFailed(j.State, j.ExitCode) && !isJobActive(j.State) {' 'if false {'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

@@ -44,6 +44,7 @@ Usage:
   bifrost status                           cluster status (nodes, queue, $/hour)
   bifrost partitions                       partitions from the cluster catalog
   bifrost jobs [--state S] [--since T] [--all] [--user U]
+  bifrost wait [--timeout S] [--poll S] <id>...   wait for batch jobs to finish
   bifrost job show <id> [--script] [--any]
   bifrost job explain <id> [--lines N] [--any]
   bifrost job log <id> [--stderr] [--lines N] [--start N] [--grep RE] [--any]
@@ -185,6 +186,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return out(stdout, stderr, g, r, err, func(w io.Writer) { printJobs(w, r.Data, *all || *user != "") })
 	case "job":
 		return jobCmd(ctx, svc, rest, stdout, stderr, g)
+	case "wait":
+		fs := newFlags("wait")
+		timeout := fs.Int("timeout", 300, "maximum seconds to wait")
+		poll := fs.Int("poll", 15, "seconds between status checks")
+		if err := fs.Parse(rest); err != nil {
+			return fail(stdout, stderr, g, err)
+		}
+		if fs.NArg() == 0 {
+			return fail(stdout, stderr, g, errors.New("usage: bifrost wait [--timeout 300] [--poll 15] <job_id>..."))
+		}
+		ids := fs.Args()
+		r, err := core.Call(ctx, svc, "cli", "job_wait", "R1", map[string]any{"job_ids": ids, "timeout_s": *timeout, "poll_s": *poll}, false,
+			func(ctx context.Context) (*core.JobWaitResult, error) {
+				return svc.JobWait(ctx, core.JobWaitInput{JobIDs: ids, TimeoutS: *timeout, PollS: *poll})
+			})
+		return out(stdout, stderr, g, r, err, func(w io.Writer) { printWait(w, r.Data) })
 	case "modules":
 		q := strings.Join(rest, " ")
 		r, err := core.Call(ctx, svc, "cli", "modules_search", "R1", map[string]any{"query": q}, false,
@@ -680,6 +697,10 @@ func jobCmd(ctx context.Context, svc *core.Service, args []string, stdout, stder
 				return svc.JobLog(ctx, core.LogInput{JobID: id, Stream: stream, Lines: *lines, StartLine: *start, Grep: *grep, AnyUser: *anyUser})
 			})
 		return out(stdout, stderr, g, r, err, func(w io.Writer) {
+			if r.Data.Note != "" {
+				fmt.Fprintf(w, "# %s (%s): %s\n", r.Data.Path, r.Data.Stream, r.Data.Note)
+				return
+			}
 			if r.Data.Grep != nil {
 				fmt.Fprintf(w, "# %s (%s): %d match(es) in %d lines, redacted\n%s", r.Data.Path, r.Data.Stream, r.Data.Grep.Matches, r.Data.TotalLines, r.Data.Grep.Lines.Text)
 				return
@@ -691,6 +712,34 @@ func jobCmd(ctx context.Context, svc *core.Service, args []string, stdout, stder
 		})
 	}
 	return fail(stdout, stderr, g, fmt.Errorf("unknown job subcommand %q (show, explain, log)", sub))
+}
+
+func printWait(w io.Writer, res *core.JobWaitResult) {
+	if res == nil {
+		return
+	}
+	for _, j := range res.Jobs {
+		line := fmt.Sprintf("Job %-6s  %-10s", j.JobID, j.State)
+		if j.ExitCode != "" {
+			line += fmt.Sprintf("  exit %s", j.ExitCode)
+		}
+		if j.ElapsedS > 0 {
+			line += fmt.Sprintf("  elapsed %s", dur(j.ElapsedS))
+		}
+		if j.Note != "" {
+			line += fmt.Sprintf("  (%s)", j.Note)
+		}
+		fmt.Fprintln(w, line)
+		if j.LogTail != nil && j.LogTail.Text != "" {
+			fmt.Fprintln(w, "  log tail:")
+			for _, l := range strings.Split(strings.TrimSpace(j.LogTail.Text), "\n") {
+				fmt.Fprintln(w, "    "+l)
+			}
+		}
+	}
+	if res.TimedOut {
+		fmt.Fprintf(w, "Timed out after %ds.\n", res.ElapsedS)
+	}
 }
 
 func configCmd(args []string, stdout, stderr io.Writer, g globals) int {
