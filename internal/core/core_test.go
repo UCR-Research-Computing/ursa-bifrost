@@ -896,3 +896,134 @@ func TestScriptCheckRestrictedPartition(t *testing.T) {
 		t.Errorf("open partition flagged: %s", issues(sc))
 	}
 }
+
+func TestJobLogNoLogYetForActiveJob(t *testing.T) {
+	s, fx := newTestService(t)
+	// Job 260 is RUNNING in squeue.json; its log does not exist in fx.Logs
+	lt, err := s.JobLog(context.Background(), LogInput{JobID: "260", Stream: "stdout", Lines: 100})
+	if err != nil {
+		t.Fatalf("unexpected error for active job without log: %v", err)
+	}
+	if lt.Note == "" || !strings.Contains(lt.Note, "no log yet (job RUNNING/just started)") {
+		t.Errorf("note missing or wrong: %q", lt.Note)
+	}
+	if lt.Lines != 0 || lt.TotalLines != 0 || lt.Tail == nil || lt.Tail.Text != "" {
+		t.Errorf("expected empty window, got lines=%d total=%d tail=%v", lt.Lines, lt.TotalLines, lt.Tail)
+	}
+
+	// Job 236 is FAILED in sacct_jobs.json; missing log must fail with not a regular file error
+	fx.Fail = map[string]string{"bash": "/home/alice_ucr_edu/deep-research-lab/run_76/job.log: not a regular file"}
+	_, err = s.JobLog(context.Background(), LogInput{JobID: "236", Stream: "stdout", Lines: 100})
+	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Errorf("expected not a regular file error for finished job, got: %v", err)
+	}
+}
+
+func TestScriptCheckApptainerWarning(t *testing.T) {
+	s, _ := newTestService(t)
+	// bare apptainer call without module load apptainer
+	bare := "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -c 2\n#SBATCH -t 10\napptainer exec /apps/containers/cuda-12.4-devel.sif nvcc --version\n"
+	sc, err := s.ScriptCheck(context.Background(), bare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(issues(sc), "calls apptainer without a prior 'module load apptainer'") {
+		t.Errorf("apptainer warning missing: %s", issues(sc))
+	}
+
+	// bare singularity call without module load apptainer
+	bareSing := "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -c 2\n#SBATCH -t 10\nsingularity exec /apps/containers/cuda-12.4-devel.sif nvcc --version\n"
+	sc, _ = s.ScriptCheck(context.Background(), bareSing)
+	if !strings.Contains(issues(sc), "calls singularity without a prior 'module load apptainer'") {
+		t.Errorf("singularity warning missing: %s", issues(sc))
+	}
+
+	// with prior module load apptainer: no warning
+	good := "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -c 2\n#SBATCH -t 10\nmodule load apptainer\napptainer exec /apps/containers/cuda-12.4-devel.sif nvcc --version\n"
+	sc, _ = s.ScriptCheck(context.Background(), good)
+	if strings.Contains(issues(sc), "calls apptainer without a prior") {
+		t.Errorf("unexpected apptainer warning when module loaded: %s", issues(sc))
+	}
+
+	// comment line should not trigger
+	comment := "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -c 2\n#SBATCH -t 10\n# apptainer exec /apps/containers/x.sif\necho ok\n"
+	sc, _ = s.ScriptCheck(context.Background(), comment)
+	if strings.Contains(issues(sc), "calls apptainer without a prior") {
+		t.Errorf("comment triggered apptainer warning: %s", issues(sc))
+	}
+}
+
+func TestScriptCheckCUDAHint(t *testing.T) {
+	s, _ := newTestService(t)
+	script := "#!/bin/bash\n#SBATCH -p gpul4\n#SBATCH --gres=gpu:1\n#SBATCH -c 4\n#SBATCH -t 10\nmodule load cuda\npython train.py\n"
+	sc, err := s.ScriptCheck(context.Background(), script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	iss := issues(sc)
+	if !strings.Contains(iss, "module \"cuda\" not found") {
+		t.Errorf("missing module not found: %s", iss)
+	}
+	if !strings.Contains(iss, "/apps/containers/cuda-12.4-devel.sif") || !strings.Contains(iss, "pytorch-2.5.1-cuda12.4.sif") || !strings.Contains(iss, "PyPI torch wheels") {
+		t.Errorf("missing container/pypi hint: %s", iss)
+	}
+
+	// cuda/12.4 variant
+	scriptVer := "#!/bin/bash\n#SBATCH -p gpul4\n#SBATCH --gres=gpu:1\n#SBATCH -c 4\n#SBATCH -t 10\nmodule load cuda/12.4\npython train.py\n"
+	sc, _ = s.ScriptCheck(context.Background(), scriptVer)
+	iss = issues(sc)
+	if !strings.Contains(iss, "/apps/containers/cuda-12.4-devel.sif") {
+		t.Errorf("cuda/12.4 missing container hint: %s", iss)
+	}
+}
+
+func TestJobWait(t *testing.T) {
+	s, _ := newTestService(t)
+	// Job 236 is FAILED, Job 261 is COMPLETED in sacct_jobs.json
+	res, err := s.JobWait(context.Background(), JobWaitInput{
+		JobIDs:   []string{"236", "261"},
+		TimeoutS: 5,
+		PollS:    5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.TimedOut {
+		t.Errorf("unexpected timeout: %+v", res)
+	}
+	if len(res.Jobs) != 2 {
+		t.Fatalf("expected 2 jobs, got %d", len(res.Jobs))
+	}
+	// Job 236 failed: must have log tail
+	j236 := res.Jobs[0]
+	if j236.JobID != "236" || j236.State != "FAILED" {
+		t.Errorf("job 236 state: %s", j236.State)
+	}
+	if j236.LogTail == nil || j236.LogTail.Text == "" {
+		t.Errorf("failed job 236 missing log tail: %+v", j236)
+	}
+	// Job 261 completed: must not have log tail
+	j261 := res.Jobs[1]
+	if j261.JobID != "261" || j261.State != "COMPLETED" {
+		t.Errorf("job 261 state: %s", j261.State)
+	}
+	if j261.LogTail != nil {
+		t.Errorf("completed job 261 should not have log tail: %+v", j261)
+	}
+
+	// Job 260 is RUNNING: with short timeout, JobWait should time out
+	res, err = s.JobWait(context.Background(), JobWaitInput{
+		JobIDs:   []string{"260"},
+		TimeoutS: 1,
+		PollS:    1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.TimedOut {
+		t.Errorf("expected timed out for running job 260, got: %+v", res)
+	}
+	if len(res.Jobs) != 1 || res.Jobs[0].State != "RUNNING" {
+		t.Errorf("expected running job 260 reported: %+v", res)
+	}
+}

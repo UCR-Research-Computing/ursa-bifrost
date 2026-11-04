@@ -83,6 +83,12 @@ type jobIn struct {
 	JobID string `json:"job_id" jsonschema:"Slurm job id, e.g. 260 or 260_3 for an array task"`
 }
 
+type jobWaitIn struct {
+	JobIDs   []string `json:"job_ids" jsonschema:"Job IDs to wait for (1-100; own jobs only),required"`
+	TimeoutS int      `json:"timeout_s,omitempty" jsonschema:"Maximum seconds to wait (default 300, max 840)"`
+	PollS    int      `json:"poll_s,omitempty" jsonschema:"Seconds between status checks (default 15, min 5)"`
+}
+
 type jobShowIn struct {
 	JobID         string `json:"job_id" jsonschema:"Slurm job id, e.g. 260"`
 	IncludeScript bool   `json:"include_script,omitempty" jsonschema:"include the stored batch script (redacted, untrusted)"`
@@ -269,6 +275,15 @@ func New(s *core.Service) *mcp.Server {
 		func(ctx context.Context, req *mcp.CallToolRequest, in jobsListMineIn) (*mcp.CallToolResult, envelope, error) {
 			r, err := core.Call(ctx, s, clientName(req), "jobs_list", "R1", argsOf(in), true, func(ctx context.Context) ([]core.JobSummary, error) {
 				return s.JobsList(ctx, core.JobsListInput{State: in.State, Since: in.Since, Limit: in.Limit, JobIDs: in.JobIDs})
+			})
+			return nil, toEnvelope(r), err
+		})
+
+	mcp.AddTool(srv, addR1("job_wait", "Wait for jobs",
+		"Blocks until listed jobs finish (or timeout) and returns their final states, exit codes, elapsed times, and log tails for failed jobs."),
+		func(ctx context.Context, req *mcp.CallToolRequest, in jobWaitIn) (*mcp.CallToolResult, envelope, error) {
+			r, err := core.Call(ctx, s, clientName(req), "job_wait", "R1", argsOf(in), true, func(ctx context.Context) (*core.JobWaitResult, error) {
+				return s.JobWait(ctx, core.JobWaitInput{JobIDs: in.JobIDs, TimeoutS: in.TimeoutS, PollS: in.PollS})
 			})
 			return nil, toEnvelope(r), err
 		})

@@ -236,6 +236,22 @@ func TestScriptOwnPythonError(t *testing.T) {
 	}
 }
 
+// Job 1657 (live, 2026-11-04): COMPLETED with exit 0, but an AttributeError traceback
+// occurred in hauler.log/stdout. Explain must report it despite the exit 0 status.
+func TestJob1657CompletedWithAttributeError(t *testing.T) {
+	log := `== hauler
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+AttributeError: module 'torch' has no attribute 'accelerator'
+total 12
+END 2026-11-04T14:07:38Z
+`
+	fs := Explain(Facts{State: "COMPLETED", ExitCode: "0", Log: log, LogReadable: true})
+	f := want(t, fs, "python-error")
+	if !strings.Contains(strings.Join(f.Evidence, " "), "AttributeError") {
+		t.Errorf("evidence lacks AttributeError: %v", f.Evidence)
+	}
+}
+
 // Job 302 (live, 2026-10-01): GADGET-4's Makefile calls `python`, which the
 // nodes do not have. make prints "Command not found" with a capital C, so the
 // rule missed it and the job fell through to "no known pattern" (exit 5).

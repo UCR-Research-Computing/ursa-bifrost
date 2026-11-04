@@ -8,6 +8,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/backend"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/policy"
@@ -498,6 +499,16 @@ func (s *Service) JobExplain(ctx context.Context, jobID string, anyUser bool, li
 			ex.LogTail = policy.Wrap(tail, s.Cfg.Limits.UntrustedCh)
 			markUntrusted(ctx)
 		}
+		if d.Stderr != "" && d.Stderr != d.Stdout {
+			errTail, _, err2 := s.readLog(ctx, d, "stderr", lines)
+			if err2 == nil && errTail != "" {
+				if f.Log != "" {
+					f.Log += "\n" + errTail
+				} else {
+					f.Log, f.LogReadable = errTail, true
+				}
+			}
+		}
 	}
 	ex.Findings = rules.Explain(f)
 	if ex.Findings == nil {
@@ -520,6 +531,7 @@ type LogTail struct {
 	Tail       *policy.Untrusted `json:"untrusted,omitempty"`  // the window
 	Grep       *GrepResult       `json:"grep,omitempty"`       // matches with line numbers
 	Next       string            `json:"next,omitempty"`       // how to page
+	Note       string            `json:"note,omitempty"`       // status or warning note
 }
 
 // LogInput selects a log window or search.
@@ -576,6 +588,12 @@ func (s *Service) JobLog(ctx context.Context, in LogInput) (*LogTail, error) {
 	if in.Grep != "" {
 		g, err := s.grepFile(ctx, p, in.Grep)
 		if err != nil {
+			if strings.Contains(err.Error(), "not a regular file") && isJobActive(d.State) {
+				lt.Note = fmt.Sprintf("no log yet (job %s/just started)", d.State)
+				lt.Tail = policy.Wrap("", 0)
+				lt.Grep = &GrepResult{Pattern: in.Grep, Lines: policy.Wrap("", 0)}
+				return lt, nil
+			}
 			return nil, fmt.Errorf("searching %s: %w", p, err)
 		}
 		lt.Grep, lt.TotalLines = g, g.TotalLines
@@ -587,6 +605,11 @@ func (s *Service) JobLog(ctx context.Context, in LogInput) (*LogTail, error) {
 	}
 	out, err := s.run(ctx, c)
 	if err != nil {
+		if strings.Contains(err.Error(), "not a regular file") && isJobActive(d.State) {
+			lt.Note = "no log yet (job " + d.State + "/just started)"
+			lt.Tail = policy.Wrap("", 0)
+			return lt, nil
+		}
 		return nil, fmt.Errorf("reading %s: %w", p, err)
 	}
 	head, body, _ := strings.Cut(string(out), "\n")
@@ -678,4 +701,197 @@ func localUser() string {
 func approxSize(v any) int {
 	b, _ := json.Marshal(v)
 	return len(b)
+}
+
+func isJobActive(st string) bool {
+	switch st {
+	case "PENDING", "RUNNING", "CONFIGURING", "COMPLETING", "REQUEUED", "SUSPENDED":
+		return true
+	}
+	return false
+}
+
+func isJobFailed(state, exitCode string) bool {
+	switch state {
+	case "FAILED", "TIMEOUT", "NODE_FAIL", "OUT_OF_MEMORY", "BOOT_FAIL", "DEADLINE":
+		return true
+	}
+	if exitCode != "" && exitCode != "0" && exitCode != "0:0" {
+		return true
+	}
+	return false
+}
+
+// MaxWaitTimeoutS bounds job_wait (Cloud Run request timeout is 900 s).
+const MaxWaitTimeoutS = 840
+
+// JobWaitInput selects jobs to wait for.
+type JobWaitInput struct {
+	JobIDs   []string `json:"job_ids"`
+	TimeoutS int      `json:"timeout_s,omitempty"` // default 300, min 1, max 840
+	PollS    int      `json:"poll_s,omitempty"`    // default 15, min 5, max 300
+}
+
+// JobWaitResult is the response from job_wait.
+type JobWaitResult struct {
+	Jobs     []JobWaitItem `json:"jobs"`
+	TimedOut bool          `json:"timed_out"`
+	ElapsedS int64         `json:"elapsed_s"`
+}
+
+// JobWaitItem reports one job's final or current state in job_wait.
+type JobWaitItem struct {
+	JobID    string            `json:"job_id"`
+	State    string            `json:"state"`
+	ExitCode string            `json:"exit_code,omitempty"`
+	ElapsedS int64             `json:"elapsed_s"`
+	LogTail  *policy.Untrusted `json:"log_tail_untrusted,omitempty"`
+	Note     string            `json:"note,omitempty"`
+}
+
+// JobWait blocks until the listed jobs finish or timeout.
+func (s *Service) JobWait(ctx context.Context, in JobWaitInput) (*JobWaitResult, error) {
+	if len(in.JobIDs) == 0 {
+		return nil, fmt.Errorf("job_ids: at least one job id required")
+	}
+	if len(in.JobIDs) > MaxJobIDs {
+		return nil, fmt.Errorf("job_ids: at most %d ids per call, got %d", MaxJobIDs, len(in.JobIDs))
+	}
+	for _, id := range in.JobIDs {
+		if err := backend.ValidJobID(id); err != nil {
+			return nil, err
+		}
+	}
+	timeoutS := in.TimeoutS
+	if timeoutS <= 0 {
+		timeoutS = 300
+	}
+	if timeoutS > MaxWaitTimeoutS {
+		timeoutS = MaxWaitTimeoutS
+	}
+	pollS := in.PollS
+	if pollS <= 0 {
+		pollS = 15
+	}
+	if pollS < 5 {
+		pollS = 5
+	}
+	if pollS > 300 {
+		pollS = 300
+	}
+
+	start := s.Now()
+	wallStart := time.Now()
+	deadline := wallStart.Add(time.Duration(timeoutS) * time.Second)
+	pollDur := time.Duration(pollS) * time.Second
+
+	var latestMap map[string]JobSummary
+	timedOut := false
+
+	for {
+		list, err := s.JobsList(ctx, JobsListInput{JobIDs: in.JobIDs, Limit: max(len(in.JobIDs)*10, 100)})
+		if err != nil {
+			return nil, err
+		}
+		m := make(map[string]JobSummary, len(list))
+		for _, j := range list {
+			m[j.JobID] = j
+		}
+		latestMap = m
+
+		allDone := true
+		for _, wantID := range in.JobIDs {
+			j, ok := m[wantID]
+			if !ok {
+				// check if any task with prefix exists
+				foundTask := false
+				for k, task := range m {
+					if strings.HasPrefix(k, wantID+"_") {
+						foundTask = true
+						if isJobActive(task.State) {
+							allDone = false
+							break
+						}
+					}
+				}
+				if !foundTask || !allDone {
+					allDone = false
+					break
+				}
+				continue
+			}
+			if isJobActive(j.State) {
+				allDone = false
+				break
+			}
+		}
+
+		if allDone {
+			break
+		}
+
+		now := time.Now()
+		if !now.Before(deadline) {
+			timedOut = true
+			break
+		}
+
+		sleep := pollDur
+		if remain := deadline.Sub(now); remain < sleep {
+			sleep = remain
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(sleep):
+		}
+	}
+
+	elapsed := int64(time.Since(wallStart).Seconds())
+	if elapsed <= 0 {
+		elapsed = int64(s.Now().Sub(start).Seconds())
+	}
+	res := &JobWaitResult{
+		Jobs:     make([]JobWaitItem, 0, len(in.JobIDs)),
+		TimedOut: timedOut,
+		ElapsedS: elapsed,
+	}
+
+	for _, id := range in.JobIDs {
+		item := JobWaitItem{JobID: id}
+		j, ok := latestMap[id]
+		if !ok {
+			// check for task
+			for k, task := range latestMap {
+				if strings.HasPrefix(k, id+"_") {
+					j = task
+					ok = true
+					break
+				}
+			}
+		}
+		if !ok {
+			item.State = "UNKNOWN"
+			item.Note = "job not found in queue or accounting for caller"
+			res.Jobs = append(res.Jobs, item)
+			continue
+		}
+		item.State = j.State
+		item.ExitCode = j.ExitCode
+		item.ElapsedS = j.ElapsedS
+
+		if isJobFailed(j.State, j.ExitCode) && !isJobActive(j.State) {
+			lt, err := s.JobLog(ctx, LogInput{JobID: id, Stream: "stdout", Lines: 20})
+			if err == nil && lt != nil && lt.Tail != nil && lt.Tail.Text != "" {
+				item.LogTail = lt.Tail
+				markUntrusted(ctx)
+			} else if err != nil {
+				item.Note = err.Error()
+			}
+		}
+		res.Jobs = append(res.Jobs, item)
+	}
+
+	return res, nil
 }

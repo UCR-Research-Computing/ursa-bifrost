@@ -150,7 +150,7 @@ var logRules = []logRule{
 	},
 	{
 		id: "python-error", severity: Error, title: "Python error in the script's own code",
-		re:         regexp.MustCompile(`(?m)^(NameError|TypeError|ValueError|IndexError|KeyError|UnboundLocalError|FileNotFoundError|AssertionError|RuntimeError): .+$`),
+		re:         regexp.MustCompile(`(?m)(?:Traceback \(most recent call last\):?|^(?:[A-Za-z0-9_]*Error|Exception): .+$)`),
 		suggestion: "A bug in the script (not the cluster): read the traceback just above this line for the file and line number, fix it there, and rerun. If earlier stages finished, rerun only the failed step instead of the whole job.",
 	},
 }
@@ -222,6 +222,10 @@ func Explain(f Facts) []Finding {
 			}
 			// an illegal instruction also "dumps core": one finding, the specific one
 			if r.id == "tool-crash" && hasRule(out, "illegal-instruction") {
+				continue
+			}
+			// a specific python rule (import, api-change, syntax, numerical) wins over generic python-error
+			if r.id == "python-error" && hasRule(out, "python-import", "api-change", "syntax", "numerical") {
 				continue
 			}
 			last := locs[len(locs)-1]
