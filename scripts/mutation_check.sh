@@ -402,6 +402,7 @@ mutate "v0106 script_check cuda hint"      internal/core/cluster.go 'if mod == "
 mutate "v0106 python traceback scan"       internal/rules/rules.go '(?m)(?:Traceback \(most recent call last\):?|^(?:[A-Za-z0-9_]*Error|Exception): .+$)' '(?m)^NameError: .+$'
 mutate "v0106 job_wait active check"       internal/core/jobs.go 'case "PENDING", "RUNNING", "CONFIGURING", "COMPLETING", "REQUEUED", "SUSPENDED":' 'case "NEVER_ACTIVE":'
 mutate "v0106 job_wait failure log"        internal/core/jobs.go 'if isJobFailed(j.State, j.ExitCode) && !isJobActive(j.State) {' 'if false {'
+mutate "v0107 empty squeue -j is empty"   internal/core/jobs.go 'if byID && len(bytes.TrimSpace(b)) == 0 {' 'if false {'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

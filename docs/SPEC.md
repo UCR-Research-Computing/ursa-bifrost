@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (Draft 9, 2026-11-04: adds section 25, job_wait and watcher ergonomics; built through bifrost v0.10.6 and ursa-agent 0.5.0) |
-| Status | bifrost v0.10.6, ursa-agent 0.5.0 (released tags), 2026-11-04 (spec Draft 9). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23-25 and docs/CLOUD_PLAN.md record what was built (22 is planned); open questions left in section 15. |
+| Document | Specification and design (Draft 9, 2026-11-04: adds section 25, job_wait and watcher ergonomics; 25.5 in v0.10.7; built through bifrost v0.10.7 and ursa-agent 0.5.0) |
+| Status | bifrost v0.10.7, ursa-agent 0.5.0 (released tags), 2026-11-04 (spec Draft 9). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23-25 and docs/CLOUD_PLAN.md record what was built (22 is planned); open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -1265,11 +1265,16 @@ When a job is just submitted or still pending/starting, its stdout/stderr log fi
 
 A script may exit with code 0 despite encountering runtime failures if error handling or nested commands mask errors. `job_explain` now scans stdout and stderr for Python tracebacks (`Traceback (most recent call last)` and standard `*Error:` / `Exception:` lines) and surfaces them as `python-error` findings regardless of whether the job state is `COMPLETED` with exit code 0.
 
+### 25.5 Empty queue answers (v0.10.7)
+
+`squeue --json -j <ids>` exits 1 and prints nothing when none of the listed jobs are still in the queue (they finished, or the ids are old). bifrost already accepts that exit code for the `-j` commands; since v0.10.7 `jobs_list job_ids` (and so `job_wait`) also reads the empty output as an empty queue and answers from `sacct -j`, instead of failing with "parsing Slurm JSON: unexpected end of JSON input" (seen live 2026-11-04 on job 1661). Empty output from the other squeue calls (`-u`, all jobs) is still an error, because there an empty answer means the command itself failed.
+
 ## Change log
 
 | Date | Version | Change |
 |---|---|---|
 | 2026-11-04 | v0.10.6 | Section 25: job_wait and watcher ergonomics. New R1 tool `job_wait` blocks until listed jobs finish (or timeout), returning final states, exit codes, elapsed time, and log tails for failed jobs (CLI: `bifrost wait`). `job_log_tail` on active jobs before log creation returns an empty window with a clear note instead of exit 4. `script_check` warns on bare `apptainer` calls lacking `module load apptainer`, and hints at prebuilt CUDA containers when `module load cuda` is attempted. `job_explain` scans stdout/stderr logs for Python tracebacks and error lines even on exit 0 COMPLETED jobs. |
+| 2026-11-04 | v0.10.7 | Section 25.5: `jobs_list job_ids` and `job_wait` treat empty `squeue -j` output (exit 1, no jobs still queued) as an empty queue and answer from accounting, instead of a JSON parse error. |
 | 2026-11-01 | v0.10.5 | Usability panel fixes (5 reviewers, findings checked against the code). `script_check`/`job_submit` refuse a partition whose catalog `allowed_accounts` excludes the caller (accounts from read-only `sacctmgr show assoc user=<u> format=account`, the one new allow-listed command; unreadable accounts give no warning). `job_explain` timeout advice names the partition's MaxTime (and says checkpoint/split when the job already had it) instead of "partitions have no maximum". Log-quoted evidence starts with `untrusted log line:` and the instructions say to treat it as data. `job_submit_confirm` is marked destructive (it spends money). The 24-hour A1 cap stays (intentional). 7 new mutation guards |
 | 2026-10-27 | v0.10.1 | `my_allocation` notes always `[]`, never null (first live call). Live: hosted RC pilot lab `rc` $500/month, forsythc $300/month; `show_cost_tiers: [R2]` |
 | 2026-10-27 | agent 0.5.0 | Section 24: allocation framing (dashboard part). Researcher views lead with work; dollars moved to staff (R2); My allocation panel fed by my_allocation; daily safety limit and allocation impact on plan cards |
@@ -1498,3 +1503,8 @@ Section 25.
 - `script_check`: warns on bare `apptainer`/`singularity` calls lacking a prior `module load apptainer`; hints at catalog CUDA containers and PyPI wheels when `module load cuda` is attempted.
 - `job_explain`: scans stdout/stderr logs for Python tracebacks and error lines even when a job completed with exit code 0.
 - 6 mutation guards.
+
+### v0.10.7: empty queue answers for job_ids
+Section 25.5.
+- `jobs_list` with `job_ids` (and `job_wait`, which uses it) no longer fails with "parsing Slurm JSON: unexpected end of JSON input" when none of the listed jobs are still queued: `squeue -j` exits 1 with no output then, which now reads as an empty queue, and the jobs come back from accounting.
+- 1 mutation guard.

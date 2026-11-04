@@ -5,6 +5,10 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.10.7 - 2026-11-04
+- **`jobs_list job_ids` and `job_wait` handle finished jobs**: `squeue -j` exits 1 with no output when none of the listed jobs are still queued, and bifrost failed with "parsing Slurm JSON: unexpected end of JSON input" (seen live on job 1661). It now reads that as an empty queue and answers from accounting (SPEC section 25.5).
+- 1 new mutation guard.
+
 ## v0.10.6 - 2026-11-04
 - **New tool `job_wait` blocks until batch jobs finish** (SPEC section 25, R1 tool and `bifrost wait` CLI): takes `job_ids` (1-100, own jobs only), `timeout_s` (default 300, max 840) and `poll_s` (default 15, min 5). Blocks until every listed job leaves PENDING/RUNNING/CONFIGURING/COMPLETING/REQUEUED or timeout; returns per-job final state, exit code, elapsed time, and the last ~20 log lines for any job that failed; `timed_out: true` with current states otherwise. Reuses the uncached `jobs_list job_ids` query path (`squeue -j` and `sacct -j`). Respects the per-caller in-flight cap (1 slot held) and does not hold SSH sessions while sleeping between polls.
 - **`job_log_tail` notes active jobs before log creation**: on a job whose log file does not exist yet (bash exit 4, "not a regular file"), returns an empty window (`lines: 0`, `total_lines: 0`) with `note: "no log yet (job <state>/just started)"` when the job is active; preserves the error for finished jobs with no log.

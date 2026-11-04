@@ -19,10 +19,10 @@ Everything below was hit while driving real work through the hosted `ursa` MCP t
 10. **[Shipped v0.10.6] Exit 0 on a job whose real work failed** was my script's fault, but a `job_explain` pass that scans the log for Python tracebacks would have flagged it (job 1657 ended COMPLETED/0 with an AttributeError traceback in the log).
 11. **Plans always carry dollar figures.** [Open] Users work in allocations; the plan could lead with allocation % and keep dollars behind a flag (Chuck's preference, 2026-11-04).
 12. **`job_explain` on job 1659 named the wrong cause.** [Open] (pip/transformers torch-disable + 'python: command not found' inside apptainer); explain should surface the last error lines verbatim.
+13. **[Shipped v0.10.7] `jobs_list job_ids` failed on finished jobs.** It returned "parsing Slurm JSON: unexpected end of JSON input" for job_ids=[1661] at 15:00 UTC while `job_log_tail` worked. Cause: `squeue -j` exits 1 with empty output when none of the jobs are queued. `job_wait` hit the same path.
 
 ## Worked well
 
 - `upload_prepare` + `inputs=[...]` staging into the job folder.
 - `files_list` and `job_log_tail grep` for checking per-task outputs.
 - Plans start immediately when a warm node exists (job 1659 started in under a second).
-- jobs_list returned 'parsing Slurm JSON: unexpected end of JSON input' for job_ids=[1661] at 15:00 UTC (job_log_tail worked at the same time)

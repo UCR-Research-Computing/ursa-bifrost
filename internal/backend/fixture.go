@@ -55,6 +55,9 @@ type Fixture struct {
 	// IgnoreJobFilter answers `squeue/sacct -j` with every recorded job, as a
 	// Slurm that ignored the list would (tests bifrost's own job_ids filter).
 	IgnoreJobFilter bool
+	// EmptySqueueByID answers `squeue -j` with no output at all, as the real
+	// Slurm does (exit 1, empty stdout) when none of the jobs are still queued.
+	EmptySqueueByID bool
 	// Sharing answers `sinfo -h -o %R|%h` (partition|OverSubscribe lines); empty
 	// means every partition is EXCLUSIVE, as on the real cluster in 2026-10.
 	Sharing string
@@ -95,6 +98,9 @@ func (f *Fixture) Run(_ context.Context, c Command) ([]byte, error) {
 		b, err := read("squeue.json")
 		if err != nil {
 			return nil, err
+		}
+		if id := flag(a, "-j"); id != "" && f.EmptySqueueByID {
+			return []byte{}, nil
 		}
 		if id := flag(a, "-j"); id != "" && !f.IgnoreJobFilter {
 			return filterJobs(b, id, "job_id")
