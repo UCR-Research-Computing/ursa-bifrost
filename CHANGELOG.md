@@ -5,6 +5,10 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.10.8 - 2026-11-04
+- **CLI works on macOS again**: the ssh control socket went under macOS's long per-user temp dir, and every command failed with "unix_listener: path ... too long for Unix domain socket". It now falls back to `/tmp` when the path would not fit (SPEC section 25.6).
+- 1 new mutation guard.
+
 ## v0.10.7 - 2026-11-04
 - **`jobs_list job_ids` and `job_wait` handle finished jobs**: `squeue -j` exits 1 with no output when none of the listed jobs are still queued, and bifrost failed with "parsing Slurm JSON: unexpected end of JSON input" (seen live on job 1661). It now reads that as an empty queue and answers from accounting (SPEC section 25.5).
 - 1 new mutation guard.

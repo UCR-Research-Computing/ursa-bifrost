@@ -70,10 +70,7 @@ func (s *SSH) base(ctx context.Context) ([]string, string, error) {
 		argv = []string{"ssh"}
 		dest = s.cfg.Host
 	}
-	dir := os.Getenv("XDG_RUNTIME_DIR")
-	if dir == "" {
-		dir = os.TempDir()
-	}
+	dir := controlDir(os.Getenv("XDG_RUNTIME_DIR"), os.TempDir())
 	persist := s.cfg.ControlPersist
 	if persist <= 0 {
 		persist = 900
@@ -189,4 +186,23 @@ func splitShell(s string) ([]string, error) {
 		out = append(out, cur.String())
 	}
 	return out, nil
+}
+
+// maxSocketPath is the usable length of a Unix socket path: sun_path is 104 bytes
+// on macOS/BSD (108 on Linux), counting the trailing NUL.
+const maxSocketPath = 103
+
+// controlDir picks the directory for the ssh ControlMaster socket. ssh names it
+// <dir>/bifrost-<40-hex %C> and first binds <that>.<16 random chars>, so the dir must
+// leave room for 66 bytes. macOS's per-user TMPDIR (/var/folders/xx/.../T/) is too long
+// ("unix_listener: path ... too long for Unix domain socket"), so fall back to /tmp.
+func controlDir(runtime, tmp string) string {
+	const need = len("/bifrost-") + 40 + 1 + 16
+	for _, d := range []string{runtime, tmp} {
+		d = strings.TrimRight(d, "/")
+		if d != "" && len(d)+need <= maxSocketPath {
+			return d
+		}
+	}
+	return "/tmp"
 }
