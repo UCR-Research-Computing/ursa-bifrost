@@ -145,7 +145,7 @@ var logRules = []logRule{
 	},
 	{
 		id: "command-not-found", severity: Error, title: "A command was not found",
-		re:         regexp.MustCompile(`(?m)(\S+): command not found$`),
+		re:         regexp.MustCompile(`(?mi)(\S+): command not found\s*$`),
 		suggestion: "Load the module that provides it (modules_search) or fix PATH in the job script.",
 	},
 	{
