@@ -145,7 +145,7 @@ var logRules = []logRule{
 	},
 	{
 		id: "command-not-found", severity: Error, title: "A command was not found",
-		re:         regexp.MustCompile(`(?mi)(\S+): command not found\s*$`),
+		re:         regexp.MustCompile(`(?m)(\S+): command not found$`),
 		suggestion: "Load the module that provides it (modules_search) or fix PATH in the job script.",
 	},
 	{
@@ -297,7 +297,7 @@ func Explain(f Facts) []Finding {
 			// Slurm requeues a job whose node failed to boot or died, and holds it
 			// briefly with reason BeginTime; it is not a user --begin.
 			add(Finding{Rule: "requeued", Severity: Warning, Title: "Job was requeued after node failures",
-				Evidence: []string{fmt.Sprintf("restarts %d", f.RestartCnt), "reason BeginTime (Slurm's requeue hold, not a --begin you set)"},
+				Evidence:   []string{fmt.Sprintf("restarts %d", f.RestartCnt), "reason BeginTime (Slurm's requeue hold, not a --begin you set)"},
 				Suggestion: "Slurm put it back in the queue because its node failed (on cloud partitions often a GCP stockout or boot error). It retries by itself. Check cluster_status for DOWN nodes in the partition; if it keeps requeuing, try another partition or ask Research Computing."})
 		} else {
 			add(pendingFinding(f.Reason))
