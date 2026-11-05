@@ -404,6 +404,7 @@ mutate "v0106 job_wait active check"       internal/core/jobs.go 'case "PENDING"
 mutate "v0106 job_wait failure log"        internal/core/jobs.go 'if isJobFailed(j.State, j.ExitCode) && !isJobActive(j.State) {' 'if false {'
 mutate "v0107 empty squeue -j is empty"   internal/core/jobs.go 'if byID && len(bytes.TrimSpace(b)) == 0 {' 'if false {'
 mutate "v0108 socket path fits"           internal/backend/ssh.go 'if d != "" && len(d)+need <= maxSocketPath {' 'if d != "" {'
+mutate "v0109 requeued not --begin"         internal/rules/rules.go 'if f.RestartCnt > 0 && f.Reason == "BeginTime" {' 'if false {'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

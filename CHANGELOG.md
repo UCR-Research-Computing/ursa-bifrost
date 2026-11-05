@@ -5,6 +5,10 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.10.9 - 2026-11-04
+- **`job_explain` names requeues**: a job Slurm requeued after node failures pends with reason `BeginTime`, and explain said it had a future `--begin` start time (job 1675, restarts 5). It now reports "Job was requeued after node failures" (SPEC section 25.7).
+- 1 new mutation guard.
+
 ## v0.10.8 - 2026-11-04
 - **CLI works on macOS again**: the ssh control socket went under macOS's long per-user temp dir, and every command failed with "unix_listener: path ... too long for Unix domain socket". It now falls back to `/tmp` when the path would not fit (SPEC section 25.6).
 - 1 new mutation guard.

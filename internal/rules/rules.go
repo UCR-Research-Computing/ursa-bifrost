@@ -293,7 +293,15 @@ func Explain(f Facts) []Finding {
 	}
 
 	if st == "PENDING" {
-		add(pendingFinding(f.Reason))
+		if f.RestartCnt > 0 && f.Reason == "BeginTime" {
+			// Slurm requeues a job whose node failed to boot or died, and holds it
+			// briefly with reason BeginTime; it is not a user --begin.
+			add(Finding{Rule: "requeued", Severity: Warning, Title: "Job was requeued after node failures",
+				Evidence:   []string{fmt.Sprintf("restarts %d", f.RestartCnt), "reason BeginTime (Slurm's requeue hold, not a --begin you set)"},
+				Suggestion: "Slurm put it back in the queue because its node failed (on cloud partitions often a GCP stockout or boot error). It retries by itself. Check cluster_status for DOWN nodes in the partition; if it keeps requeuing, try another partition or ask Research Computing."})
+		} else {
+			add(pendingFinding(f.Reason))
+		}
 	}
 
 	sort.SliceStable(out, func(i, j int) bool { return rank(out[i].Severity) < rank(out[j].Severity) })
