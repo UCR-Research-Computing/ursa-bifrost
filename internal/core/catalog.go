@@ -21,6 +21,7 @@ type Catalog struct {
 			Requires string   `json:"requires"`
 			Modules  []string `json:"modules"`
 		} `json:"mpi_dependent"`
+		ByPartition map[string][]string `json:"by_partition,omitempty"`
 	} `json:"modules"`
 	Recipes      []Recipe          `json:"recipes"`
 	UsageCards   map[string]string `json:"usage_cards"`
@@ -181,11 +182,12 @@ func (c *Catalog) DefaultPartition() string {
 
 // ModuleHit is one module search result.
 type ModuleHit struct {
-	Name     string   `json:"name"`
-	Versions []string `json:"versions"`
-	Requires string   `json:"requires,omitempty"` // e.g. "module load openmpi"
-	GPU      bool     `json:"gpu,omitempty"`
-	Card     string   `json:"usage_card,omitempty"`
+	Name       string   `json:"name"`
+	Versions   []string `json:"versions"`
+	Requires   string   `json:"requires,omitempty"`   // e.g. "module load openmpi"
+	Partitions []string `json:"partitions,omitempty"` // non-empty when mounted only on specific partitions (e.g. tpu*)
+	GPU        bool     `json:"gpu,omitempty"`
+	Card       string   `json:"usage_card,omitempty"`
 }
 
 // SearchModules finds modules whose name contains q (case-insensitive).
@@ -193,7 +195,7 @@ type ModuleHit struct {
 func (c *Catalog) SearchModules(q string) []ModuleHit {
 	q = strings.ToLower(strings.TrimSpace(q))
 	byName := map[string]*ModuleHit{}
-	add := func(full, requires string) {
+	add := func(full, requires string, parts []string) {
 		name, ver, _ := strings.Cut(full, "/")
 		if q != "" && !strings.Contains(strings.ToLower(full), q) {
 			return
@@ -201,18 +203,29 @@ func (c *Catalog) SearchModules(q string) []ModuleHit {
 		key := name + "|" + requires
 		h := byName[key]
 		if h == nil {
-			h = &ModuleHit{Name: name, Requires: requires}
+			h = &ModuleHit{Name: name, Requires: requires, Partitions: parts}
 			byName[key] = h
+		} else if len(parts) == 0 {
+			h.Partitions = nil // also in Core/MPIDependent -> available cluster-wide
 		}
 		if ver != "" {
-			h.Versions = append(h.Versions, ver)
+			seenVer := false
+			for _, v := range h.Versions {
+				if v == ver {
+					seenVer = true
+					break
+				}
+			}
+			if !seenVer {
+				h.Versions = append(h.Versions, ver)
+			}
 			if strings.Contains(ver, "cuda") {
 				h.GPU = true
 			}
 		}
 	}
 	for _, m := range c.Modules.Core {
-		add(m, "")
+		add(m, "", nil)
 	}
 	mpis := make([]string, 0, len(c.Modules.MPIDependent))
 	for k := range c.Modules.MPIDependent {
@@ -222,8 +235,24 @@ func (c *Catalog) SearchModules(q string) []ModuleHit {
 	for _, k := range mpis {
 		g := c.Modules.MPIDependent[k]
 		for _, m := range g.Modules {
-			add(m, g.Requires)
+			add(m, g.Requires, nil)
 		}
+	}
+	partMap := map[string][]string{}
+	for pName, list := range c.Modules.ByPartition {
+		for _, m := range list {
+			partMap[m] = append(partMap[m], pName)
+		}
+	}
+	partMods := make([]string, 0, len(partMap))
+	for m := range partMap {
+		partMods = append(partMods, m)
+	}
+	sort.Strings(partMods)
+	for _, m := range partMods {
+		ps := partMap[m]
+		sort.Strings(ps)
+		add(m, "", ps)
 	}
 	out := make([]ModuleHit, 0, len(byName))
 	for _, h := range byName {
@@ -242,6 +271,71 @@ func (c *Catalog) SearchModules(q string) []ModuleHit {
 		return out[i].Requires < out[j].Requires
 	})
 	return out
+}
+
+// fallbackTPUBases names the site TPU modulefiles mounted from /apps/modulefiles-tpu
+// so older catalog snapshots without modules.by_partition still validate TPU jobs.
+var fallbackTPUBases = map[string]bool{
+	"python-tpu":  true,
+	"pytorch-tpu": true,
+}
+
+// ModulePartitions returns the sorted list of partitions where spec is mounted when
+// spec is partition-scoped (not in Core/MPIDependent).
+func (c *Catalog) ModulePartitions(spec string) []string {
+	name, ver, _ := strings.Cut(spec, "/")
+	var ps []string
+	seen := map[string]bool{}
+	for pName, list := range c.Modules.ByPartition {
+		for _, m := range list {
+			n, v, _ := strings.Cut(m, "/")
+			if n == name && (ver == "" || v == ver) && !seen[pName] {
+				seen[pName] = true
+				ps = append(ps, pName)
+			}
+		}
+	}
+	if len(ps) == 0 && fallbackTPUBases[name] {
+		for _, p := range c.Partitions {
+			if strings.HasPrefix(p.Name, "tpu") && !seen[p.Name] {
+				seen[p.Name] = true
+				ps = append(ps, p.Name)
+			}
+		}
+		if len(ps) == 0 {
+			ps = []string{"tpu", "tpu6spot", "tpuspot"}
+		}
+	}
+	sort.Strings(ps)
+	return ps
+}
+
+// ModuleExistsOnPartition reports whether spec is mounted on every partition in
+// partitionSpec (a single name or Slurm comma list like "tpu6spot,tpuspot").
+func (c *Catalog) ModuleExistsOnPartition(spec, partitionSpec string) (bool, string) {
+	if ok, req := c.ModuleExists(spec); ok {
+		return true, req
+	}
+	var parts []string
+	for _, s := range strings.Split(partitionSpec, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	if len(parts) == 0 {
+		return false, ""
+	}
+	allowed := map[string]bool{}
+	for _, p := range c.ModulePartitions(spec) {
+		allowed[p] = true
+	}
+	name, _, _ := strings.Cut(spec, "/")
+	for _, p := range parts {
+		if !allowed[p] && !(fallbackTPUBases[name] && strings.HasPrefix(p, "tpu")) {
+			return false, ""
+		}
+	}
+	return true, ""
 }
 
 // ModuleExists reports whether "name" or "name/version" is a known module,

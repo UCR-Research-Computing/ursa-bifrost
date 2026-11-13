@@ -437,15 +437,20 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 			continue // a comment that mentions `module load x` loads nothing
 		}
 		for _, m := range reModLoad.FindAllStringSubmatch(raw, -1) {
+			targetPart := firstNonEmpty(sc.Request["partition"], cat.DefaultPartition())
 			for _, mod := range moduleWords(m[1]) {
 				if mod == "apptainer" || strings.HasPrefix(mod, "apptainer/") {
 					apptainerLoaded = true
 				}
 				sc.Modules = append(sc.Modules, mod)
-				ok, _ := cat.ModuleExists(mod)
+				ok, _ := cat.ModuleExistsOnPartition(mod, targetPart)
 				needs, satisfied := mpiSatisfied(lines[:i+1], cat.ModuleRequires(mod))
 				switch {
 				case !ok:
+					if ps := cat.ModulePartitions(mod); len(ps) > 0 {
+						add("error", i+1, "module %q is only available on partition(s): %s (script targets %s)", mod, strings.Join(ps, ", "), targetPart)
+						continue
+					}
 					msg := "module %q not found in the cluster catalog"
 					if c := cat.Closest(mod, 3); len(c) > 0 {
 						msg += "; closest: " + strings.Join(c, ", ")
@@ -585,10 +590,10 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 	if regexp.MustCompile(`(?m)^\s*(pip|pip3)\s+install\b`).MatchString(code) && !strings.Contains(code, "venv") && !strings.Contains(code, "uv ") && !strings.Contains(code, "pixi") && !strings.Contains(code, "--user") {
 		add("warning", 0, "bare `pip install` without a virtual environment; use `uv venv $TMPDIR/v` or a Pixi/conda env")
 	}
-	if strings.Contains(code, "python") && !regexp.MustCompile(`python-(sci|ml)|venv|conda|pixi|uv |apptainer|miniforge`).MatchString(code) {
+	if strings.Contains(code, "python") && !regexp.MustCompile(`python-(sci|ml|tpu)|pytorch-tpu|venv|conda|pixi|uv |apptainer|miniforge`).MatchString(code) {
 		add("warning", 0, "calls python without loading python-sci/python-ml or an environment (system Python 3.6 on Rocky 8)")
 	}
-	if strings.Contains(code, "apptainer") && strings.Contains(code, "--nv") && part != "gpul4" {
+	if strings.Contains(code, "apptainer") && strings.Contains(code, "--nv") && (!ok || p.GPUsPerNode == 0) {
 		add("warning", 0, "apptainer --nv on a partition without GPUs")
 	}
 	dbChecks(cat, script, sc.Request["array"], add)
@@ -708,8 +713,12 @@ func memMB(s string) (int64, bool) {
 }
 
 // slurmMinutes parses Slurm time formats: M, M:S, H:M:S, D-H, D-H:M, D-H:M:S.
-// cpuNote is what a partition's nodes can run: the e2 partitions stop at AVX2.
+// cpuNote is what a partition's nodes can run: the e2 partitions stop at AVX2,
+// arm runs Arm64 Neoverse V2, and all other x86_64 partitions have AVX-512.
 func cpuNote(part string) string {
+	if part == "arm" {
+		return "Arm64 Neoverse V2 (SVE)"
+	}
 	if avx2OnlyPartitions[part] {
 		return "AVX2 only (e2)"
 	}

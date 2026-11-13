@@ -1528,3 +1528,8 @@ Section 25.6.
 Section 25.7.
 - `job_explain`: a pending job held with `BeginTime` after Slurm requeued it (restarts > 0) is reported as "requeued after node failures", not as a `--begin` start time.
 - 1 mutation guard.
+
+### v0.10.10: TPU, Arm and V100 partition checks
+- `script_check` and `job_submit` read `modules.by_partition` from `/apps/docs/catalog.json` (with a built-in fallback for `python-tpu` and `pytorch-tpu` on `tpu*` partitions) so TPU modules pass on `tpu`, `tpuspot`, and `tpu6spot` while loading them elsewhere names the partitions that mount them. `modules_search` surfaces partition-scoped modules with their `partitions` list.
+- `script_check` accepts `python-tpu` and `pytorch-tpu` as Python environments alongside `python-sci` and `python-ml`; checks `gpus_per_node == 0` instead of hardcoding `gpul4` for `apptainer --nv` (fixes false warning on `gpu1v1`); `partitions` reports `Arm64 Neoverse V2 (SVE)` on `arm` instead of `AVX-512`.
+- 5 mutation guards.
