@@ -5,6 +5,11 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.10.10 - 2026-11-13
+- **Partition-scoped modules (`tpu*`, `arm`)**: reads `modules.by_partition` from `/apps/docs/catalog.json` (with a built-in fallback for `python-tpu` and `pytorch-tpu` on `tpu*` partitions) so `script_check` and `job_submit` accept TPU modules on `tpu`, `tpuspot`, and `tpu6spot` while reporting which partitions mount them when loaded elsewhere. `modules_search` surfaces partition-scoped modules with their `partitions` list.
+- **`script_check` Python, GPU container & Arm checks**: recognizes `python-tpu` and `pytorch-tpu` as Python environments alongside `python-sci`/`python-ml`; checks `gpus_per_node == 0` instead of hardcoding `gpul4` for `apptainer --nv` (fixes false warning on `gpu1v1`); reports `Arm64 Neoverse V2 (SVE)` on `arm` instead of `AVX-512`.
+- 5 new mutation guards.
+
 ## v0.10.9 - 2026-11-04
 - **`job_explain` names requeues**: a job Slurm requeued after node failures pends with reason `BeginTime`, and explain said it had a future `--begin` start time (job 1675, restarts 5). It now reports "Job was requeued after node failures" (SPEC section 25.7).
 - 1 new mutation guard.

@@ -1046,3 +1046,106 @@ func TestJobWait(t *testing.T) {
 		t.Errorf("expected running job 260 reported: %+v", res)
 	}
 }
+
+func TestTPUAndArmPartitionChecks(t *testing.T) {
+	s, fx := newTestService(t)
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS("../../testdata")); err != nil {
+		t.Fatal(err)
+	}
+	var cat map[string]any
+	b, _ := os.ReadFile(filepath.Join(dir, "catalog.json"))
+	if err := json.Unmarshal(b, &cat); err != nil {
+		t.Fatal(err)
+	}
+	parts := cat["partitions"].([]any)
+	base := parts[0].(map[string]any)
+	clonePart := func(name string, gpus int, spot bool, price float64) map[string]any {
+		m := map[string]any{}
+		for k, v := range base {
+			m[k] = v
+		}
+		m["name"] = name
+		m["default"] = false
+		m["gpus_per_node"] = gpus
+		m["exclusive"] = true
+		m["spot"] = spot
+		m["usd_per_node_hour"] = price
+		m["allowed_accounts"] = []string{"staff"}
+		return m
+	}
+	parts = append(parts,
+		clonePart("tpuspot", 0, true, 0.55),
+		clonePart("tpu6spot", 0, true, 0.55),
+		clonePart("arm", 0, false, 1.54),
+		clonePart("gpu1v1", 1, false, 2.74),
+	)
+	cat["partitions"] = parts
+	mods := cat["modules"].(map[string]any)
+	mods["by_partition"] = map[string]any{
+		"tpuspot":  []string{"python-tpu/2026.10", "pytorch-tpu/2026.10"},
+		"tpu6spot": []string{"python-tpu/2026.10", "pytorch-tpu/2026.10"},
+		"arm":      []string{"armpl-gcc/26.07"},
+	}
+	b, _ = json.Marshal(cat)
+	if err := os.WriteFile(filepath.Join(dir, "catalog.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fx.Dir = dir
+	fx.Accounts = []string{"staff"}
+	ctx := context.Background()
+
+	// 1. TPU script on -p tpu6spot,tpuspot with python-tpu and pytorch-tpu passes with zero module or python warnings
+	tpuJax := "#!/bin/bash\n#SBATCH -p tpu6spot,tpuspot\n#SBATCH -A staff\n#SBATCH --requeue\n#SBATCH -t 00:30:00\nmodule load python-tpu\npython train_jax.py\n"
+	sc, err := s.ScriptCheck(ctx, tpuJax)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sc.OK || strings.Contains(issues(sc), "not found") || strings.Contains(issues(sc), "only available") || strings.Contains(issues(sc), "without loading python-sci") {
+		t.Fatalf("TPU JAX script falsely flagged: ok=%v issues=%s", sc.OK, issues(sc))
+	}
+	tpuTorch := strings.Replace(tpuJax, "python-tpu", "pytorch-tpu", 1)
+	if sc, _ = s.ScriptCheck(ctx, tpuTorch); !sc.OK || strings.Contains(issues(sc), "without loading python-sci") {
+		t.Fatalf("TPU PyTorch/XLA script falsely flagged: ok=%v issues=%s", sc.OK, issues(sc))
+	}
+
+	// 2. Loading python-tpu on standard fails naming the TPU partitions
+	wrongPart := "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -c 4\n#SBATCH -t 00:30:00\nmodule load python-tpu\npython train_jax.py\n"
+	sc, _ = s.ScriptCheck(ctx, wrongPart)
+	if sc.OK || !strings.Contains(issues(sc), `module "python-tpu" is only available on partition(s): tpu6spot, tpuspot`) {
+		t.Fatalf("python-tpu on standard should error with TPU partitions: ok=%v issues=%s", sc.OK, issues(sc))
+	}
+
+	// 3. SearchModules surfaces partition-scoped modules with their Partitions list
+	catObj, err := s.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hits := catObj.SearchModules("python-tpu")
+	if len(hits) != 1 || len(hits[0].Partitions) != 2 || hits[0].Partitions[0] != "tpu6spot" {
+		t.Fatalf("expected python-tpu with partitions [tpu6spot tpuspot], got: %+v", hits)
+	}
+
+	// 4. apptainer --nv on gpu1v1 (V100, gpus_per_node=1) does NOT warn "without GPUs"; on standard it DOES
+	v100 := "#!/bin/bash\n#SBATCH -p gpu1v1\n#SBATCH -A staff\n#SBATCH --gres=gpu:1\n#SBATCH -t 00:30:00\nmodule load apptainer\napptainer exec --nv x.sif ./run\n"
+	if sc, _ = s.ScriptCheck(ctx, v100); strings.Contains(issues(sc), "without GPUs") {
+		t.Fatalf("gpu1v1 has GPUs, should not warn on apptainer --nv: %s", issues(sc))
+	}
+	noGPU := "#!/bin/bash\n#SBATCH -p standard\n#SBATCH -c 4\n#SBATCH -t 00:30:00\nmodule load apptainer\napptainer exec --nv x.sif ./run\n"
+	if sc, _ = s.ScriptCheck(ctx, noGPU); !strings.Contains(issues(sc), "without GPUs") {
+		t.Fatalf("standard has no GPUs, should warn on apptainer --nv: %s", issues(sc))
+	}
+
+	// 5. cpuNote("arm") reports Arm64 Neoverse V2, not AVX-512
+	ps, err := s.Partitions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotCPU := map[string]string{}
+	for _, p := range ps {
+		gotCPU[p.Name] = p.CPU
+	}
+	if gotCPU["arm"] != "Arm64 Neoverse V2 (SVE)" {
+		t.Fatalf("arm CPU note = %q, want Arm64 Neoverse V2 (SVE)", gotCPU["arm"])
+	}
+}

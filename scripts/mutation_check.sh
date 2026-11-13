@@ -405,6 +405,12 @@ mutate "v0106 job_wait failure log"        internal/core/jobs.go 'if isJobFailed
 mutate "v0107 empty squeue -j is empty"   internal/core/jobs.go 'if byID && len(bytes.TrimSpace(b)) == 0 {' 'if false {'
 mutate "v0108 socket path fits"           internal/backend/ssh.go 'if d != "" && len(d)+need <= maxSocketPath {' 'if d != "" {'
 mutate "v0109 requeued not --begin"         internal/rules/rules.go 'if f.RestartCnt > 0 && f.Reason == "BeginTime" {' 'if false {'
+# v0.10.10 TPU/Arm partition-scoped modules, python-tpu/pytorch-tpu env check, GPU apptainer --nv, arm cpuNote
+mutate "v01010 partition-scoped module ok"  internal/core/cluster.go 'ok, _ := cat.ModuleExistsOnPartition(mod, targetPart)' 'ok, _ := cat.ModuleExists(mod)'
+mutate "v01010 wrong partition module msg"  internal/core/cluster.go 'if ps := cat.ModulePartitions(mod); len(ps) > 0 {' 'if false {'
+mutate "v01010 python-tpu env check"        internal/core/cluster.go 'python-(sci|ml|tpu)|pytorch-tpu' 'python-(sci|ml)'
+mutate "v01010 apptainer --nv uses gpus"    internal/core/cluster.go '(!ok || p.GPUsPerNode == 0)' 'part != "gpul4"'
+mutate "v01010 arm cpuNote"                 internal/core/cluster.go 'if part == "arm" {' 'if false {'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL
