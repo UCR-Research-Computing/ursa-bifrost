@@ -8,6 +8,7 @@ local/
 .vscode/
 .idea/
 deploy/env
+deploy/backups/
 agent/.venv/
 agent/**/__pycache__/
 agent/.pytest_cache/

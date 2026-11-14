@@ -237,7 +237,7 @@ func (h *harness) signIn(email, hd string) (map[string]any, error) {
 	q := url.Values{"response_type": {"code"}, "client_id": {c["client_id"].(string)}, "redirect_uri": {"http://127.0.0.1:33418/callback"},
 		"code_challenge": {s256(verifier)}, "code_challenge_method": {"S256"}, "state": {"st123"}, "resource": {base + "/mcp"}}
 	noFollow := &http.Client{Jar: h.jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	// bifrost: explanation page (first time in this browser) or straight to Google
+	// bifrost: explanation page (requiring POST confirmation) or straight to Google
 	resp, err = noFollow.Get(base + "/authorize?" + q.Encode())
 	if err != nil {
 		return nil, err
@@ -247,13 +247,23 @@ func (h *harness) signIn(email, hd string) (map[string]any, error) {
 	next := resp.Header.Get("Location")
 	h.sawPage = resp.StatusCode == 200
 	if h.sawPage {
-		const mark = `class="b" href="`
+		const mark = `name="consent" value="`
 		i := strings.Index(string(page), mark)
 		if i < 0 {
 			return nil, fmt.Errorf("authorize: %d %s", resp.StatusCode, page)
 		}
 		i += len(mark)
-		next = html.UnescapeString(string(page[i : i+strings.Index(string(page[i:]), `"`)]))
+		ctok := html.UnescapeString(string(page[i : i+strings.Index(string(page[i:]), `"`)]))
+		resp, err = noFollow.PostForm(base+"/authorize", url.Values{"consent": {ctok}})
+		if err != nil {
+			return nil, err
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		next = resp.Header.Get("Location")
+		if resp.StatusCode != http.StatusFound || next == "" {
+			return nil, fmt.Errorf("authorize POST: %d %s", resp.StatusCode, body)
+		}
 	}
 	// follow Google <-> bifrost hops until the redirect back to the client
 	var final *url.URL
@@ -692,13 +702,15 @@ func TestTokensSurviveRestart(t *testing.T) {
 	}
 }
 
-// TestRepeatSignInIsOneClick: the first sign-in shows bifrost's page and
-// Google's consent; later ones go straight to Google's account picker, with no
-// consent screen, and the person stays signed in. After sign-out (session and
-// refresh token gone) bifrost goes back to Google once with consent to get a
-// new refresh token, automatically.
+// TestRepeatSignInIsOneClick: for a pre-registered program client, the first
+// sign-in shows bifrost's page (POST confirmation) and Google's consent; later
+// ones for the same (client, redirect host) go straight to Google's account
+// picker, with no consent screen, and the person stays signed in. After
+// sign-out (session and refresh token gone) bifrost goes back to Google once
+// with consent to get a new refresh token, automatically.
 func TestRepeatSignInIsOneClick(t *testing.T) {
-	h := newHarness(t, twoUsers)
+	h := newHarness(t, withPrograms)
+	h.clientID = "bifrost-ultra"
 	if _, err := h.signIn("alice@ucr.edu", "ucr.edu"); err != nil {
 		t.Fatal(err)
 	}
@@ -710,7 +722,7 @@ func TestRepeatSignInIsOneClick(t *testing.T) {
 		t.Fatalf("repeat sign-in: %v", err)
 	}
 	if h.sawPage {
-		t.Error("repeat sign-in showed the explanation page again")
+		t.Error("repeat sign-in for pre-registered program client showed the explanation page again")
 	}
 	for _, pr := range h.g.prompts {
 		if strings.Contains(pr, "consent") {
@@ -1301,6 +1313,217 @@ func TestClientIPUsesLastForwardedHop(t *testing.T) {
 			t.Errorf("XFF %q: clientIP = %q, want %q", xff, got, want)
 		}
 	}
+	// Multiple X-Forwarded-For header lines: proxy appends a second header after client's forged one.
+	rm := httptest.NewRequest("POST", "/token", nil)
+	rm.Header.Add("X-Forwarded-For", "1.2.3.4")
+	rm.Header.Add("X-Forwarded-For", "203.0.113.9")
+	if got := clientIP(rm); got != "203.0.113.9" {
+		t.Errorf("multi-header XFF: clientIP = %q, want 203.0.113.9", got)
+	}
+}
+
+func TestDynamicClientAlwaysRequiresPostConsentAndScopedCookie(t *testing.T) {
+	users := withPrograms + `  - id: bifrost-two
+    name: Second Program
+    tiers: [R1]
+    redirect_uris: ["http://127.0.0.1/callback", "http://localhost/callback"]
+`
+	h := newHarness(t, users)
+
+	// 1. Dynamically registered client NEVER skips consent via cookie, even when
+	// reusing the exact same client_id, redirect_uri, and browser cookie jar.
+	reg, _ := json.Marshal(map[string]any{"redirect_uris": []string{"http://127.0.0.1:33418/callback"}, "client_name": "dyn", "token_endpoint_auth_method": "none"})
+	rReg, _ := http.Post(h.ts.URL+"/register", "application/json", strings.NewReader(string(reg)))
+	var dyn map[string]any
+	_ = json.NewDecoder(rReg.Body).Decode(&dyn)
+	rReg.Body.Close()
+	dynID := dyn["client_id"].(string)
+
+	h.clientID = dynID
+	if _, err := h.signIn("alice@ucr.edu", "ucr.edu"); err != nil {
+		t.Fatalf("first dynamic sign-in: %v", err)
+	}
+	if !h.sawPage {
+		t.Fatal("first dynamic sign-in did not show consent page")
+	}
+	if _, err := h.signIn("alice@ucr.edu", "ucr.edu"); err != nil {
+		t.Fatalf("second dynamic sign-in: %v", err)
+	}
+	if !h.sawPage {
+		t.Fatal("dynamic client skipped consent page via cookie on repeat sign-in")
+	}
+
+	// 2. POST /authorize rejects missing/forged consent token and cross-origin Origin.
+	noFollow := &http.Client{Jar: h.jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if r, _ := noFollow.PostForm(h.ts.URL+"/authorize", url.Values{"consent": {"forged"}}); r.StatusCode != 400 {
+		t.Errorf("forged consent POST: got %d, want 400", r.StatusCode)
+	}
+	q := url.Values{"response_type": {"code"}, "client_id": {"bifrost-two"}, "redirect_uri": {"http://127.0.0.1:33418/callback"},
+		"code_challenge": {s256("verifier-123456")}, "code_challenge_method": {"S256"}, "state": {"st1"}}
+	rGet, _ := noFollow.Get(h.ts.URL + "/authorize?" + q.Encode())
+	pageB, _ := io.ReadAll(rGet.Body)
+	rGet.Body.Close()
+	if rGet.StatusCode != 200 {
+		t.Fatalf("first GET /authorize for bifrost-two: got %d, want 200", rGet.StatusCode)
+	}
+	const mark = `name="consent" value="`
+	idx := strings.Index(string(pageB), mark) + len(mark)
+	ctok := string(pageB)[idx : idx+strings.Index(string(pageB)[idx:], `"`)]
+
+	reqCross, _ := http.NewRequest("POST", h.ts.URL+"/authorize", strings.NewReader(url.Values{"consent": {ctok}}.Encode()))
+	reqCross.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqCross.Header.Set("Origin", "https://evil.example")
+	if rCross, _ := noFollow.Do(reqCross); rCross.StatusCode != 403 {
+		t.Errorf("cross-origin POST /authorize: got %d, want 403", rCross.StatusCode)
+	}
+
+	// Valid POST sets scoped bifrost_seen_<hash> cookie with Path="/authorize" and MaxAge=90d.
+	rPost, _ := noFollow.PostForm(h.ts.URL+"/authorize", url.Values{"consent": {ctok}})
+	rPost.Body.Close()
+	if rPost.StatusCode != 302 {
+		t.Fatalf("valid POST /authorize: got %d, want 302", rPost.StatusCode)
+	}
+	wantName, wantVal := seenCookieFor("bifrost-two", "http://127.0.0.1:33418/callback")
+	var gotCookie *http.Cookie
+	for _, ck := range rPost.Cookies() {
+		if ck.Name == wantName {
+			gotCookie = ck
+		}
+	}
+	if gotCookie == nil {
+		t.Fatalf("missing scoped cookie %q in %v", wantName, rPost.Cookies())
+	}
+	if gotCookie.Value != wantVal || gotCookie.Path != "/authorize" || gotCookie.MaxAge != 90*24*3600 || !gotCookie.HttpOnly {
+		t.Errorf("cookie attrs: name=%q val=%q path=%q maxAge=%d httpOnly=%v", gotCookie.Name, gotCookie.Value, gotCookie.Path, gotCookie.MaxAge, gotCookie.HttpOnly)
+	}
+	// Replaying the same single-use consent token fails.
+	if rReplay, _ := noFollow.PostForm(h.ts.URL+"/authorize", url.Values{"consent": {ctok}}); rReplay.StatusCode != 400 {
+		t.Errorf("replayed consent token: got %d, want 400", rReplay.StatusCode)
+	}
+
+	// 3. Scoped cookie skips consent ONLY for the matching (clientID, redirectHost):
+	//    - same client + same host (127.0.0.1) -> 302
+	//    - same client + different host (localhost) -> 200
+	//    - different program client (bifrost-ultra) + same host (127.0.0.1) -> 200
+	if rSame, _ := noFollow.Get(h.ts.URL + "/authorize?" + q.Encode()); rSame.StatusCode != 302 {
+		t.Errorf("same program client + host did not skip consent: %d", rSame.StatusCode)
+	}
+	qOtherHost := url.Values{"response_type": {"code"}, "client_id": {"bifrost-two"}, "redirect_uri": {"http://localhost:33418/callback"},
+		"code_challenge": {s256("verifier-123456")}, "code_challenge_method": {"S256"}}
+	if rHost, _ := noFollow.Get(h.ts.URL + "/authorize?" + qOtherHost.Encode()); rHost.StatusCode != 200 {
+		t.Errorf("different redirectHost skipped consent: %d", rHost.StatusCode)
+	}
+	qOtherClient := url.Values{"response_type": {"code"}, "client_id": {"bifrost-ultra"}, "redirect_uri": {"http://127.0.0.1:33418/callback"},
+		"code_challenge": {s256("verifier-123456")}, "code_challenge_method": {"S256"}}
+	if rClient, _ := noFollow.Get(h.ts.URL + "/authorize?" + qOtherClient.Encode()); rClient.StatusCode != 200 {
+		t.Errorf("different program client skipped consent: %d", rClient.StatusCode)
+	}
+}
+
+func TestRefreshReplayAndRevokeRevokeGrantFamily(t *testing.T) {
+	h := newHarness(t, twoUsers)
+	rotate := func(rt, cid string) (int, map[string]any) {
+		r, err := http.PostForm(h.ts.URL+"/token", url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt}, "client_id": {cid}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Body.Close()
+		var out map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&out)
+		return r.StatusCode, out
+	}
+
+	// 1. Refresh replay revokes the entire grant family (all access + refresh tokens in that grant).
+	g1, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cid1, rt1 := g1["client_id"].(string), g1["refresh_token"].(string)
+	code, g1b := rotate(rt1, cid1)
+	if code != 200 {
+		t.Fatalf("first refresh failed: %d %v", code, g1b)
+	}
+	at2, rt2 := g1b["access_token"].(string), g1b["refresh_token"].(string)
+	if c, _ := h.whoami(at2); c != 200 {
+		t.Fatalf("rotated access token rejected before replay: %d", c)
+	}
+	// Replay spent rt1 -> 400 AND revokes at2 + rt2 (both in memory and across restart).
+	if c, _ := rotate(rt1, cid1); c == 200 {
+		t.Fatal("replayed refresh token accepted")
+	}
+	if c, _ := h.whoami(at2); c != 401 {
+		t.Errorf("access token from compromised grant still works after refresh replay: %d", c)
+	}
+	h.s.auth = newAuthState() // simulate Cloud Run restart
+	if c, _ := h.whoami(at2); c != 401 {
+		t.Errorf("access token from compromised grant survived restart: %d", c)
+	}
+	if c, _ := rotate(rt2, cid1); c == 200 {
+		t.Error("descendant refresh token still works after refresh replay")
+	}
+	// Independent grant for the same user is unaffected.
+	if c, _ := h.whoami(other["access_token"].(string)); c != 200 {
+		t.Errorf("other client grant affected by replay revocation: %d", c)
+	}
+
+	// 2. POST /revoke on an access token revokes the entire grant family (sibling access + refresh tokens).
+	g2, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at2a, rt2a, cid2 := g2["access_token"].(string), g2["refresh_token"].(string), g2["client_id"].(string)
+	_, g2b := rotate(rt2a, cid2)
+	at2b, rt2b := g2b["access_token"].(string), g2b["refresh_token"].(string)
+	rRev, _ := http.PostForm(h.ts.URL+"/revoke", url.Values{"token": {at2a}})
+	if rRev.StatusCode != 200 {
+		t.Fatalf("/revoke access: %d", rRev.StatusCode)
+	}
+	if c, _ := h.whoami(at2b); c != 401 {
+		t.Errorf("newer access token in grant survived /revoke of earlier access token: %d", c)
+	}
+	if c, _ := rotate(rt2b, cid2); c == 200 {
+		t.Error("refresh token in grant survived /revoke of access token")
+	}
+
+	// 3. POST /revoke on a refresh token also revokes access tokens in the same grant family.
+	g3, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at3, rt3 := g3["access_token"].(string), g3["refresh_token"].(string)
+	_, _ = http.PostForm(h.ts.URL+"/revoke", url.Values{"token": {rt3}})
+	if c, _ := h.whoami(at3); c != 401 {
+		t.Errorf("access token survived /revoke of refresh token: %d", c)
+	}
+
+	// 4. 90-day grantMaxAge caps both access verification and refresh rotation.
+	g4, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at4, rt4, cid4 := g4["access_token"].(string), g4["refresh_token"].(string), g4["client_id"].(string)
+	oldStart := time.Now().Add(-91 * 24 * time.Hour)
+	var arec accessRec
+	_, _ = h.s.store.Get("access", hashTok(at4), &arec)
+	arec.GrantStart = oldStart
+	_ = h.s.store.Put("access", hashTok(at4), arec)
+	h.s.auth.mu.Lock()
+	h.s.auth.access[hashTok(at4)] = arec
+	h.s.auth.mu.Unlock()
+	if c, _ := h.whoami(at4); c != 401 {
+		t.Errorf("access token past 90-day grantMaxAge accepted: %d", c)
+	}
+	var rrec refreshRec
+	_, _ = h.s.store.Get("refresh", hashTok(rt4), &rrec)
+	rrec.GrantStart = oldStart
+	_ = h.s.store.Put("refresh", hashTok(rt4), rrec)
+	if c, _ := rotate(rt4, cid4); c == 200 {
+		t.Error("refresh token past 90-day grantMaxAge accepted")
+	}
 }
 
 // v0.9.16: the hosted server refuses to start without pinned host keys.
@@ -1309,6 +1532,7 @@ func TestServerNeedsHostKeys(t *testing.T) {
 	users := filepath.Join(dir, "users.yaml")
 	_ = os.WriteFile(users, []byte("domain: ucr.edu\nusers: []\n"), 0o600)
 	cfg := config.Default()
+	cfg.AuditPath = ""
 	cfg.Backend = "iap"
 	cfg.IAP = config.IAPConfig{Project: "p", Zone: "z", Instance: "login"}
 	cfg.Server = config.ServerConfig{BaseURL: "http://x", DataDir: filepath.Join(dir, "data"), UsersFile: users, GoogleClientID: "c"}

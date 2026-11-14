@@ -167,7 +167,7 @@ func TestLogLinesCapped(t *testing.T) {
 }
 
 func TestClusterStatus(t *testing.T) {
-	s, _ := newTestService(t)
+	s, _ := newTestService(t, "R1", "R2")
 	cs, err := s.ClusterStatus(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -177,6 +177,27 @@ func TestClusterStatus(t *testing.T) {
 	}
 	if cs.SlurmVersion != "25.11.4" {
 		t.Error(cs.SlurmVersion)
+	}
+	// R1 callers keep partition rates when show_cost is true, never cluster-wide burn rate.
+	sR1, _ := newTestService(t)
+	csR1, err := sR1.ClusterStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if csR1.BurnPerHour != nil {
+		t.Fatalf("R1 caller saw cluster-wide current_usd_per_hour: %v", *csR1.BurnPerHour)
+	}
+	sawRate := false
+	for _, p := range csR1.Partitions {
+		if p.BurnPerHour != nil {
+			t.Fatalf("R1 caller saw partition %s current_usd_per_hour: %v", p.Name, *p.BurnPerHour)
+		}
+		if p.USDPerHour != nil {
+			sawRate = true
+		}
+	}
+	if !sawRate {
+		t.Error("R1 caller with show_cost true lost partition usd_per_node_hour rates")
 	}
 }
 

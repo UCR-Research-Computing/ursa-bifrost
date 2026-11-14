@@ -64,6 +64,47 @@ run gcloud storage buckets add-iam-policy-binding "gs://$STAGING" --member "serv
 # signs download/upload links as itself through IAM signBlob (no key file)
 run gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT" --member "serviceAccount:$SA" --role roles/iam.serviceAccountTokenCreator
 
+say "4c. Lock down legacy project-wide bucket IAM bindings (P2-08)"
+lockdown_bucket_iam() {
+  local b=$1
+  if ! have gcloud storage buckets describe "gs://$b"; then
+    echo "would lock down legacy projectViewer/projectEditor/projectOwner bindings on gs://$b after creation"
+    return 0
+  fi
+  local pol pairs
+  pol=$(gcloud storage buckets get-iam-policy "gs://$b" --format=json)
+  pairs=$(printf '%s' "$pol" | env -u PYTHONPATH python3 -c '
+import json, re, sys
+doc = json.load(sys.stdin)
+for bd in doc.get("bindings", []):
+    role = bd.get("role", "")
+    if re.match(r"^roles/storage\.legacy(Bucket|Object)", role):
+        for m in bd.get("members", []):
+            if re.match(r"^project(Viewer|Editor|Owner):", m):
+                print(f"{role}\t{m}")
+')
+  if [ -z "$pairs" ]; then
+    echo "ok   gs://$b (no projectViewer/projectEditor/projectOwner legacyBucket*/legacyObject* bindings)"
+    return 0
+  fi
+  if [ "$MODE" != apply ]; then
+    echo "would save IAM backup and remove legacy project* bindings on gs://$b:"
+    printf '%s\n' "$pairs" | sed 's/^/  - /'
+    return 0
+  fi
+  ask "remove legacy projectViewer/projectEditor/projectOwner IAM bindings on gs://$b (saves JSON backup first)?" || return 0
+  mkdir -p deploy/backups && chmod 700 deploy/backups
+  local bk
+  bk="deploy/backups/iam-${b}-$(date -u +%Y%m%dT%H%M%SZ).json"
+  (umask 077 && printf '%s\n' "$pol" > "$bk")
+  echo "saved IAM backup to $bk"
+  while IFS=$'\t' read -r role member; do
+    [ -n "$role" ] || continue
+    run gcloud storage buckets remove-iam-policy-binding "gs://$b" --member "$member" --role "$role" >/dev/null
+  done <<< "$pairs"
+}
+for b in "$BUCKET" "$STAGING"; do lockdown_bucket_iam "$b"; done
+
 say "5. Secrets (values never printed)"
 for s in bifrost-secret-key bifrost-google-client-secret bifrost-config bifrost-users; do
   if have gcloud secrets describe "$s" --project "$PROJECT"; then echo "ok   $s"

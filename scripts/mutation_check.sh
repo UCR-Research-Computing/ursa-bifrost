@@ -10,6 +10,10 @@ for f in $FILES; do mkdir -p "$BK/$(dirname "$f")"; cp "$f" "$BK/$f"; done
 restore() { for f in $FILES; do cp "$BK/$f" "$f"; done; }
 trap restore EXIT
 
+run_tests() {
+  go test -count=1 "./$(dirname "$1")" >/dev/null 2>&1 && go test -count=1 ./... >/dev/null 2>&1
+}
+
 mutate() { # name file python-replace(old,new)
   local name=$1 file=$2 old=$3 new=$4
   # ONLY=<prefix> runs just the guards whose name starts with it (e.g. ONLY=v093)
@@ -23,7 +27,7 @@ assert t.count(old) == 1, f"pattern not unique in {p}: {old!r}"
 open(p, "w").write(t.replace(old, new))
 EOF
   then :; else echo "BROKEN    $name (pattern did not apply; nothing was tested)"; FAIL=1; restore; return; fi
-  if go test -count=1 ./... >/dev/null 2>&1; then echo "SURVIVED  $name"; FAIL=1; else echo "killed    $name"; fi
+  if run_tests "$file"; then echo "SURVIVED  $name"; FAIL=1; else echo "killed    $name"; fi
   restore
 }
 mutate2() { # name file old1 new1 old2 new2: two mutations in one file at once
@@ -39,7 +43,7 @@ for o, n in ((o1, n1), (o2, n2)):
 open(p, "w").write(t)
 ' "$file" "$3" "$4" "$5" "$6"
   then :; else echo "BROKEN    $name (pattern did not apply; nothing was tested)"; FAIL=1; restore; return; fi
-  if go test -count=1 ./... >/dev/null 2>&1; then echo "SURVIVED  $name"; FAIL=1; else echo "killed    $name"; fi
+  if run_tests "$file"; then echo "SURVIVED  $name"; FAIL=1; else echo "killed    $name"; fi
   restore
 }
 FAIL=0
@@ -276,7 +280,10 @@ mutate "v093 job_ids validated" internal/core/jobs.go '		if err := backend.Valid
 			return nil, nil
 		}
 		want['
-mutate "v093 job_ids count cap" internal/core/jobs.go '	if len(in.JobIDs) > MaxJobIDs {' '	if false {'
+mutate "v093 job_ids count cap" internal/core/jobs.go '	if len(in.JobIDs) > MaxJobIDs {
+		return nil, fmt.Errorf("job_ids: at most %d ids per call, got %d", MaxJobIDs, len(in.JobIDs))
+	}
+	want := map[string]bool{}' '	want := map[string]bool{}'
 mutate "v093 restarts on queue rows" internal/core/jobs.go '		Restarts: j.RestartCnt.Int(),' '		Restarts: 0,'
 mutate "v093 restarts on accounting rows" internal/core/jobs.go 'ExitCode: j.ExitCode.String(), Restarts: j.RestartCnt,' 'ExitCode: j.ExitCode.String(),'
 mutate "v093 program own day cap" internal/server/server.go '		c.Caps.MaxCostPerDayUSD = p.MaxCostPerDayUSD' '		_ = p.MaxCostPerDayUSD'
@@ -411,6 +418,18 @@ mutate "v01010 wrong partition module msg"  internal/core/cluster.go 'if ps := c
 mutate "v01010 python-tpu env check"        internal/core/cluster.go 'python-(sci|ml|tpu)|pytorch-tpu' 'python-(sci|ml)'
 mutate "v01010 apptainer --nv uses gpus"    internal/core/cluster.go '(!ok || p.GPUsPerNode == 0)' 'part != "gpul4"'
 mutate "v01010 arm cpuNote"                 internal/core/cluster.go 'if part == "arm" {' 'if false {'
+# v0.10.11 OAuth hardening & R2 cluster burn-rate gate
+mutate "v01011 R2 cluster burn-rate gate"   internal/core/cluster.go 'if s.HasTier(TierR2) {' 'if true {'
+mutate "v01011 xff all header lines"        internal/server/oauth.go 'parts := strings.Split(strings.Join(vals, ","), ",")' 'parts := strings.Split(vals[0], ",")'
+mutate "v01011 refresh replay revokes grant" internal/server/oauth.go 's.revokeGrant(used.Grant)' '_ = used.Grant'
+mutate "v01011 revoke revokes grant family" internal/server/oauth.go '		if grant != "" {
+			s.revokeGrant(grant)
+		}' '		_ = grant'
+mutate "v01011 access grant max age"        internal/server/oauth.go 'if !a.GrantStart.IsZero() && time.Since(a.GrantStart) > grantMaxAge {' 'if false {'
+mutate2 "v01011 refresh grant max age"      internal/server/oauth.go 'if !rec.GrantStart.IsZero() && time.Since(rec.GrantStart) > grantMaxAge {' 'if false {' 'if !now.Before(maxEnd) {' 'if false {'
+mutate "v01011 dynamic client consent POST" internal/server/oauth.go 'if s.users.isProgramID(c.ID) && hasSeenConsent(r, c.ID, ru) {' 'if hasSeenConsent(r, c.ID, ru) {'
+mutate "v01011 seen cookie scoped"          internal/server/oauth.go 'sum := sha256.Sum256([]byte(clientID + "|" + redirectHost))' 'sum := sha256.Sum256([]byte("global"))'
+mutate "v01011 authorize post origin"       internal/server/oauth.go 'if origin := strings.TrimRight(r.Header.Get("Origin"), "/"); origin != "" && origin != s.base {' 'if false {'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

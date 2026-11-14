@@ -154,6 +154,13 @@ func TestShowCostTiers(t *testing.T) {
 				if gotDollars != tt.wantDollars {
 					t.Errorf("tool %s: gotDollars=%v, wantDollars=%v; json=%s", tool, gotDollars, tt.wantDollars, string(b))
 				}
+				if tool == "cluster_status" {
+					wantBurn := tt.wantDollars && s.HasTier(TierR2)
+					gotBurn := strings.Contains(string(b), `"current_usd_per_hour"`)
+					if gotBurn != wantBurn {
+						t.Errorf("cluster_status burn rate: gotBurn=%v, wantBurn=%v; json=%s", gotBurn, wantBurn, string(b))
+					}
+				}
 			}
 		})
 	}

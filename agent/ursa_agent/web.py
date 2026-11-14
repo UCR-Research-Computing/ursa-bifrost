@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextvars
 import hashlib
 import json
 import logging
@@ -50,13 +51,35 @@ APP = "ursa_agent"
 BASE_URL = os.environ.get("AGENT_BASE_URL", "http://localhost:8080").rstrip("/")
 BIFROST = os.environ.get("BIFROST_MCP_URL", "https://bifrost-mcp-125853442225.us-central1.run.app/mcp")
 BIFROST_BASE = BIFROST.removesuffix("/mcp")
+_INIT_ATRIUM_URL = os.environ.get("ATRIUM_URL", "").strip()
+ATRIUM_URL = _INIT_ATRIUM_URL
 COOKIE = "ursa_sid"
+STATE_COOKIE = "ursa_oauth_state"
 # bifrost's error prefix when it cannot log in to the cluster (backend.ErrUnreachable)
 UNREACHABLE = "cannot reach the cluster"
 CONNECTING = "Connecting to the cluster. This can take a minute after a quiet spell; retrying."
 
 SECURE = BASE_URL.startswith("https://")
 signer = URLSafeTimedSerializer(os.environ["AGENT_SESSION_SECRET"], salt="ursa-agent-sid")
+state_signer = URLSafeTimedSerializer(os.environ["AGENT_SESSION_SECRET"], salt="ursa-agent-oauth-state")
+
+
+def _secure() -> bool:
+    return BASE_URL.startswith("https://")
+
+
+def _same_origin(request: Request) -> bool:
+    origin = request.headers.get("origin", "").rstrip("/")
+    return bool(origin) and origin == BASE_URL.rstrip("/")
+
+
+def _atrium_url() -> str:
+    raw = ATRIUM_URL if ATRIUM_URL != _INIT_ATRIUM_URL else os.environ.get("ATRIUM_URL", ATRIUM_URL)
+    u = (raw or "").strip()
+    if u.startswith(("https://", "http://")):
+        return u
+    return ""
+
 
 # web sessions: sid -> {email, tiers, token, refresh, exp, adk_session, client_id, sid, created, cache, lock}
 WEB: dict[str, dict[str, Any]] = {}
@@ -177,9 +200,13 @@ async def _set_state(w: dict[str, Any], delta: dict[str, Any]) -> None:
 async def login(request: Request) -> Response:
     async with httpx.AsyncClient(timeout=30) as http:
         cid = await _client_id(http)
+    now = time.time()
+    for k, v in list(PENDING_LOGIN.items()):
+        if now - v["created"] > 600:
+            PENDING_LOGIN.pop(k, None)
     state, verifier = secrets.token_urlsafe(24), secrets.token_urlsafe(48)
     sid = secrets.token_urlsafe(24)
-    PENDING_LOGIN[state] = {"verifier": verifier, "sid": sid, "created": time.time()}
+    PENDING_LOGIN[state] = {"verifier": verifier, "sid": sid, "created": now}
     q = httpx.QueryParams(
         response_type="code",
         client_id=cid,
@@ -190,16 +217,49 @@ async def login(request: Request) -> Response:
         resource=BIFROST,
         scope="bifrost",
     )
-    return RedirectResponse(f"{BIFROST_BASE}/authorize?{q}", status_code=302)
+    resp = RedirectResponse(f"{BIFROST_BASE}/authorize?{q}", status_code=302)
+    resp.set_cookie(
+        STATE_COOKIE,
+        state_signer.dumps(state),
+        httponly=True,
+        secure=_secure(),
+        samesite="lax",
+        max_age=600,
+        path="/auth/callback",
+    )
+    return resp
 
 
 async def callback(request: Request) -> Response:
-    p = PENDING_LOGIN.pop(request.query_params.get("state", ""), None)
+    q_state = request.query_params.get("state", "")
+    raw_ck = request.cookies.get(STATE_COOKIE, "")
+    try:
+        ck_state = state_signer.loads(raw_ck, max_age=600) if raw_ck else ""
+    except BadSignature:
+        ck_state = ""
+    if not q_state or not ck_state or not secrets.compare_digest(str(ck_state), q_state):
+        resp = _status_page(
+            "Sign-in expired",
+            "<p>Sign-in expired or came from another browser session.</p>"
+            "<p><a class='btn primary' href='/login'>Start again</a></p>",
+            status_code=400,
+        )
+        resp.delete_cookie(STATE_COOKIE, path="/auth/callback")
+        return resp
+    p = PENDING_LOGIN.pop(q_state, None)
     if not p or time.time() - p["created"] > 600:
-        return HTMLResponse("Sign-in expired. <a href='/login'>Start again</a>.", status_code=400)
+        resp = _status_page(
+            "Sign-in expired",
+            "<p>Sign-in expired.</p><p><a class='btn primary' href='/login'>Start again</a></p>",
+            status_code=400,
+        )
+        resp.delete_cookie(STATE_COOKIE, path="/auth/callback")
+        return resp
     if err := request.query_params.get("error"):
         desc = request.query_params.get("error_description", "")
-        return HTMLResponse(f"Sign-in refused: {_esc(err)} {_esc(desc)}", status_code=403)
+        resp = _not_allowed_page(f"Sign-in refused: {_esc(err)} {_esc(desc)}".strip())
+        resp.delete_cookie(STATE_COOKIE, path="/auth/callback")
+        return resp
     async with httpx.AsyncClient(timeout=30) as http:
         cid = await _client_id(http)
         r = await http.post(
@@ -213,9 +273,14 @@ async def callback(request: Request) -> Response:
             },
         )
         if r.status_code != 200:
-            return HTMLResponse(
-                "Sign-in failed at the token step. <a href='/login'>Try again</a>.", status_code=400
+            resp = _status_page(
+                "Sign-in failed",
+                "<p>Sign-in failed at the token step.</p>"
+                "<p><a class='btn primary' href='/login'>Try again</a></p>",
+                status_code=400,
             )
+            resp.delete_cookie(STATE_COOKIE, path="/auth/callback")
+            return resp
         tok = r.json()
         email, tiers = await _whoami_full(tok["access_token"])
     s = await sessions.create_session(app_name=APP, user_id=email, state={TOKEN_KEY: tok["access_token"]})
@@ -233,8 +298,9 @@ async def callback(request: Request) -> Response:
     STORE.save(p["sid"], WEB[p["sid"]])
     log.info("signin %s", email)
     resp = RedirectResponse("/", status_code=302)
+    resp.delete_cookie(STATE_COOKIE, path="/auth/callback")
     resp.set_cookie(
-        COOKIE, signer.dumps(p["sid"]), httponly=True, secure=SECURE, samesite="lax", max_age=12 * 3600
+        COOKIE, signer.dumps(p["sid"]), httponly=True, secure=_secure(), samesite="lax", max_age=12 * 3600
     )
     return resp
 
@@ -254,6 +320,8 @@ async def _whoami(token: str) -> str:
 
 
 async def logout(request: Request) -> Response:
+    if not _same_origin(request):
+        return _not_allowed_page("Sign-out must be submitted from this page.")
     sid = _sid(request)
     w = _web(request)
     if sid:
@@ -300,6 +368,8 @@ async def _run(w: dict[str, Any], text: str) -> dict[str, Any]:
 
 
 async def chat(request: Request) -> Response:
+    if not _same_origin(request):
+        return JSONResponse({"error": "cross-origin POST refused"}, status_code=403)
     w = _web(request)
     if not w:
         return JSONResponse({"error": "sign in first", "login": "/login"}, status_code=401)
@@ -320,6 +390,8 @@ async def _confirm_with_bifrost(token: str, tool: str, confirm_token: str) -> di
 
 async def decide(request: Request) -> Response:
     """The person's Approve/Reject. Only path that calls a *_confirm tool."""
+    if not _same_origin(request):
+        return JSONResponse({"error": "cross-origin POST refused"}, status_code=403)
     w = _web(request)
     if not w:
         return JSONResponse({"error": "sign in first"}, status_code=401)
@@ -377,6 +449,8 @@ async def _call_bifrost(token: str, tool: str, args: dict[str, Any]) -> dict[str
 async def upload(request: Request) -> Response:
     """Ask bifrost for a signed upload link; the browser then PUTs the file
     straight to Cloud Storage (the bytes never pass through the agent)."""
+    if not _same_origin(request):
+        return JSONResponse({"error": "cross-origin POST refused"}, status_code=403)
     w = _web(request)
     if not w:
         return JSONResponse({"error": "sign in first", "login": "/login"}, status_code=401)
@@ -478,6 +552,8 @@ async def panel(request: Request) -> Response:
 
 
 async def new_chat(request: Request) -> Response:
+    if not _same_origin(request):
+        return JSONResponse({"error": "cross-origin POST refused"}, status_code=403)
     w = _web(request)
     if not w:
         return JSONResponse({"error": "sign in first"}, status_code=401)
@@ -491,7 +567,8 @@ def _esc(s: str) -> str:
 
 
 STATIC = Path(__file__).parent / "static"
-PAGE = (STATIC / "index.html").read_text()
+PAGE_TEMPLATE = (STATIC / "index.html").read_text()
+PAGE = PAGE_TEMPLATE
 # no inline script or style anywhere (SPEC 20.4): JS and CSS are files under /static
 CSP = (
     "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; "
@@ -501,12 +578,74 @@ CSP = (
 SEC_HEADERS = {
     "Content-Security-Policy": CSP,
     "X-Content-Type-Options": "nosniff",
-    "Referrer-Policy": "no-referrer",
+    "Referrer-Policy": "same-origin",
 }
 
 
+def _render_index() -> str:
+    atrium = _atrium_url()
+    util_link = f'<a href="{_esc(atrium)}" class="util-atrium">Atrium</a>' if atrium else ""
+    signin_note = (
+        f'Looking for everything at once (Ursa, cloud, AI keys, Nautilus)? <a href="{_esc(atrium)}">Atrium</a>'
+        " is the Research Computing front door. "
+        if atrium
+        else ""
+    )
+    return PAGE_TEMPLATE.replace("<!--ATRIUM_UTIL_LINK-->", util_link).replace(
+        "<!--ATRIUM_SIGNIN_NOTE-->", signin_note
+    )
+
+
+def _status_page(title: str, body_html: str, status_code: int = 403, *, bad: bool = True) -> HTMLResponse:
+    atrium = _atrium_url()
+    util_link = f'<a href="{_esc(atrium)}" class="util-atrium">Atrium</a>' if atrium else ""
+    cls = "signin bad" if bad else "signin"
+    html = (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<meta name='theme-color' content='#00287a'>"
+        f"<title>{_esc(title)} | Ursa Major</title>"
+        "<link rel='icon' href='data:,'>"
+        "<link rel='stylesheet' href='/static/app.css'></head><body><div id='app'>"
+        "<nav class='util' aria-label='UCR and Research Computing'>"
+        "<a href='https://www.ucr.edu/'>UCR Home</a>"
+        "<a href='https://ucr-research-computing.github.io/'>Research Computing</a>"
+        f"{util_link}<span class='util-sp'></span>"
+        "<a href='https://ucr-research-computing.github.io/help/'>Get help</a></nav>"
+        "<header class='topbar'><div class='brand'><div>"
+        "<div class='brand-name'>Ursa Major</div>"
+        "<div class='brand-sub'>UCR Research Computing</div>"
+        "</div></div></header>"
+        f"<main id='main'><section class='{cls}'><h1>{_esc(title)}</h1>{body_html}</section></main>"
+        "<footer class='statusbar'><span class='dim'>Ursa Major</span>"
+        "<span class='foot-links'><a href='https://ucr-research-computing.github.io/help/'>"
+        "Help from Research Computing</a></span></footer>"
+        "</div></body></html>"
+    )
+    return HTMLResponse(html, status_code=status_code, headers={**SEC_HEADERS, "Cache-Control": "no-store"})
+
+
+def _not_allowed_page(detail: str = "You do not have access to this page.") -> HTMLResponse:
+    atrium = _atrium_url()
+    back_atrium = f" <a class='btn ghost' href='{_esc(atrium)}'>Back to Atrium</a>" if atrium else ""
+    body = (
+        f"<p>{detail}</p>"
+        "<p class='dim'>Only authorized Ursa Major accounts may use this assistant. "
+        "If you need cluster access, contact Research Computing.</p>"
+        f"<p><a class='btn primary' href='/login'>Sign in</a>{back_atrium}</p>"
+    )
+    return _status_page("Not allowed", body, status_code=403, bad=True)
+
+
+async def _handle_403(request: Request, exc: Exception) -> Response:
+    if request.url.path.startswith(("/api/", "/a2a")):
+        return JSONResponse({"error": "not allowed"}, status_code=403)
+    detail = _esc(str(getattr(exc, "detail", "") or "You do not have access to this page."))
+    return _not_allowed_page(detail)
+
+
 async def index(request: Request) -> Response:
-    return HTMLResponse(PAGE, headers={**SEC_HEADERS, "Cache-Control": "no-store"})
+    return HTMLResponse(_render_index(), headers={**SEC_HEADERS, "Cache-Control": "no-store"})
 
 
 class _Static(StaticFiles):
@@ -570,19 +709,22 @@ async def _a2a_auth(scope, receive, send, inner):
         return await JSONResponse({"error": "invalid bifrost token"}, status_code=401)(scope, receive, send)
     scope["user"] = _A2AUser(email)
     scope.setdefault("state", {})["bifrost_token"] = tok
-    A2A_TOKENS[email] = tok
-    return await inner(scope, receive, send)
+    reset = _a2a_tok.set(tok)
+    try:
+        return await inner(scope, receive, send)
+    finally:
+        _a2a_tok.reset(reset)
 
 
-A2A_TOKENS: dict[str, str] = {}  # email -> latest bifrost token seen on /a2a
+_a2a_tok: contextvars.ContextVar[str] = contextvars.ContextVar("_a2a_tok", default="")
 
 
 async def _a2a_before_agent(context):
     """A2A interceptor: put the caller's bifrost token into their session state."""
     user = getattr(getattr(context, "call_context", None), "user", None)
     email = getattr(user, "user_name", "") if user else ""
-    tok = A2A_TOKENS.get(email)
-    if tok and context.context_id:
+    tok = _a2a_tok.get()
+    if email and tok and context.context_id:
         s = await sessions.get_session(app_name=APP, user_id=email, session_id=context.context_id)
         if s is None:
             await sessions.create_session(
@@ -773,8 +915,9 @@ routes = [
     Route("/", index),
     Route("/health", health),
     Route("/login", login),
+    Route("/auth/login", login),
     Route("/auth/callback", callback),
-    Route("/logout", logout),
+    Route("/logout", logout, methods=["POST"]),
     Route("/api/me", me),
     Route("/api/chat", chat, methods=["POST"]),
     Route("/api/decide", decide, methods=["POST"]),
@@ -786,4 +929,4 @@ routes = [
     Mount("/a2a", app=A2A_APP),
 ]
 
-app = Starlette(routes=routes, lifespan=lifespan)
+app = Starlette(routes=routes, lifespan=lifespan, exception_handlers={403: _handle_403})

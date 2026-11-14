@@ -60,6 +60,7 @@ a { color: #1565c0; }
 .telemetry { display: flex; gap: 6px; flex: 1 1 0; min-width: 0; justify-content: center;
   flex-wrap: wrap; height: 26px; overflow: hidden; align-items: center; }
 .top-actions { flex: none; display: flex; align-items: center; gap: 8px; }
+.logout-form { display: inline-flex; margin: 0; }
 .who { color: var(--dim); font-size: 11px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .legend { font-size: 11px; color: var(--dim); margin-top: 6px; }
 .chip { font: 11px var(--mono); padding: 3px 8px; border: 1px solid var(--line-2); border-radius: 999px;
@@ -204,6 +205,7 @@ table.t td.name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; w
 /* ---- sign-in ---- */
 .signin { max-width: 560px; margin: 8vh auto; background: var(--panel);
   border: 1px solid var(--line); border-top: 4px solid var(--cyan); border-radius: 6px; padding: 26px 30px; }
+.signin.bad { border-top-color: var(--red); }
 .signin h1 { font: 700 26px var(--cond); margin: 0 0 12px; color: var(--navy); }
 
 /* ---- assistant drawer ---- */

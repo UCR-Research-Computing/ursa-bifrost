@@ -15,7 +15,7 @@
   <nav class="util" aria-label="UCR and Research Computing">
     <a href="https://www.ucr.edu/">UCR Home</a>
     <a href="https://ucr-research-computing.github.io/">Research Computing</a>
-    <a href="https://atrium-staging-492106370716.us-central1.run.app/" class="util-atrium">Atrium</a>
+    <!--ATRIUM_UTIL_LINK-->
     <span class="util-sp"></span>
     <a href="https://ucr-research-computing.github.io/help/">Get help</a>
   </nav>
@@ -36,7 +36,7 @@
       <span class="chip staff-chip" id="staffchip" hidden>staff</span>
       <button class="btn" id="refreshall" title="Refresh every open panel">Refresh</button>
       <button class="btn primary" id="chatbtn" title="Open the assistant (key: /)">Assistant</button>
-      <a class="btn ghost" href="/logout">Sign out</a>
+      <form method="post" action="/logout" class="logout-form"><button class="btn ghost" type="submit">Sign out</button></form>
     </div>
   </header>
 
@@ -49,9 +49,7 @@
         with your permissions. The dashboard only reads; the assistant can plan a job, and nothing
         runs until you press Approve.</p>
       <p><a class="btn primary big" href="/login">Sign in</a></p>
-      <p class="dim signin-more">Looking for everything at once (Ursa, cloud, AI keys, Nautilus)?
-        <a href="https://atrium-staging-492106370716.us-central1.run.app/">Atrium</a> is the Research Computing front door.
-        New to Ursa Major? <a href="https://ucr-research-computing.github.io/services/ursa-major/">Read about it</a>.</p>
+      <p class="dim signin-more"><!--ATRIUM_SIGNIN_NOTE-->New to Ursa Major? <a href="https://ucr-research-computing.github.io/services/ursa-major/">Read about it</a>.</p>
     </section>
 
     <div class="grid" id="grid" hidden>
