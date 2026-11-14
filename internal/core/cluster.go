@@ -129,10 +129,12 @@ func (s *Service) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 		if v, ok := s.price(cat, p.Name); ok && s.Cfg.ShowCost {
 			v := v
 			p.USDPerHour = &v
-			b := round(v*float64(p.PoweredUp), 2)
-			p.BurnPerHour = &b
-			burn += b
-			priced = true
+			if s.HasTier(TierR2) {
+				b := round(v*float64(p.PoweredUp), 2)
+				p.BurnPerHour = &b
+				burn += b
+				priced = true
+			}
 		}
 		cs.NodesUp += p.PoweredUp
 		cs.ProblemsTotal += p.Down

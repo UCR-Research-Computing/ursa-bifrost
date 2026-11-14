@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,8 +26,9 @@ import (
 // to Google (no token passthrough).
 
 const (
-	codeTTL    = 5 * time.Minute
-	refreshTTL = 30 * 24 * time.Hour
+	codeTTL     = 5 * time.Minute
+	refreshTTL  = 30 * 24 * time.Hour
+	grantMaxAge = 90 * 24 * time.Hour
 )
 
 // client is a registered OAuth client (public client, PKCE required).
@@ -65,33 +67,54 @@ type session struct {
 	Created            time.Time `json:"created"`
 }
 
-// refreshRec maps a bifrost refresh token (by hash) to a client + person.
+// refreshRec maps a bifrost refresh token (by hash) to a client + person + grant family.
 type refreshRec struct {
+	ClientID   string    `json:"client_id"`
+	Email      string    `json:"email"`
+	Expires    time.Time `json:"expires"`
+	Grant      string    `json:"grant,omitempty"`
+	GrantStart time.Time `json:"grant_start,omitempty"`
+}
+
+// usedRefreshRec records a rotated refresh token so replaying it revokes the whole grant.
+type usedRefreshRec struct {
 	ClientID string    `json:"client_id"`
 	Email    string    `json:"email"`
+	Grant    string    `json:"grant"`
 	Expires  time.Time `json:"expires"`
+}
+
+// grantRevokedRec tombstones a revoked OAuth grant family across restarts.
+type grantRevokedRec struct {
+	RevokedAt time.Time `json:"revoked_at"`
+	Expires   time.Time `json:"expires"`
 }
 
 // accessRec is a live bifrost access token. It is cached in memory and also
 // sealed in the store, so tokens survive Cloud Run restarts and scale-to-zero
 // (some MCP clients ask for a new browser sign-in on a 401 instead of refreshing).
 type accessRec struct {
-	Email    string    `json:"email"`
-	ClientID string    `json:"client_id"`
-	Expires  time.Time `json:"expires"`
+	Email      string    `json:"email"`
+	ClientID   string    `json:"client_id"`
+	Expires    time.Time `json:"expires"`
+	Grant      string    `json:"grant,omitempty"`
+	GrantStart time.Time `json:"grant_start,omitempty"`
 }
 
 type authState struct {
 	mu       sync.Mutex
 	pending  map[string]pendingAuth // by google state
+	consents map[string]pendingAuth // by consent token hash (POST /authorize confirmation)
 	codes    map[string]authCode    // by code hash
 	access   map[string]accessRec   // by token hash
+	revoked  map[string]time.Time   // by grant id -> tombstone expiry
 	attempts map[string][]time.Time // by remote IP, for /register and /token
 }
 
 func newAuthState() *authState {
-	return &authState{pending: map[string]pendingAuth{}, codes: map[string]authCode{},
-		access: map[string]accessRec{}, attempts: map[string][]time.Time{}}
+	return &authState{pending: map[string]pendingAuth{}, consents: map[string]pendingAuth{},
+		codes: map[string]authCode{}, access: map[string]accessRec{},
+		revoked: map[string]time.Time{}, attempts: map[string][]time.Time{}}
 }
 
 func randToken(prefix string) string {
@@ -133,8 +156,8 @@ func (a *authState) allowRate(key string, n int) bool {
 // real client address as the LAST X-Forwarded-For entry; anything before it was
 // sent by the client and can be forged (v0.9.16, review finding).
 func clientIP(r *http.Request) string {
-	if f := r.Header.Get("X-Forwarded-For"); f != "" {
-		parts := strings.Split(f, ",")
+	if vals := r.Header.Values("X-Forwarded-For"); len(vals) > 0 {
+		parts := strings.Split(strings.Join(vals, ","), ",")
 		if last := strings.TrimSpace(parts[len(parts)-1]); last != "" {
 			return last
 		}
@@ -281,6 +304,14 @@ func (s *Server) lookupClient(id string) (*client, error) {
 // ---- authorize: hand off to Google ------------------------------------------------
 
 func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		s.handleAuthorizePost(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "GET or POST only", http.StatusMethodNotAllowed)
+		return
+	}
 	q := r.URL.Query()
 	c, err := s.lookupClient(q.Get("client_id"))
 	if err != nil {
@@ -321,22 +352,78 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		fail("invalid_target", "unknown resource")
 		return
 	}
-	gURL := s.googleURL(pendingAuth{ClientID: c.ID, RedirectURI: ru, State: q.Get("state"),
-		CodeChallenge: q.Get("code_challenge"), Resource: q.Get("resource")}, false)
-	// A browser that has already been through the explanation page goes
-	// straight to Google (one click: pick the account).
-	if ck, err := r.Cookie(seenCookie); err == nil && ck.Value == "1" {
-		http.Redirect(w, r, gURL, http.StatusFound)
+	pa := pendingAuth{ClientID: c.ID, RedirectURI: ru, State: q.Get("state"),
+		CodeChallenge: q.Get("code_challenge"), Resource: q.Get("resource"), Created: time.Now()}
+	// Pre-registered program clients that have already been confirmed for this
+	// client + redirect host go straight to Google; dynamically registered clients
+	// always require explicit POST confirmation.
+	if s.users.isProgramID(c.ID) && hasSeenConsent(r, c.ID, ru) {
+		http.Redirect(w, r, s.googleURL(pa, false), http.StatusFound)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: seenCookie, Value: "1", Path: "/", MaxAge: 365 * 24 * 3600,
-		HttpOnly: true, Secure: strings.HasPrefix(s.base, "https://"), SameSite: http.SameSiteLaxMode})
-	s.consentPage(w, c, gURL)
+	ctok := randToken("bfcns_")
+	s.auth.mu.Lock()
+	s.auth.consents[hashTok(ctok)] = pa
+	s.auth.mu.Unlock()
+	s.consentPage(w, c, ctok)
 }
 
-// seenCookie marks a browser that has seen the explanation page. It holds no
-// identity and grants nothing; it only skips a page.
-const seenCookie = "bifrost_seen"
+func (s *Server) handleAuthorizePost(w http.ResponseWriter, r *http.Request) {
+	if origin := strings.TrimRight(r.Header.Get("Origin"), "/"); origin != "" && origin != s.base {
+		http.Error(w, "cross-origin POST refused", http.StatusForbidden)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	h := hashTok(r.PostForm.Get("consent"))
+	s.auth.mu.Lock()
+	pa, ok := s.auth.consents[h]
+	delete(s.auth.consents, h)
+	s.auth.mu.Unlock()
+	if !ok || time.Since(pa.Created) > 10*time.Minute {
+		http.Error(w, "consent expired or unknown; start again from your MCP client", http.StatusBadRequest)
+		return
+	}
+	c, err := s.lookupClient(pa.ClientID)
+	if err != nil {
+		http.Error(w, "unknown client_id", http.StatusBadRequest)
+		return
+	}
+	ckName, ckVal := seenCookieFor(c.ID, pa.RedirectURI)
+	http.SetCookie(w, &http.Cookie{Name: ckName, Value: ckVal, Path: "/authorize", MaxAge: seenMaxAge,
+		HttpOnly: true, Secure: strings.HasPrefix(s.base, "https://"), SameSite: http.SameSiteLaxMode})
+	http.Redirect(w, r, s.googleURL(pa, false), http.StatusFound)
+}
+
+// seenCookie marks a browser that has confirmed consent for a specific
+// (clientID, redirectHost) pair on a pre-registered program client.
+const (
+	seenCookie = "bifrost_seen"
+	seenMaxAge = 90 * 24 * 3600
+)
+
+func seenCookieFor(clientID, rawRedirectURI string) (string, string) {
+	u, _ := url.Parse(rawRedirectURI)
+	redirectHost := ""
+	if u != nil {
+		redirectHost = strings.ToLower(u.Hostname())
+		if u.Scheme == "https" && u.Port() != "" {
+			redirectHost = strings.ToLower(u.Host)
+		}
+	}
+	sum := sha256.Sum256([]byte(clientID + "|" + redirectHost))
+	hx := hex.EncodeToString(sum[:])
+	return seenCookie + "_" + hx[:16], hx
+}
+
+func hasSeenConsent(r *http.Request, clientID, rawRedirectURI string) bool {
+	name, want := seenCookieFor(clientID, rawRedirectURI)
+	ck, err := r.Cookie(name)
+	return err == nil && ck.Value == want
+}
 
 // googleURL registers a pending Google sign-in for p and returns its URL.
 // Normally prompt=select_account: Google shows only the account picker once
@@ -377,15 +464,15 @@ it does nothing else with it. Your Google token stays on the server, encrypted, 
 when you sign out.</p>
 <p class="n">Everything still runs as your own cluster account, limited to what you can already do with
 <code>gcloud compute ssh</code>.</p>
-<p><a class="b" href="{{.URL}}">Continue with Google</a></p>`))
+<form method="post" action="/authorize"><input type="hidden" name="consent" value="{{.Consent}}"><p><button class="b" type="submit">Continue with Google</button></p></form>`))
 
-func (s *Server) consentPage(w http.ResponseWriter, c *client, googleURL string) {
+func (s *Server) consentPage(w http.ResponseWriter, c *client, consentTok string) {
 	name := c.Name
 	if name == "" {
 		name = "An MCP client"
 	}
 	var b strings.Builder
-	_ = consentBody.Execute(&b, map[string]string{"Client": name, "Domain": s.users.Domain(), "URL": googleURL})
+	_ = consentBody.Execute(&b, map[string]string{"Client": name, "Domain": s.users.Domain(), "Consent": consentTok})
 	rcPage(w, 200, "Ursa Major", "Sign in to Ursa Major", template.HTML(b.String()), false) //nolint:gosec // built by html/template above
 }
 
@@ -522,17 +609,53 @@ func (s *Server) tokenFromCode(w http.ResponseWriter, r *http.Request) {
 func (s *Server) tokenFromRefresh(w http.ResponseWriter, r *http.Request) {
 	f := r.PostForm
 	rt := f.Get("refresh_token")
+	if rt == "" {
+		oauthErr(w, 400, "invalid_grant", "refresh token unknown or expired")
+		return
+	}
 	var rec refreshRec
 	ok, err := s.store.Get("refresh", hashTok(rt), &rec)
-	if err != nil || !ok || time.Now().After(rec.Expires) {
+	if err != nil || !ok {
+		var used usedRefreshRec
+		if uok, uerr := s.store.Get("refresh-used", hashTok(rt), &used); uerr == nil && uok && time.Now().Before(used.Expires) {
+			s.revokeGrant(used.Grant)
+			s.audit("refresh", used.Email, "denied", "replayed refresh token; grant revoked")
+		}
 		oauthErr(w, 400, "invalid_grant", "refresh token unknown or expired")
+		return
+	}
+	if time.Now().After(rec.Expires) {
+		_ = s.store.Delete("refresh", hashTok(rt))
+		oauthErr(w, 400, "invalid_grant", "refresh token unknown or expired")
+		return
+	}
+	if s.isGrantRevoked(rec.Grant) {
+		_ = s.store.Delete("refresh", hashTok(rt))
+		oauthErr(w, 400, "invalid_grant", "grant revoked")
+		return
+	}
+	if !rec.GrantStart.IsZero() && time.Since(rec.GrantStart) > grantMaxAge {
+		_ = s.store.Delete("refresh", hashTok(rt))
+		s.revokeGrant(rec.Grant)
+		oauthErr(w, 400, "invalid_grant", "grant expired; sign in again")
 		return
 	}
 	if rec.ClientID != f.Get("client_id") {
 		oauthErr(w, 400, "invalid_grant", "refresh token belongs to another client")
 		return
 	}
+	grant := rec.Grant
+	if grant == "" {
+		grant = randToken("bfg_")
+	}
+	grantStart := rec.GrantStart
+	if grantStart.IsZero() {
+		grantStart = time.Now()
+	}
 	_ = s.store.Delete("refresh", hashTok(rt)) // rotate
+	_ = s.store.Put("refresh-used", hashTok(rt), usedRefreshRec{
+		ClientID: rec.ClientID, Email: rec.Email, Grant: grant, Expires: grantStart.Add(grantMaxAge),
+	})
 	if _, err := s.programFor(rec.ClientID); err != nil {
 		oauthErr(w, 400, "invalid_grant", err.Error())
 		s.audit("refresh", rec.Email, "denied", err.Error())
@@ -547,17 +670,41 @@ func (s *Server) tokenFromRefresh(w http.ResponseWriter, r *http.Request) {
 		oauthErr(w, 400, "invalid_grant", "signed out; sign in again")
 		return
 	}
-	s.issue(w, rec.ClientID, rec.Email)
+	s.issueGrant(w, rec.ClientID, rec.Email, grant, grantStart)
 }
 
 func (s *Server) issue(w http.ResponseWriter, clientID, email string) {
+	s.issueGrant(w, clientID, email, randToken("bfg_"), time.Now())
+}
+
+func (s *Server) issueGrant(w http.ResponseWriter, clientID, email, grant string, grantStart time.Time) {
+	now := time.Now()
+	if grant == "" {
+		grant = randToken("bfg_")
+	}
+	if grantStart.IsZero() {
+		grantStart = now
+	}
+	maxEnd := grantStart.Add(grantMaxAge)
+	if !now.Before(maxEnd) {
+		oauthErr(w, 400, "invalid_grant", "grant expired; sign in again")
+		return
+	}
 	at := randToken("bfx_")
 	rt := randToken("bfr_")
 	ttl := time.Duration(s.cfg.Server.AccessTokenMinutes) * time.Minute
 	if ttl <= 0 {
 		ttl = time.Hour
 	}
-	rec := accessRec{Email: email, ClientID: clientID, Expires: time.Now().Add(ttl)}
+	atExp := now.Add(ttl)
+	if atExp.After(maxEnd) {
+		atExp = maxEnd
+	}
+	rtExp := now.Add(refreshTTL)
+	if rtExp.After(maxEnd) {
+		rtExp = maxEnd
+	}
+	rec := accessRec{Email: email, ClientID: clientID, Expires: atExp, Grant: grant, GrantStart: grantStart}
 	s.auth.mu.Lock()
 	s.auth.access[hashTok(at)] = rec
 	s.auth.mu.Unlock()
@@ -565,12 +712,54 @@ func (s *Server) issue(w http.ResponseWriter, clientID, email string) {
 		oauthErr(w, 500, "server_error", "storing access token")
 		return
 	}
-	if err := s.store.Put("refresh", hashTok(rt), refreshRec{ClientID: clientID, Email: email, Expires: time.Now().Add(refreshTTL)}); err != nil {
+	if err := s.store.Put("refresh", hashTok(rt), refreshRec{ClientID: clientID, Email: email, Expires: rtExp, Grant: grant, GrantStart: grantStart}); err != nil {
 		oauthErr(w, 500, "server_error", "storing refresh token")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"access_token": at, "token_type": "Bearer", "expires_in": int(ttl.Seconds()),
+	writeJSON(w, 200, map[string]any{"access_token": at, "token_type": "Bearer", "expires_in": int(atExp.Sub(now).Seconds()),
 		"refresh_token": rt, "scope": "bifrost"})
+}
+
+func (s *Server) revokeGrant(grant string) {
+	if grant == "" {
+		return
+	}
+	now := time.Now()
+	exp := now.Add(grantMaxAge)
+	s.auth.mu.Lock()
+	s.auth.revoked[grant] = exp
+	for k, v := range s.auth.access {
+		if v.Grant == grant {
+			delete(s.auth.access, k)
+		}
+	}
+	s.auth.mu.Unlock()
+	_ = s.store.Put("grant-revoked", grant, grantRevokedRec{RevokedAt: now, Expires: exp})
+}
+
+func (s *Server) isGrantRevoked(grant string) bool {
+	if grant == "" {
+		return false
+	}
+	s.auth.mu.Lock()
+	exp, ok := s.auth.revoked[grant]
+	s.auth.mu.Unlock()
+	if ok {
+		return time.Now().Before(exp)
+	}
+	var rec grantRevokedRec
+	found, err := s.store.Get("grant-revoked", grant, &rec)
+	if err != nil || !found {
+		return false
+	}
+	if time.Now().After(rec.Expires) {
+		_ = s.store.Delete("grant-revoked", grant)
+		return false
+	}
+	s.auth.mu.Lock()
+	s.auth.revoked[grant] = rec.Expires
+	s.auth.mu.Unlock()
+	return true
 }
 
 // ---- revocation and sign-out -----------------------------------------------------
@@ -583,11 +772,39 @@ func (s *Server) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 	_ = r.ParseForm()
 	t := r.PostForm.Get("token")
-	s.auth.mu.Lock()
-	delete(s.auth.access, hashTok(t))
-	s.auth.mu.Unlock()
-	_ = s.store.Delete("access", hashTok(t))
-	_ = s.store.Delete("refresh", hashTok(t))
+	if t != "" {
+		h := hashTok(t)
+		var grant string
+		s.auth.mu.Lock()
+		if a, ok := s.auth.access[h]; ok {
+			grant = a.Grant
+		}
+		delete(s.auth.access, h)
+		s.auth.mu.Unlock()
+		if grant == "" {
+			var a accessRec
+			if ok, err := s.store.Get("access", h, &a); err == nil && ok {
+				grant = a.Grant
+			}
+		}
+		if grant == "" {
+			var rr refreshRec
+			if ok, err := s.store.Get("refresh", h, &rr); err == nil && ok {
+				grant = rr.Grant
+			}
+		}
+		if grant == "" {
+			var ur usedRefreshRec
+			if ok, err := s.store.Get("refresh-used", h, &ur); err == nil && ok {
+				grant = ur.Grant
+			}
+		}
+		_ = s.store.Delete("access", h)
+		_ = s.store.Delete("refresh", h)
+		if grant != "" {
+			s.revokeGrant(grant)
+		}
+	}
 	w.WriteHeader(200) // RFC 7009: always 200
 }
 
@@ -597,6 +814,12 @@ func (s *Server) verifyAccess(tok string) (*accessRec, *User, error) {
 	a, ok := s.lookupAccess(tok)
 	if !ok || time.Now().After(a.Expires) {
 		return nil, nil, errors.New("invalid or expired token")
+	}
+	if !a.GrantStart.IsZero() && time.Since(a.GrantStart) > grantMaxAge {
+		return nil, nil, errors.New("grant expired")
+	}
+	if s.isGrantRevoked(a.Grant) {
+		return nil, nil, errors.New("grant revoked")
 	}
 	u := s.users.Lookup(a.Email)
 	if u == nil {
@@ -625,6 +848,10 @@ func (s *Server) lookupAccess(tok string) (accessRec, bool) {
 		_ = s.store.Delete("access", h)
 		return accessRec{}, false
 	}
+	if (!a.GrantStart.IsZero() && time.Since(a.GrantStart) > grantMaxAge) || s.isGrantRevoked(a.Grant) {
+		_ = s.store.Delete("access", h)
+		return accessRec{}, false
+	}
 	// a token loaded from the store is only good while the person is still
 	// signed in (sign-out deletes the session; in-memory copies are dropped then)
 	if found, _ := s.store.Get("session", a.Email, &session{}); !found {
@@ -646,6 +873,11 @@ func (a *authState) gc() {
 			delete(a.pending, k)
 		}
 	}
+	for k, v := range a.consents {
+		if now.Sub(v.Created) > 15*time.Minute {
+			delete(a.consents, k)
+		}
+	}
 	for k, v := range a.codes {
 		if now.Sub(v.Created) > codeTTL {
 			delete(a.codes, k)
@@ -654,6 +886,11 @@ func (a *authState) gc() {
 	for k, v := range a.access {
 		if now.After(v.Expires) {
 			delete(a.access, k)
+		}
+	}
+	for k, exp := range a.revoked {
+		if now.After(exp) {
+			delete(a.revoked, k)
 		}
 	}
 }

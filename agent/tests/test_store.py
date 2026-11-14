@@ -159,7 +159,14 @@ def test_logout_deletes_the_stored_sign_in(app, monkeypatch):
 
     monkeypatch.setattr(web.httpx, "AsyncClient", H)
     c = _client("sid-a")
-    c.get("/logout", follow_redirects=False)
+    assert c.get("/logout", follow_redirects=False).status_code == 405
+    assert (
+        c.post("/logout", headers={"Origin": "https://evil.example"}, follow_redirects=False).status_code
+        == 403
+    )
+    assert store.load("sid-a") is not None
+    r = c.post("/logout", headers={"Origin": web.BASE_URL}, follow_redirects=False)
+    assert r.status_code == 302
     assert store.load("sid-a") is None
     web.WEB.clear()
     assert _client("sid-a").get("/api/me").json() == {"signed_in": False}

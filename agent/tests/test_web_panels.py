@@ -113,11 +113,11 @@ def test_caches_are_per_person(client):
     assert [t for t, *_ in client.calls] == ["tok-1", "tok-2"]
 
 
-def test_me_reports_staff_from_tiers(client):
+def test_me_reports_staff_from_tiers(client, monkeypatch):
     async def fake_get_session(**kw):
         return type("S", (), {"state": {}})()
 
-    web.sessions.get_session = fake_get_session  # type: ignore[method-assign]
+    monkeypatch.setattr(web.sessions, "get_session", fake_get_session)
     assert client.get("/api/me").json()["staff"] is False
     web.WEB[SID]["tiers"] = ["R2"]
     assert client.get("/api/me").json()["staff"] is True

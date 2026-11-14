@@ -60,7 +60,7 @@ say "4. Cloud Run (public URL; every chat/A2A call needs a bifrost sign-in)"
 ask "deploy $SERVICE?" && run gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --image "$IMAGE" \
   --service-account "$SA" --allow-unauthenticated --min-instances 0 --max-instances 1 --concurrency 20 \
   --cpu 1 --memory 1Gi --timeout 600 --execution-environment gen2 \
-  --set-env-vars "AGENT_BASE_URL=$URL,BIFROST_MCP_URL=$BIFROST,URSA_AGENT_MODEL=gemini-3.8-flash,AGENT_DATA_DIR=/data" \
+  --set-env-vars "AGENT_BASE_URL=$URL,BIFROST_MCP_URL=$BIFROST,URSA_AGENT_MODEL=gemini-3.8-flash,AGENT_DATA_DIR=/data${ATRIUM_URL:+,ATRIUM_URL=$ATRIUM_URL}" \
   --add-volume "name=data,type=cloud-storage,bucket=$BUCKET" --add-volume-mount "volume=data,mount-path=/data" \
   --set-secrets "GATEWAY_API_KEY=ursa-agent-gateway-key:latest,AGENT_SESSION_SECRET=ursa-agent-session-secret:latest"
 

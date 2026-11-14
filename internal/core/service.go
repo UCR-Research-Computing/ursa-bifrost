@@ -610,3 +610,15 @@ type StateSealer interface {
 	Seal(label string, v any) ([]byte, error)
 	Open(label string, b []byte, v any) error
 }
+
+// Policy tier names.
+const (
+	TierR1 = "R1"
+	TierR2 = "R2"
+	TierA1 = "A1"
+)
+
+// HasTier reports whether this Service holds tier.
+func (s *Service) HasTier(tier string) bool {
+	return hasTier(s.Cfg.Tiers, tier)
+}
