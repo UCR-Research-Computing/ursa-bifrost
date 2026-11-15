@@ -430,6 +430,20 @@ mutate2 "v01011 refresh grant max age"      internal/server/oauth.go 'if !rec.Gr
 mutate "v01011 dynamic client consent POST" internal/server/oauth.go 'if s.users.isProgramID(c.ID) && hasSeenConsent(r, c.ID, ru) {' 'if hasSeenConsent(r, c.ID, ru) {'
 mutate "v01011 seen cookie scoped"          internal/server/oauth.go 'sum := sha256.Sum256([]byte(clientID + "|" + redirectHost))' 'sum := sha256.Sum256([]byte("global"))'
 mutate "v01011 authorize post origin"       internal/server/oauth.go 'if origin := strings.TrimRight(r.Header.Get("Origin"), "/"); origin != "" && origin != s.base {' 'if false {'
+# v0.10.12 weekly session review fixes
+mutate "v01012 inline upload size cap"      internal/core/staged.go 'if len(inline) > MaxInlineUploadBytes {' 'if false {'
+mutate "v01012 batch user quota"            internal/core/staged.go 'if used+batchBytes > s.Cfg.Staging.MaxUserBytes {' 'if false {'
+mutate "v01012 unpack in plan hash"         internal/core/staged.go 'parts = append(parts, "unpack")' '_ = f.Unpack'
+mutate "v01012 files_link user roots only"  internal/core/staged.go 'real, err := s.resolveUserPath(ctx, raw)' 'real, err := s.resolveAllowedPath(ctx, raw, publicReadRoots)'
+mutate "v01012 files_link size cap"         internal/core/staged.go 'if total > maxBytes {' 'if false {'
+mutate "v01012 public containers no read"   internal/core/files.go 'if trimmed == "/apps/containers" || strings.HasPrefix(trimmed, "/apps/containers/") {' 'if false {'
+mutate "v01012 public symlink stays public" internal/core/files.go 'roots = extraRoots' 'roots = []string{"/"}'
+mutate "v01012 mem-per-cpu node limit"      internal/core/cluster.go 'if float64(mpc*int64(c)) > p.MemGBPerNode*1024 {' 'if false {'
+mutate "v01012 fallback list core limit"    internal/core/cluster.go 'if reqCPUs > mp.CPUsPerNode {' 'if false {'
+mutate "v01012 ssh strips PYTHONPATH"       internal/backend/ssh.go 'if !strings.HasPrefix(kv, prefix) {' 'if true {'
+mutate "v01012 put object traversal"        internal/staging/staging.go '	if err := validObjectName(object); err != nil {
+		return Object{}, err' '	if false {
+		return Object{}, nil'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL

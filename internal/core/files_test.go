@@ -69,6 +69,15 @@ func (f *fakeStaging) Stat(_ context.Context, object string) (staging.Object, bo
 	return o, ok, nil
 }
 
+func (f *fakeStaging) Put(_ context.Context, object string, data []byte) (staging.Object, error) {
+	if object == "" || strings.HasPrefix(object, "/") || strings.Contains(object, "..") {
+		return staging.Object{}, fmt.Errorf("bad object %q", object)
+	}
+	o := staging.Object{Name: object, Size: int64(len(data)), Generation: "inline-1", Created: time.Unix(1790875401, 0)}
+	f.objs[object] = o
+	return o, nil
+}
+
 func (f *fakeStaging) put(name string, size int64, gen string) {
 	f.objs[name] = staging.Object{Name: name, Size: size, Generation: gen, Created: time.Unix(1790870000, 0)}
 }

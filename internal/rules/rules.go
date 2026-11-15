@@ -131,7 +131,7 @@ var logRules = []logRule{
 	{
 		id: "cuda", severity: Error, title: "GPU/CUDA problem",
 		re:         regexp.MustCompile(`CUDA error|no CUDA-capable device|CUDA out of memory|torch\.cuda\.OutOfMemoryError|NVIDIA-SMI has failed`),
-		suggestion: "GPU memory is 24 GB per L4: reduce batch size or model size. If no device is found, request --gres=gpu:1 on gpul4 and use `apptainer exec --nv` for containers.",
+		suggestion: "GPU memory is 24 GB per L4 (gpul4) or 16 GB per V100 (gpu1v1): reduce batch size or model size. If no device is found, request --gres=gpu:1 on gpul4 or gpu1v1 and use `apptainer exec --nv` for containers.",
 	},
 	{
 		id: "disk-full", severity: Error, title: "Out of disk space or quota",
@@ -206,8 +206,11 @@ func Explain(f Facts) []Finding {
 			tail = tail[len(tail)-40000:]
 		}
 		if m := regexp.MustCompile(`oom-kill|Out Of Memory|out of memory|MemoryError|(?m)Killed\s*$`).FindString(tail); m != "" && st != "OUT_OF_MEMORY" {
-			add(Finding{Rule: "oom-log", Severity: Error, Title: "Out-of-memory kill in the log",
-				Evidence: []string{LogEvidence + clip(lineOf(tail, m), 200), memEvidence(f)}, Suggestion: memSuggestion(f)})
+			ln := lineOf(tail, m)
+			if !regexp.MustCompile(`(?i)CUDA out of memory|torch\.cuda\.OutOfMemoryError`).MatchString(ln) {
+				add(Finding{Rule: "oom-log", Severity: Error, Title: "Out-of-memory kill in the log",
+					Evidence: []string{LogEvidence + clip(ln, 200), memEvidence(f)}, Suggestion: memSuggestion(f)})
+			}
 		}
 		if st != "TIMEOUT" && regexp.MustCompile(`DUE TO TIME LIMIT`).MatchString(tail) {
 			add(Finding{Rule: "timeout", Severity: Error, Title: "Job hit its time limit",
@@ -286,6 +289,10 @@ func Explain(f Facts) []Finding {
 		ev := []string{"state FAILED", "exit code " + f.ExitCode}
 		if !f.LogReadable {
 			ev = append(ev, "log not readable")
+		} else if lines := lastNonEmptyLines(f.Log, 3); len(lines) > 0 {
+			for _, ln := range lines {
+				ev = append(ev, LogEvidence+clip(ln, 240))
+			}
 		}
 		add(Finding{Rule: "script-error", Severity: Error, Title: "The job script exited with an error",
 			Evidence:   ev,
@@ -299,6 +306,15 @@ func Explain(f Facts) []Finding {
 			add(Finding{Rule: "requeued", Severity: Warning, Title: "Job was requeued after node failures",
 				Evidence:   []string{fmt.Sprintf("restarts %d", f.RestartCnt), "reason BeginTime (Slurm's requeue hold, not a --begin you set)"},
 				Suggestion: "Slurm put it back in the queue because its node failed (on cloud partitions often a GCP stockout or boot error). It retries by itself. Check cluster_status for DOWN nodes in the partition; if it keeps requeuing, try another partition or ask Research Computing."})
+		} else if f.RestartCnt > 0 && f.Reason != "BeginTime" {
+			m, _ := PendingReason(f.Reason)
+			ev := []string{fmt.Sprintf("restarts %d", f.RestartCnt), "reason " + f.Reason}
+			if m != "" {
+				ev = append(ev, m)
+			}
+			add(Finding{Rule: "requeued", Severity: Warning, Title: "Job was requeued after node failures and is waiting again",
+				Evidence:   ev,
+				Suggestion: "Slurm already tried to start or run this job and requeued it (often a GCP zone stockout, boot error, or Spot preemption). Check cluster_status for DOWN nodes in the partition; if it keeps requeuing, try another partition or a fallback list (-p)."})
 		} else {
 			add(pendingFinding(f.Reason))
 		}
@@ -503,6 +519,21 @@ func dur(sec int64) string {
 	return fmt.Sprintf("%ds", s)
 }
 
+func lastNonEmptyLines(s string, maxLines int) []string {
+	raw := strings.Split(s, "\n")
+	var out []string
+	for i := len(raw) - 1; i >= 0 && len(out) < maxLines; i-- {
+		t := strings.TrimSpace(raw[i])
+		if t != "" {
+			out = append(out, t)
+		}
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
+}
+
 // commandNotFoundAdvice tailors the fix to the missing command. Ursa Major
 // nodes have python3 but no bare python, which breaks many Makefiles and
 // build scripts (GADGET-4's build calls `python`).
@@ -519,7 +550,7 @@ func commandNotFoundAdvice(cmd string) string {
 	case "mpirun", "mpiexec", "mpicc", "mpicxx", "mpif90":
 		return fmt.Sprintf("%q comes from an MPI module: add `module load openmpi` before it (or use srun to launch).", base)
 	case "nvcc", "nvidia-smi":
-		return fmt.Sprintf("%q is only on the GPU nodes (partition gpul4, --gres=gpu:1); nvcc also needs `module load cuda`.", base)
+		return fmt.Sprintf("%q is only on the GPU nodes (partition gpul4 or gpu1v1, --gres=gpu:1); for nvcc run inside /apps/containers/cuda-12.4-devel.sif (`module load apptainer && apptainer exec --nv ...`).", base)
 	}
 	return fmt.Sprintf("%q is not on PATH in the job: load the module that provides it (modules_search %s) or use its full path.", base, base)
 }

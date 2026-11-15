@@ -30,6 +30,7 @@ type PartitionStatus struct {
 	Pending     int      `json:"jobs_pending"`
 	USDPerHour  *float64 `json:"usd_per_node_hour,omitempty"`
 	BurnPerHour *float64 `json:"current_usd_per_hour,omitempty"`
+	SuspendMin  int      `json:"idle_suspend_min,omitempty"`
 	Problems    []string `json:"problems,omitempty"`
 }
 
@@ -50,6 +51,12 @@ type ClusterStatus struct {
 
 // ClusterStatus reads node and queue state.
 func (s *Service) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
+	return s.ClusterStatusFiltered(ctx, "")
+}
+
+// ClusterStatusFiltered reads node and queue state, optionally narrowed to a
+// partition name or comma-separated list of partitions.
+func (s *Service) ClusterStatusFiltered(ctx context.Context, partitionFilter string) (*ClusterStatus, error) {
 	var nr slurm.NodesResponse
 	b, err := s.run(ctx, backend.Nodes())
 	if err != nil {
@@ -120,7 +127,51 @@ func (s *Service) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 	}
 	var burn float64
 	priced := false
+	wantPart := map[string]bool{}
+	for _, tok := range strings.Split(partitionFilter, ",") {
+		if t := strings.ToLower(strings.TrimSpace(tok)); t != "" {
+			wantPart[t] = true
+		}
+	}
+	if len(wantPart) > 0 {
+		if cat != nil {
+			for _, cp := range cat.Partitions {
+				if wantPart[strings.ToLower(cp.Name)] {
+					get(cp.Name)
+				}
+			}
+		}
+		cs.JobsRunning, cs.JobsPending = 0, 0
+		filteredWhy := map[string]int{}
+		for _, j := range q.Jobs {
+			if !wantPart[strings.ToLower(j.Partition)] {
+				continue
+			}
+			switch j.State() {
+			case "RUNNING", "COMPLETING", "CONFIGURING":
+				cs.JobsRunning++
+			case "PENDING":
+				cs.JobsPending++
+				filteredWhy[j.StateReason]++
+			}
+		}
+		cs.PendingByWhy = filteredWhy
+		var keptIdle []string
+		for _, ib := range cs.IdleBilling {
+			for wp := range wantPart {
+				if strings.HasSuffix(strings.ToLower(ib), "("+wp+")") {
+					keptIdle = append(keptIdle, ib)
+					break
+				}
+			}
+		}
+		cs.IdleBilling = keptIdle
+	}
 	for _, p := range byName {
+		if len(wantPart) > 0 && !wantPart[strings.ToLower(p.Name)] {
+			continue
+		}
+		p.SuspendMin = suspendMinutes(p.Name)
 		if cat != nil {
 			if cp, ok := cat.Partition(p.Name); ok {
 				p.Default = cp.Default
@@ -140,6 +191,14 @@ func (s *Service) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 		cs.ProblemsTotal += p.Down
 		cs.Partitions = append(cs.Partitions, *p)
 	}
+	if len(wantPart) > 0 && len(cs.Partitions) == 0 {
+		var known []string
+		for k := range byName {
+			known = append(known, k)
+		}
+		sort.Strings(known)
+		return nil, fmt.Errorf("partition %q not found; active partitions: %s", partitionFilter, strings.Join(known, ", "))
+	}
 	sort.Slice(cs.Partitions, func(i, j int) bool { return cs.Partitions[i].Name < cs.Partitions[j].Name })
 	if priced {
 		b := round(burn, 2)
@@ -153,9 +212,23 @@ func (s *Service) ClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 		s.sharedSummary(ctx),
 	}
 	if len(cs.IdleBilling) > 0 {
-		cs.Notes = append(cs.Notes, fmt.Sprintf("%d node(s) are powered up with no job (billing while idle). A warm worker kept on purpose looks like this too.", len(cs.IdleBilling)))
+		cs.Notes = append(cs.Notes, fmt.Sprintf("%d node(s) are powered up with no job (billing while idle until SuspendTime powers them down: 5m spot/arm/tpu*, 30m standard/gpul4/computehigh/highmem, 60m gpu1v1/amd*). A warm worker kept on purpose looks like this too.", len(cs.IdleBilling)))
 	}
 	return cs, nil
+}
+
+// suspendMinutes returns Slurm's documented idle power-down window (minutes) for a partition, or 0 for static/always-on nodes.
+func suspendMinutes(part string) int {
+	switch {
+	case part == "check":
+		return 0
+	case part == "spot" || part == "arm" || strings.HasPrefix(part, "tpu"):
+		return 5
+	case part == "gpu1v1" || strings.HasPrefix(part, "amd"):
+		return 60
+	default:
+		return 30
+	}
 }
 
 // ---- partitions -------------------------------------------------------------------
@@ -166,7 +239,8 @@ type PartitionInfo struct {
 	USD *float64 `json:"usd_per_node_hour,omitempty"`
 	// CPU is the instruction-set note people need before compiling (v0.9.10):
 	// "AVX2 (e2)" on standard/spot/check, "AVX-512" elsewhere on CPU partitions.
-	CPU string `json:"cpu,omitempty"`
+	CPU        string `json:"cpu,omitempty"`
+	SuspendMin int    `json:"idle_suspend_min,omitempty"`
 }
 
 // Partitions lists partitions from the catalog with configured prices.
@@ -177,7 +251,7 @@ func (s *Service) Partitions(ctx context.Context) ([]PartitionInfo, error) {
 	}
 	var out []PartitionInfo
 	for _, p := range cat.Partitions {
-		pi := PartitionInfo{CatalogPartition: p, CPU: cpuNote(p.Name)}
+		pi := PartitionInfo{CatalogPartition: p, CPU: cpuNote(p.Name), SuspendMin: suspendMinutes(p.Name)}
 		pi.CatalogPartition.USDPerNodeHr = nil
 		if v, ok := s.price(cat, p.Name); ok && s.Cfg.ShowCost {
 			v := v
@@ -400,6 +474,14 @@ var (
 	reModuleLoadCmd = regexp.MustCompile(`(?i)\bmodule\s+(?:load|add)\s+[^;&|\n]*`)
 )
 
+// ScriptCheckWithPartition runs ScriptCheck as if overridePartition were set on #SBATCH --partition.
+func (s *Service) ScriptCheckWithPartition(ctx context.Context, script, overridePartition string) (*ScriptCheck, error) {
+	if strings.TrimSpace(overridePartition) == "" {
+		return s.ScriptCheck(ctx, script)
+	}
+	return s.ScriptCheck(ctx, withPartition(script, strings.TrimSpace(overridePartition)))
+}
+
 // ScriptCheck checks a batch script against the cluster's partitions and modules.
 // Nothing is submitted; the script is never sent to the cluster.
 func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck, error) {
@@ -531,15 +613,57 @@ func (s *Service) ScriptCheck(ctx context.Context, script string) (*ScriptCheck,
 		if mem, ok := memMB(sc.Request["mem"]); ok && float64(mem) > p.MemGBPerNode*1024 {
 			add("error", 0, "--mem %s is more than a %s node has (%.0f GB)", sc.Request["mem"], part, p.MemGBPerNode)
 		}
+		if mpc, ok := memMB(sc.Request["mem-per-cpu"]); ok {
+			c := cpusPerNode(sc.Request)
+			if float64(mpc*int64(c)) > p.MemGBPerNode*1024 {
+				add("error", 0, "--mem-per-cpu %s x %d CPUs (%.1f GB) is more than a %s node has (%.0f GB)", sc.Request["mem-per-cpu"], c, float64(mpc*int64(c))/1024, part, p.MemGBPerNode)
+			}
+		}
 		g := gpusRequested(sc.Request)
 		if g > 0 && p.GPUsPerNode == 0 {
-			add("error", 0, "GPUs requested on %s, which has no GPUs; use gpul4", part)
+			if strings.HasPrefix(part, "tpu") {
+				add("error", 0, "GPUs requested on %s: TPU nodes expose /dev/vfio accelerators automatically without --gres=gpu (remove --gres/--gpus and load python-tpu or pytorch-tpu)", part)
+			} else {
+				add("error", 0, "GPUs requested on %s, which has no GPUs; use gpul4 or gpu1v1", part)
+			}
 		}
 		if g > p.GPUsPerNode && p.GPUsPerNode > 0 {
 			add("error", 0, "%d GPUs per node requested; %s has %d", g, part, p.GPUsPerNode)
 		}
 		if g == 0 && p.GPUsPerNode > 0 {
 			add("warning", 0, "running on %s without --gres=gpu:1; the GPU will not be visible to the job", part)
+		}
+		// When a comma-separated fallback list is used (-p gpul4,gpu1v1 or -p computehigh,standard),
+		// verify every other member in the list can also satisfy the job's per-node CPUs, memory, GPUs and access.
+		if strings.Contains(sc.Partition, ",") {
+			reqCPUs := cpusPerNode(sc.Request)
+			reqMem, hasMem := memMB(sc.Request["mem"])
+			reqMPC, hasMPC := memMB(sc.Request["mem-per-cpu"])
+			for _, rawName := range strings.Split(sc.Partition, ",") {
+				mName := strings.TrimSpace(rawName)
+				if mName == "" || mName == part {
+					continue
+				}
+				mp, mok := cat.Partition(mName)
+				if !mok {
+					continue
+				}
+				if msg := s.accessIssue(ctx, mp); msg != "" {
+					add("error", 0, "%s", msg)
+				}
+				if reqCPUs > mp.CPUsPerNode {
+					add("error", 0, "%d CPUs per node requested; fallback partition %s in %s only has %d physical cores", reqCPUs, mName, sc.Partition, mp.CPUsPerNode)
+				}
+				if hasMem && float64(reqMem) > mp.MemGBPerNode*1024 {
+					add("error", 0, "--mem %s is more than fallback partition %s in %s has (%.0f GB)", sc.Request["mem"], mName, sc.Partition, mp.MemGBPerNode)
+				}
+				if hasMPC && float64(reqMPC*int64(reqCPUs)) > mp.MemGBPerNode*1024 {
+					add("error", 0, "--mem-per-cpu %s x %d CPUs (%.1f GB) is more than fallback partition %s in %s has (%.0f GB)", sc.Request["mem-per-cpu"], reqCPUs, float64(reqMPC*int64(reqCPUs))/1024, mName, sc.Partition, mp.MemGBPerNode)
+				}
+				if g > 0 && mp.GPUsPerNode == 0 {
+					add("error", 0, "GPUs requested, but fallback partition %s in %s has no GPUs", mName, sc.Partition)
+				}
+			}
 		}
 		if p.Spot && !strings.Contains(script, "--requeue") {
 			add("warning", 0, "spot nodes can be reclaimed with ~30 s notice; add #SBATCH --requeue and make the job restartable")

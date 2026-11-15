@@ -6,12 +6,28 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/config"
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/core"
+	"github.com/UCR-Research-Computing/ursa-bifrost/internal/staging"
 )
+
+type mcpDummyStaging struct{}
+
+func (mcpDummyStaging) Bucket() string { return "test-bucket" }
+func (mcpDummyStaging) SignURL(context.Context, string, string, time.Duration, map[string]string) (string, error) {
+	return "https://storage.googleapis.com/test-bucket/x?X-Goog-Signature=0123456789abcdef", nil
+}
+func (mcpDummyStaging) List(context.Context, string) ([]staging.Object, error) { return nil, nil }
+func (mcpDummyStaging) Stat(context.Context, string) (staging.Object, bool, error) {
+	return staging.Object{}, false, nil
+}
+func (mcpDummyStaging) Put(_ context.Context, name string, data []byte) (staging.Object, error) {
+	return staging.Object{Name: name, Size: int64(len(data)), Generation: "1"}, nil
+}
 
 func connect(t *testing.T, tiers ...string) *mcp.ClientSession {
 	t.Helper()
@@ -188,7 +204,32 @@ func TestServerInstructions(t *testing.T) {
 // Every property schema must be an object: the Python MCP SDK (Hermes) rejects
 // boolean schemas such as {"data": true}.
 func TestOutputSchemasHaveNoBooleanSubschemas(t *testing.T) {
-	cs := connect(t, "R1", "R2")
+	cfg := config.Default()
+	cfg.StatePath = filepath.Join(t.TempDir(), "a1.json")
+	cfg.ResultsDir = filepath.Join(t.TempDir(), "results")
+	cfg.Backend = "fixture"
+	cfg.FixturesDir = "../../testdata"
+	cfg.ClusterUser = "alice_ucr_edu"
+	cfg.AuditPath = filepath.Join(t.TempDir(), "audit.jsonl")
+	cfg.Tiers = []string{"R1", "R2", "A1"}
+	cfg.Staging.Bucket = "test-bucket"
+	s, err := core.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Staging = &mcpDummyStaging{}
+	srv := New(s)
+	ct, st := mcp.NewInMemoryTransports()
+	ctx := context.Background()
+	if _, err := srv.Connect(ctx, st, nil); err != nil {
+		t.Fatal(err)
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0"}, nil)
+	cs, err := client.Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cs.Close() })
 	res, err := cs.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -347,6 +388,9 @@ func TestNoShellTool(t *testing.T) {
 	if _, ok := tools["results_link"]; ok {
 		t.Error("results_link registered without staging")
 	}
+	if _, ok := tools["files_link"]; ok {
+		t.Error("files_link registered without staging")
+	}
 	if _, ok := tools["upload_prepare"]; ok {
 		t.Error("upload_prepare registered without staging")
 	}
@@ -373,5 +417,26 @@ func TestNewToolsOverMCP(t *testing.T) {
 	d = m["data"].(map[string]any)
 	if d["total_lines"].(float64) < 5 || d["lines"].(float64) != 5 {
 		t.Errorf("log window: %v", d)
+	}
+	// cluster_status partition filter and script_check partition override over MCP
+	m, res = call(t, cs, "cluster_status", map[string]any{"partition": "gpul4"})
+	if res.IsError {
+		t.Fatal(res.Content)
+	}
+	parts := m["data"].(map[string]any)["partitions"].([]any)
+	if len(parts) != 1 || parts[0].(map[string]any)["name"] != "gpul4" {
+		t.Errorf("cluster_status partition filter: %v", parts)
+	}
+	m, res = call(t, cs, "script_check", map[string]any{"script": "#!/bin/bash\n#SBATCH -t 10\necho hi\n", "partition": "gpul4"})
+	if res.IsError {
+		t.Fatal(res.Content)
+	}
+	if !strings.Contains(m["data"].(map[string]any)["issues"].([]any)[0].(map[string]any)["message"].(string), "without --gres=gpu:1") {
+		t.Errorf("script_check partition override: %v", m["data"])
+	}
+	// jobs_list duration shorthand over MCP
+	_, res = call(t, cs, "jobs_list", map[string]any{"since": "now-1hour"})
+	if res.IsError {
+		t.Errorf("jobs_list since=now-1hour failed: %v", res.Content)
 	}
 }

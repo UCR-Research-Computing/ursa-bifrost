@@ -92,6 +92,7 @@ func TestAllowListIsClosed(t *testing.T) {
 	saj, _ := SacctJobs([]string{"1", "2"})
 	sam, _ := SacctSummaryUsers([]string{"alice", "bob"}, "now-1days", "")
 	asc, _ := AssocAccounts("alice")
+	ptg, _ := PutTarGz("/home/alice/bifrost-jobs/x", []string{"out.txt"}, "https://storage.googleapis.com/b/o?X-Goog-Signature=00")
 	writes := map[string]bool{}
 	for _, c := range []Command{sb, sc, ho, re} {
 		writes[c.String()] = true
@@ -99,19 +100,19 @@ func TestAllowListIsClosed(t *testing.T) {
 			t.Errorf("%v must be marked write", c.argv)
 		}
 	}
-	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), PartitionSharing(), Nodes(), cat, tl, ms, to, lf, hd, td, sqj, saj, sam, asc} {
+	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), PartitionSharing(), Nodes(), cat, tl, ms, to, lf, hd, td, sqj, saj, sam, asc, ptg} {
 		if c.Write() {
 			t.Errorf("read command marked write: %v", c.argv)
 		}
 	}
-	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), Nodes(), cat, tl, ms, to, sb, sc, ho, re, lf, hd, td, sqj, saj, sam, asc} {
+	for _, c := range []Command{Whoami(), u, SqueueAll(), j, st, a, au, aa, Sinfo(), Nodes(), cat, tl, ms, to, sb, sc, ho, re, lf, hd, td, sqj, saj, sam, asc, ptg} {
 		if !allowed[c.argv[0]] {
 			t.Errorf("unexpected program %q", c.argv[0])
 		}
 		if c.argv[0] == "scontrol" && (len(c.argv) < 2 || (c.argv[1] != "show" && c.argv[1] != "hold" && c.argv[1] != "release")) {
 			t.Errorf("scontrol may only show, hold or release: %v", c.argv)
 		}
-		if c.argv[0] == "bash" && !strings.HasPrefix(c.argv[2], "module -t show ") && c.argv[2] != submitTemplate && c.argv[2] != envTemplate && c.argv[2] != treeTemplate && c.argv[2] != sacctSummaryTemplate {
+		if c.argv[0] == "bash" && !strings.HasPrefix(c.argv[2], "module -t show ") && c.argv[2] != submitTemplate && c.argv[2] != envTemplate && c.argv[2] != treeTemplate && c.argv[2] != sacctSummaryTemplate && c.argv[2] != putTarGzTemplate {
 			t.Errorf("bash only runs module show or the fixed submit template: %v", c.argv)
 		}
 		// sacctmgr: read-only `show assoc` of one validated user, nothing else (v0.10.5)
@@ -200,8 +201,11 @@ func TestNewTemplatesAreFixed(t *testing.T) {
 		{"env", func() (Command, error) {
 			return EnvCheck("check", []string{"gcc"}, []string{"python3"}, map[string]bool{"python3": true})
 		}},
+		{"puttargz", func() (Command, error) {
+			return PutTarGz("/home/alice/bifrost-jobs/x", []string{"out/a.png"}, "https://storage.googleapis.com/b/o?X-Goog-Signature=00")
+		}},
 	}
-	fixed := map[string]bool{treeTemplate: true, readRangeTemplate: true, grepTemplate: true, logWindowTemplate: true, listDirTemplate: true, duTemplate: true, envTemplate: true, sacctSummaryTemplate: true}
+	fixed := map[string]bool{treeTemplate: true, readRangeTemplate: true, grepTemplate: true, logWindowTemplate: true, listDirTemplate: true, duTemplate: true, envTemplate: true, sacctSummaryTemplate: true, putTarGzTemplate: true}
 	for _, c := range cs {
 		cmd, err := c.mk()
 		if err != nil {
@@ -249,6 +253,15 @@ func TestNewTemplatesAreFixed(t *testing.T) {
 		func() (Command, error) { return PutFile("/home/alice/x", "https://storage.googleapis.com/b/o") },
 		func() (Command, error) {
 			return PutFile("/home/alice/x", "https://storage.googleapis.com/b/o?X-Goog-Signature=00 -o /tmp/x")
+		},
+		func() (Command, error) {
+			return PutTarGz("/home/alice/../bob/x", []string{"a.txt"}, "https://storage.googleapis.com/b/o?X-Goog-Signature=00")
+		},
+		func() (Command, error) {
+			return PutTarGz("/home/alice/x", []string{"../../.ssh/id_rsa"}, "https://storage.googleapis.com/b/o?X-Goog-Signature=00")
+		},
+		func() (Command, error) {
+			return PutTarGz("/home/alice/x", []string{"a.txt"}, "https://evil.example.com/?X-Goog-Signature=00")
 		},
 	} {
 		if _, err := bad(); err == nil {

@@ -138,6 +138,22 @@ type QueueJob struct {
 // State is the primary job state (first entry).
 func (j QueueJob) State() string { return first(j.JobState) }
 
+// ArrayParentID returns the parent job id string when j is part of a job array, else "".
+func (j QueueJob) ArrayParentID() string {
+	if j.ArrayJobID.Valid() && j.ArrayJobID.Int() > 0 {
+		return fmt.Sprint(j.ArrayJobID.Int())
+	}
+	return ""
+}
+
+// ArrayStepID returns "<array_job_id>_<task_id>" when j is a specific array task, else "".
+func (j QueueJob) ArrayStepID() string {
+	if j.ArrayJobID.Valid() && j.ArrayJobID.Int() > 0 && j.ArrayTaskID.Valid() {
+		return fmt.Sprintf("%d_%d", j.ArrayJobID.Int(), j.ArrayTaskID.Int())
+	}
+	return ""
+}
+
 // QueueResponse is `squeue --json`.
 type QueueResponse struct {
 	Jobs     []QueueJob `json:"jobs"`
@@ -210,7 +226,11 @@ func (s Step) MaxRSSBytes() int64 { return s.TRES.Requested.Max.Get("mem") }
 
 // AcctJob is one job from `sacct --json`.
 type AcctJob struct {
-	JobID     int64  `json:"job_id"`
+	JobID int64 `json:"job_id"`
+	Array struct {
+		JobID  int64 `json:"job_id"`
+		TaskID Num   `json:"task_id"`
+	} `json:"array"`
 	Name      string `json:"name"`
 	User      string `json:"user"`
 	Account   string `json:"account"`
@@ -256,6 +276,22 @@ type AcctJob struct {
 
 // StateName is the primary state (first entry).
 func (j AcctJob) StateName() string { return first(j.State.Current) }
+
+// ArrayParentID returns the parent job id string when j is part of a job array, else "".
+func (j AcctJob) ArrayParentID() string {
+	if j.Array.JobID > 0 {
+		return fmt.Sprint(j.Array.JobID)
+	}
+	return ""
+}
+
+// ArrayStepID returns "<array_job_id>_<task_id>" when j is an array task, else "".
+func (j AcctJob) ArrayStepID() string {
+	if j.Array.JobID > 0 && j.Array.TaskID.Valid() {
+		return fmt.Sprintf("%d_%d", j.Array.JobID, j.Array.TaskID.Int())
+	}
+	return ""
+}
 
 // MaxRSSBytes is the largest peak memory over all steps.
 func (j AcctJob) MaxRSSBytes() int64 {

@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -43,6 +44,8 @@ type Client interface {
 	List(ctx context.Context, prefix string) ([]Object, error)
 	// Stat returns one object (found=false when it does not exist).
 	Stat(ctx context.Context, object string) (Object, bool, error)
+	// Put uploads small inline bytes to object and returns the stored Object metadata.
+	Put(ctx context.Context, object string, data []byte) (Object, error)
 	// Bucket is the bucket name.
 	Bucket() string
 }
@@ -181,6 +184,13 @@ func StringToSign(method, bucket, object, email string, now time.Time, ttl time.
 	return sts, canonURI, canonQuery
 }
 
+func validObjectName(object string) error {
+	if object == "" || strings.HasPrefix(object, "/") || strings.Contains(object, "..") {
+		return fmt.Errorf("bad object name %q", object)
+	}
+	return nil
+}
+
 // SignURL returns a V4 signed URL.
 func (g *GCS) SignURL(ctx context.Context, method, object string, ttl time.Duration, headers map[string]string) (string, error) {
 	if method != http.MethodGet && method != http.MethodPut {
@@ -189,8 +199,8 @@ func (g *GCS) SignURL(ctx context.Context, method, object string, ttl time.Durat
 	if ttl < time.Second || ttl > MaxTTL {
 		return "", fmt.Errorf("link lifetime must be 1 s to 7 days")
 	}
-	if object == "" || strings.HasPrefix(object, "/") || strings.Contains(object, "..") {
-		return "", fmt.Errorf("bad object name %q", object)
+	if err := validObjectName(object); err != nil {
+		return "", err
 	}
 	email, err := g.signer(ctx)
 	if err != nil {
@@ -209,55 +219,86 @@ func (g *GCS) SignURL(ctx context.Context, method, object string, ttl time.Durat
 }
 
 func (g *GCS) do(ctx context.Context, method, u string, body []byte, out any) (int, error) {
+	return g.doContentType(ctx, method, u, "application/json", body, out)
+}
+
+func isTransientStatus(code int) bool {
+	return code == http.StatusTooManyRequests || code == http.StatusInternalServerError ||
+		code == http.StatusBadGateway || code == http.StatusServiceUnavailable || code == http.StatusGatewayTimeout
+}
+
+func (g *GCS) doContentType(ctx context.Context, method, u, contentType string, body []byte, out any) (int, error) {
 	if g.Token == nil {
 		return 0, errors.New("staging has no token source")
 	}
-	tok, err := g.Token(ctx)
-	if err != nil {
-		return 0, err
-	}
-	var rd io.Reader
-	if body != nil {
-		rd = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, u, rd)
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("Authorization", "Bearer "+tok)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := g.http().Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	if resp.StatusCode == http.StatusNotFound {
+	var lastCode int
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			wait := time.Duration(attempt*150) * time.Millisecond
+			select {
+			case <-ctx.Done():
+				return lastCode, ctx.Err()
+			case <-time.After(wait):
+			}
+		}
+		tok, err := g.Token(ctx)
+		if err != nil {
+			return 0, err
+		}
+		var rd io.Reader
+		if body != nil {
+			rd = bytes.NewReader(body)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, u, rd)
+		if err != nil {
+			return 0, err
+		}
+		req.Header.Set("Authorization", "Bearer "+tok)
+		if body != nil && contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		resp, err := g.http().Do(req)
+		if err != nil {
+			lastErr = err
+			if ctx.Err() != nil {
+				return 0, ctx.Err()
+			}
+			continue
+		}
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusNotFound {
+			return resp.StatusCode, nil
+		}
+		if isTransientStatus(resp.StatusCode) && attempt < 2 {
+			lastCode = resp.StatusCode
+			lastErr = fmt.Errorf("%s %s: HTTP %d", method, strings.SplitN(u, "?", 2)[0], resp.StatusCode)
+			continue
+		}
+		if resp.StatusCode/100 != 2 {
+			msg := string(b)
+			var e struct {
+				Error struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if json.Unmarshal(b, &e) == nil && e.Error.Message != "" {
+				msg = e.Error.Message
+			}
+			if len(msg) > 300 {
+				msg = msg[:300]
+			}
+			return resp.StatusCode, fmt.Errorf("%s %s: HTTP %d: %s", method, strings.SplitN(u, "?", 2)[0], resp.StatusCode, msg)
+		}
+		if out != nil {
+			if err := json.Unmarshal(b, out); err != nil {
+				return resp.StatusCode, err
+			}
+		}
 		return resp.StatusCode, nil
 	}
-	if resp.StatusCode/100 != 2 {
-		msg := string(b)
-		var e struct {
-			Error struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		if json.Unmarshal(b, &e) == nil && e.Error.Message != "" {
-			msg = e.Error.Message
-		}
-		if len(msg) > 300 {
-			msg = msg[:300]
-		}
-		return resp.StatusCode, fmt.Errorf("%s %s: HTTP %d: %s", method, strings.SplitN(u, "?", 2)[0], resp.StatusCode, msg)
-	}
-	if out != nil {
-		if err := json.Unmarshal(b, out); err != nil {
-			return resp.StatusCode, err
-		}
-	}
-	return resp.StatusCode, nil
+	return lastCode, lastErr
 }
 
 func (g *GCS) signBlob(ctx context.Context, b []byte) ([]byte, error) {
@@ -340,6 +381,25 @@ func (g *GCS) Stat(ctx context.Context, object string) (Object, bool, error) {
 	return out.object(), true, nil
 }
 
+// Put uploads data directly to object in the staging bucket.
+func (g *GCS) Put(ctx context.Context, object string, data []byte) (Object, error) {
+	if err := validObjectName(object); err != nil {
+		return Object{}, err
+	}
+	u := g.storageBase() + "/upload/storage/v1/b/" + url.PathEscape(g.BucketName) +
+		"/o?uploadType=media&name=" + url.QueryEscape(object) +
+		"&fields=" + url.QueryEscape("name,size,generation,timeCreated")
+	var out apiObject
+	code, err := g.doContentType(ctx, http.MethodPost, u, "application/octet-stream", data, &out)
+	if err != nil {
+		return Object{}, err
+	}
+	if code == http.StatusNotFound {
+		return Object{}, fmt.Errorf("staging bucket %s not found", g.BucketName)
+	}
+	return out.object(), nil
+}
+
 // ---- token sources -----------------------------------------------------------
 
 const metadataBase = "http://metadata.google.internal/computeMetadata/v1/"
@@ -406,7 +466,15 @@ func CommandToken(argv []string) func(context.Context) (string, error) {
 		}
 		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		out, err := exec.CommandContext(cctx, argv[0], argv[1:]...).Output()
+		cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
+		env := make([]string, 0, len(os.Environ()))
+		for _, kv := range os.Environ() {
+			if !strings.HasPrefix(kv, "PYTHONPATH=") {
+				env = append(env, kv)
+			}
+		}
+		cmd.Env = env
+		out, err := cmd.Output()
 		if err != nil {
 			return "", fmt.Errorf("%s: %v", argv[0], err)
 		}

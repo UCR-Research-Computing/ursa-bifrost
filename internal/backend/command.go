@@ -92,11 +92,34 @@ type Backend interface {
 var ErrUnreachable = errors.New("cannot reach the cluster")
 
 var (
-	reUser      = regexp.MustCompile(`^[a-z_][a-z0-9_.-]{0,63}$`)
-	reModule    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,80}(/[A-Za-z0-9._+-]{1,40})?$`)
-	reSince     = regexp.MustCompile(`^(now-\d{1,4}(days|hours|minutes)|\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?)?)$`)
-	reStateList = regexp.MustCompile(`^[A-Z_]{2,20}(,[A-Z_]{2,20}){0,10}$`)
+	reUser          = regexp.MustCompile(`^[a-z_][a-z0-9_.-]{0,63}$`)
+	reModule        = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,80}(/[A-Za-z0-9._+-]{1,40})?$`)
+	reSince         = regexp.MustCompile(`^(now-\d{1,4}(days|hours|minutes|weeks)|\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?)?)$`)
+	reFlexibleSince = regexp.MustCompile(`^(?:now-)?(\d{1,4})(w|wk|wks|week|weeks|d|day|days|h|hr|hrs|hour|hours|m|min|mins|minute|minutes)$`)
+	reStateList     = regexp.MustCompile(`^[A-Z_]{2,20}(,[A-Z_]{2,20}){0,10}$`)
 )
+
+// NormalizeSince turns shorthand relative times (now-1hour, now-2h, 30m, 7d, 2w) into
+// Slurm's canonical now-Ndays/hours/minutes/weeks form; anything else is returned trimmed.
+func NormalizeSince(s string) string {
+	s = strings.TrimSpace(s)
+	m := reFlexibleSince.FindStringSubmatch(strings.ToLower(s))
+	if m == nil {
+		return s
+	}
+	n, unit := m[1], m[2]
+	switch unit {
+	case "w", "wk", "wks", "week", "weeks":
+		return "now-" + n + "weeks"
+	case "d", "day", "days":
+		return "now-" + n + "days"
+	case "h", "hr", "hrs", "hour", "hours":
+		return "now-" + n + "hours"
+	case "m", "min", "mins", "minute", "minutes":
+		return "now-" + n + "minutes"
+	}
+	return s
+}
 
 // ValidJobID accepts "260" and array forms "260_3".
 func ValidJobID(id string) error {
@@ -221,12 +244,14 @@ func SacctAll(since, until string) (Command, error) {
 }
 
 func sacctRange(who []string, since, until string) (Command, error) {
+	since = NormalizeSince(since)
 	if err := ValidSince(since); err != nil {
 		return Command{}, err
 	}
 	argv := append([]string{"sacct", "--json"}, who...)
 	argv = append(argv, "-S", since)
 	if until != "" {
+		until = NormalizeSince(until)
 		if err := ValidSince(until); err != nil {
 			return Command{}, err
 		}

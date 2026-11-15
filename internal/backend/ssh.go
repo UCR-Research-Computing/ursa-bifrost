@@ -46,13 +46,15 @@ func (s *SSH) base(ctx context.Context) ([]string, string, error) {
 		// gcloud prints the exact ssh command it would run (key, IAP proxy, known hosts).
 		cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		defer cancel()
-		out, err := exec.CommandContext(cctx, "gcloud", "compute", "ssh", g.Instance,
-			"--zone="+g.Zone, "--project="+g.Project, "--tunnel-through-iap", "--dry-run").Output()
+		gcmd := exec.CommandContext(cctx, "gcloud", "compute", "ssh", g.Instance,
+			"--zone="+g.Zone, "--project="+g.Project, "--tunnel-through-iap", "--dry-run")
+		gcmd.Env = envWithout(os.Environ(), "PYTHONPATH")
+		out, err := gcmd.Output()
 		if err != nil {
 			var ee *exec.ExitError
 			msg := err.Error()
 			if errors.As(err, &ee) && len(ee.Stderr) > 0 {
-				msg = lastLine(string(ee.Stderr))
+				msg = gcloudErrorLine(string(ee.Stderr))
 			}
 			return nil, "", fmt.Errorf("%w: gcloud: %s (try `gcloud auth login`)", ErrUnreachable, msg)
 		}
@@ -102,6 +104,7 @@ func (s *SSH) Run(ctx context.Context, c Command) ([]byte, error) {
 	defer cancel()
 	full := append(append([]string{}, argv[1:]...), "--", dest, RemoteLine(c))
 	cmd := exec.CommandContext(ctx, argv[0], full...)
+	cmd.Env = envWithout(os.Environ(), "PYTHONPATH")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if c.merge {
@@ -148,6 +151,41 @@ func lastLine(s string) string {
 		return "no error text"
 	}
 	return l
+}
+
+// gcloudErrorLine picks the meaningful ERROR: line from gcloud stderr instead of
+// its trailing hint line ("to select an already authenticated account to use.").
+func gcloudErrorLine(s string) string {
+	for _, raw := range strings.Split(s, "\n") {
+		l := strings.TrimSpace(raw)
+		if strings.HasPrefix(l, "ERROR:") {
+			if strings.Contains(strings.ToLower(l), "reauthentication failed") || strings.Contains(strings.ToLower(l), "refreshing your current auth tokens") {
+				return "authentication token expired (" + clipStr(l, 220) + ")"
+			}
+			return clipStr(l, 300)
+		}
+	}
+	return lastLine(s)
+}
+
+func clipStr(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
+}
+
+// envWithout returns env without any variable matching key=..., preventing ambient
+// PYTHONPATH leaks (e.g. a Python 3.14 harness) from crashing gcloud's bundled Python.
+func envWithout(env []string, key string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, prefix) {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 // splitShell splits a command line printed by gcloud (double/single quotes, no

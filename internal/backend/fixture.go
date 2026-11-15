@@ -196,6 +196,13 @@ func (f *Fixture) Run(_ context.Context, c Command) ([]byte, error) {
 			return fakeWindow(v, a[5], a[6]), nil
 		case listDirTemplate:
 			return f.listDir(a[4])
+		case putTarGzTemplate:
+			// argv: bash -c putTarGzTemplate bifrost signedURL dir [relFiles...]
+			if f.Puts == nil {
+				f.Puts = map[string]string{}
+			}
+			f.Puts[a[4]] = a[5] + ":tar.gz:" + strings.Join(a[6:], ",")
+			return nil, nil
 		}
 		if out, ok := f.Out[a[2]]; ok {
 			return []byte(out), nil
@@ -306,7 +313,26 @@ func filterJobs(b []byte, id, key string) ([]byte, error) {
 	}
 	var keep []map[string]json.RawMessage
 	for _, j := range jobs {
-		if want[strings.TrimSpace(string(j[key]))] {
+		matched := want[strings.TrimSpace(string(j[key]))]
+		if !matched {
+			if raw, ok := j["array_job_id"]; ok {
+				var n struct {
+					Number int64 `json:"number"`
+				}
+				if json.Unmarshal(raw, &n) == nil && n.Number > 0 && want[fmt.Sprint(n.Number)] {
+					matched = true
+				}
+			}
+			if raw, ok := j["array"]; ok {
+				var ar struct {
+					JobID int64 `json:"job_id"`
+				}
+				if json.Unmarshal(raw, &ar) == nil && ar.JobID > 0 && want[fmt.Sprint(ar.JobID)] {
+					matched = true
+				}
+			}
+		}
+		if matched {
 			keep = append(keep, j)
 		}
 	}
