@@ -214,13 +214,13 @@ func (s *Service) EnvCheck(ctx context.Context, modules, commands []string) (*En
 			case "python":
 				r.Notes = append(r.Notes, "There is no bare `python` on Ursa Major; use python3 (or a conda/pixi environment).")
 			case "nvcc":
-				r.Notes = append(r.Notes, "nvcc comes from a cuda module and is only useful on the gpul4 partition.")
+				r.Notes = append(r.Notes, "nvcc is provided inside /apps/containers/cuda-12.4-devel.sif and is only useful on GPU partitions (gpul4, gpu1v1).")
 			case "mpirun", "mpicc":
 				r.Notes = append(r.Notes, "MPI tools appear after `module load openmpi` (or mpich / intel-oneapi-mpi).")
 			}
 		}
 	}
-	r.Notes = append(r.Notes, "Checked in a one-core job on a "+s.Cfg.EnvPartition+" compute node; every partition shares /apps, so modules resolve the same in batch jobs (GPU tools such as nvcc only run on gpul4).")
+	r.Notes = append(r.Notes, "Checked in a one-core job on a "+s.Cfg.EnvPartition+" compute node; every partition shares /apps, so modules resolve the same in batch jobs (GPU tools only run on gpul4 or gpu1v1; TPU modules mount on tpu* partitions).")
 	return r, nil
 }
 

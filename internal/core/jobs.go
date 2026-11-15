@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/user"
 	"path"
@@ -21,24 +22,37 @@ import (
 
 // JobSummary is one row of a job list.
 type JobSummary struct {
-	JobID     string  `json:"job_id"`
-	Name      string  `json:"name"`
-	User      string  `json:"user"`
-	Partition string  `json:"partition"`
-	State     string  `json:"state"`
-	Reason    string  `json:"reason,omitempty"`
-	Nodes     string  `json:"nodes,omitempty"`
-	NodeCount int64   `json:"node_count"`
-	CPUs      int64   `json:"cpus"`
-	Submitted string  `json:"submitted,omitempty"`
-	Started   string  `json:"started,omitempty"`
-	Ended     string  `json:"ended,omitempty"`
-	ElapsedS  int64   `json:"elapsed_s"`
-	ExitCode  string  `json:"exit_code,omitempty"`
-	CostUSD   float64 `json:"est_cost_usd,omitempty"`
+	JobID       string  `json:"job_id"`
+	ArrayJobID  string  `json:"array_job_id,omitempty"`
+	ArrayTaskID string  `json:"array_task_id,omitempty"`
+	Name        string  `json:"name"`
+	User        string  `json:"user"`
+	Partition   string  `json:"partition"`
+	State       string  `json:"state"`
+	Reason      string  `json:"reason,omitempty"`
+	Nodes       string  `json:"nodes,omitempty"`
+	NodeCount   int64   `json:"node_count"`
+	CPUs        int64   `json:"cpus"`
+	Submitted   string  `json:"submitted,omitempty"`
+	Started     string  `json:"started,omitempty"`
+	Ended       string  `json:"ended,omitempty"`
+	ElapsedS    int64   `json:"elapsed_s"`
+	ExitCode    string  `json:"exit_code,omitempty"`
+	CostUSD     float64 `json:"est_cost_usd,omitempty"`
 	// Restarts is Slurm's requeue count (node failures, preemption): a watcher
 	// sees it in the list without a job_show per job.
 	Restarts int64 `json:"restarts,omitempty"`
+}
+
+// ArraySummary summarizes all tasks of a Slurm job array.
+type ArraySummary struct {
+	Total       int      `json:"total"`
+	Completed   int      `json:"completed"`
+	Failed      int      `json:"failed"`
+	Running     int      `json:"running"`
+	Pending     int      `json:"pending"`
+	Other       int      `json:"other,omitempty"`
+	FailedTasks []string `json:"failed_tasks,omitempty"`
 }
 
 // JobsListInput selects jobs.
@@ -73,18 +87,20 @@ func (s *Service) JobsList(ctx context.Context, in JobsListInput) ([]JobSummary,
 		return nil, fmt.Errorf("job_ids: at most %d ids per call, got %d", MaxJobIDs, len(in.JobIDs))
 	}
 	want := map[string]bool{}
+	wantExact := map[string]bool{}
 	for _, id := range in.JobIDs {
 		if err := backend.ValidJobID(id); err != nil {
 			return nil, err
 		}
 		want[strings.SplitN(id, "_", 2)[0]] = true
+		wantExact[id] = true
 	}
 	limit := in.Limit
 	if limit <= 0 {
 		// a default page, not the cap: 200 rows of a busy week was ~70 KB per call
 		limit = min(DefaultJobRows, s.Cfg.Limits.ListRows)
 		if len(want) > 0 {
-			limit = len(want)
+			limit = min(max(len(want), DefaultJobRows), s.Cfg.Limits.ListRows)
 		}
 	}
 	if limit > s.Cfg.Limits.ListRows {
@@ -169,6 +185,10 @@ func (s *Service) JobsList(ctx context.Context, in JobsListInput) ([]JobSummary,
 		var f []JobSummary
 		for _, j := range out {
 			if want[strings.SplitN(j.JobID, "_", 2)[0]] {
+				if j.ArrayJobID == "" || wantExact[j.JobID] || wantExact[j.ArrayJobID] || wantExact[j.ArrayJobID+"_"+j.ArrayTaskID] {
+					f = append(f, j)
+				}
+			} else if j.ArrayJobID != "" && (wantExact[j.ArrayJobID] || wantExact[j.ArrayJobID+"_"+j.ArrayTaskID]) {
 				f = append(f, j)
 			}
 		}
@@ -203,11 +223,15 @@ func jobNum(id string) int64 {
 
 func (s *Service) queueSummary(j slurm.QueueJob, cat *Catalog) JobSummary {
 	js := JobSummary{
-		JobID: fmt.Sprint(j.JobID), Name: policy.CleanLabel(j.Name, 80), User: j.UserName,
+		JobID: fmt.Sprint(j.JobID), ArrayJobID: j.ArrayParentID(),
+		Name: policy.CleanLabel(j.Name, 80), User: j.UserName,
 		Partition: j.Partition, State: j.State(), Reason: j.StateReason, Nodes: j.Nodes,
 		NodeCount: j.NodeCount.Int(), CPUs: j.CPUs.Int(),
 		Submitted: numTS(j.SubmitTime), Started: numTS(j.StartTime),
 		Restarts: j.RestartCnt.Int(),
+	}
+	if j.ArrayTaskID.Valid() && js.ArrayJobID != "" {
+		js.ArrayTaskID = fmt.Sprint(j.ArrayTaskID.Int())
 	}
 	if js.Reason == "None" {
 		js.Reason = ""
@@ -228,11 +252,15 @@ func (s *Service) queueSummary(j slurm.QueueJob, cat *Catalog) JobSummary {
 
 func (s *Service) acctSummary(j slurm.AcctJob, cat *Catalog) JobSummary {
 	js := JobSummary{
-		JobID: fmt.Sprint(j.JobID), Name: policy.CleanLabel(j.Name, 80), User: j.User,
+		JobID: fmt.Sprint(j.JobID), ArrayJobID: j.ArrayParentID(),
+		Name: policy.CleanLabel(j.Name, 80), User: j.User,
 		Partition: j.Partition, State: j.StateName(), Nodes: j.Nodes,
 		NodeCount: j.AllocationNodes, CPUs: j.TRES.Allocated.Get("cpu"),
 		Submitted: ts(j.Time.Submission), Started: ts(j.Time.Start), Ended: ts(j.Time.End),
 		ElapsedS: j.Time.Elapsed, ExitCode: j.ExitCode.String(), Restarts: j.RestartCnt,
+	}
+	if j.Array.TaskID.Valid() && js.ArrayJobID != "" {
+		js.ArrayTaskID = fmt.Sprint(j.Array.TaskID.Int())
 	}
 	// Slurm keeps the last pending reason (e.g. BeginTime) on finished jobs; it is
 	// noise once a job has run, so only queued jobs show a reason.
@@ -265,6 +293,7 @@ type JobDetail struct {
 	RestartCount  int64              `json:"restart_count,omitempty"`
 	KilledBy      string             `json:"cancelled_by,omitempty"`
 	PendingReason *PendingExplain    `json:"pending,omitempty"`
+	Array         *ArraySummary      `json:"array,omitempty"`
 	Script        *policy.Untrusted  `json:"script_untrusted,omitempty"`
 	ScriptNote    string             `json:"script_note,omitempty"`
 	Raw           map[string]any     `json:"-"`
@@ -320,13 +349,10 @@ func (s *Service) JobShow(ctx context.Context, in JobShowInput) (*JobDetail, err
 		return nil, err
 	}
 	var d JobDetail
+	var q slurm.QueueResponse
 	qc, _ := backend.SqueueJob(in.JobID)
 	if b, err := s.run(ctx, qc); err == nil {
-		var q slurm.QueueResponse
-		if slurm.Decode(b, &q) == nil && len(q.Jobs) > 0 {
-			j := q.Jobs[0]
-			d.queue = &j
-		}
+		_ = slurm.Decode(b, &q)
 	}
 	ac, _ := backend.SacctJob(in.JobID)
 	b, err := s.run(ctx, ac)
@@ -337,12 +363,7 @@ func (s *Service) JobShow(ctx context.Context, in JobShowInput) (*JobDetail, err
 	if err := slurm.Decode(b, &a); err != nil {
 		return nil, err
 	}
-	for i := range a.Jobs {
-		if fmt.Sprint(a.Jobs[i].JobID) == strings.SplitN(in.JobID, "_", 2)[0] {
-			d.acct = &a.Jobs[i]
-			break
-		}
-	}
+	d.queue, d.acct, d.Array = selectJobRecord(in.JobID, q.Jobs, a.Jobs)
 	if d.acct == nil && d.queue == nil {
 		return nil, fmt.Errorf("job %s not found (accounting keeps finished jobs; check the id)", in.JobID)
 	}
@@ -499,7 +520,11 @@ func (s *Service) JobExplain(ctx context.Context, jobID string, anyUser bool, li
 		tail, p, err := s.readLog(ctx, d, "stdout", lines)
 		ex.LogPath = p
 		if err != nil {
-			ex.LogError = err.Error()
+			if strings.Contains(err.Error(), "not a regular file") && isJobActive(d.State) {
+				ex.Note += " Log file does not exist yet (job just started)."
+			} else {
+				ex.LogError = err.Error()
+			}
 		} else {
 			f.Log, f.LogReadable = tail, true
 			ex.LogTail = policy.Wrap(tail, s.Cfg.Limits.UntrustedCh)
@@ -512,6 +537,10 @@ func (s *Service) JobExplain(ctx context.Context, jobID string, anyUser bool, li
 					f.Log += "\n" + errTail
 				} else {
 					f.Log, f.LogReadable = errTail, true
+					if ex.LogTail == nil {
+						ex.LogTail = policy.Wrap(errTail, s.Cfg.Limits.UntrustedCh)
+						markUntrusted(ctx)
+					}
 				}
 			}
 		}
@@ -728,14 +757,19 @@ func isJobFailed(state, exitCode string) bool {
 	return false
 }
 
+// DefaultWaitTimeoutS is well below standard 180 s MCP client tool-call deadlines
+// so job_wait returns a structured {timed_out: true} status rather than dying in the client.
+const DefaultWaitTimeoutS = 120
+
 // MaxWaitTimeoutS bounds job_wait (Cloud Run request timeout is 900 s).
 const MaxWaitTimeoutS = 840
 
 // JobWaitInput selects jobs to wait for.
 type JobWaitInput struct {
-	JobIDs   []string `json:"job_ids"`
-	TimeoutS int      `json:"timeout_s,omitempty"` // default 300, min 1, max 840
-	PollS    int      `json:"poll_s,omitempty"`    // default 15, min 5, max 300
+	JobIDs   []string                               `json:"job_ids"`
+	TimeoutS int                                    `json:"timeout_s,omitempty"` // default 120, min 1, max 840
+	PollS    int                                    `json:"poll_s,omitempty"`    // default 15, min 5, max 300
+	OnPoll   func(elapsedS int64, active, done int) `json:"-"`                   // optional MCP progress callback
 }
 
 // JobWaitResult is the response from job_wait.
@@ -743,6 +777,7 @@ type JobWaitResult struct {
 	Jobs     []JobWaitItem `json:"jobs"`
 	TimedOut bool          `json:"timed_out"`
 	ElapsedS int64         `json:"elapsed_s"`
+	Note     string        `json:"note,omitempty"`
 }
 
 // JobWaitItem reports one job's final or current state in job_wait.
@@ -751,8 +786,194 @@ type JobWaitItem struct {
 	State    string            `json:"state"`
 	ExitCode string            `json:"exit_code,omitempty"`
 	ElapsedS int64             `json:"elapsed_s"`
+	Restarts int64             `json:"restarts,omitempty"`
+	Array    *ArraySummary     `json:"array,omitempty"`
 	LogTail  *policy.Untrusted `json:"log_tail_untrusted,omitempty"`
 	Note     string            `json:"note,omitempty"`
+}
+
+// selectJobRecord picks the matching queue/accounting record for jobID, and for a
+// parent array id summarizes all tasks and selects the highest-priority task
+// (failed > running > completed > pending).
+func selectJobRecord(jobID string, qjobs []slurm.QueueJob, ajobs []slurm.AcctJob) (*slurm.QueueJob, *slurm.AcctJob, *ArraySummary) {
+	parent, _, hasTask := strings.Cut(jobID, "_")
+	if hasTask {
+		var qMatch *slurm.QueueJob
+		for i := range qjobs {
+			if qjobs[i].ArrayStepID() == jobID || fmt.Sprint(qjobs[i].JobID) == jobID {
+				j := qjobs[i]
+				qMatch = &j
+				break
+			}
+		}
+		var aMatch *slurm.AcctJob
+		for i := range ajobs {
+			if ajobs[i].ArrayStepID() == jobID || fmt.Sprint(ajobs[i].JobID) == jobID {
+				aMatch = &ajobs[i]
+				break
+			}
+		}
+		if qMatch == nil && aMatch == nil {
+			for i := range ajobs {
+				if fmt.Sprint(ajobs[i].JobID) == parent && ajobs[i].ArrayParentID() == "" {
+					aMatch = &ajobs[i]
+					break
+				}
+			}
+		}
+		return qMatch, aMatch, nil
+	}
+
+	// Non-task ID: collect all matching tasks (regular job has 1; array has N).
+	type pair struct {
+		q *slurm.QueueJob
+		a *slurm.AcctJob
+	}
+	byID := map[string]*pair{}
+	var order []string
+	for i := range qjobs {
+		j := qjobs[i]
+		id := fmt.Sprint(j.JobID)
+		if id != jobID && j.ArrayParentID() != jobID {
+			continue
+		}
+		jj := j
+		byID[id] = &pair{q: &jj}
+		order = append(order, id)
+	}
+	for i := range ajobs {
+		j := ajobs[i]
+		id := fmt.Sprint(j.JobID)
+		if id != jobID && j.ArrayParentID() != jobID {
+			continue
+		}
+		if p, ok := byID[id]; ok {
+			p.a = &ajobs[i]
+		} else {
+			byID[id] = &pair{a: &ajobs[i]}
+			order = append(order, id)
+		}
+	}
+	if len(order) == 0 {
+		return nil, nil, nil
+	}
+	isArray := len(order) > 1
+	if !isArray {
+		p := byID[order[0]]
+		if (p.q != nil && p.q.ArrayParentID() == jobID) || (p.a != nil && p.a.ArrayParentID() == jobID) {
+			isArray = true
+		}
+	}
+	var sum *ArraySummary
+	if isArray {
+		sum = &ArraySummary{Total: len(order)}
+	}
+	taskRank := func(p *pair) int {
+		st, ec := "", ""
+		if p.q != nil {
+			st, ec = p.q.State(), p.q.ExitCode.String()
+		} else if p.a != nil {
+			st, ec = p.a.StateName(), p.a.ExitCode.String()
+		}
+		switch {
+		case isJobFailed(st, ec) && !isJobActive(st):
+			return 4
+		case st == "RUNNING" || st == "COMPLETING" || st == "CONFIGURING":
+			return 3
+		case !isJobActive(st):
+			return 2
+		default:
+			return 1
+		}
+	}
+	best := byID[order[0]]
+	bestRank := taskRank(best)
+	for _, id := range order {
+		p := byID[id]
+		if sum != nil {
+			st, ec, label := "", "", id
+			if p.q != nil {
+				st, ec = p.q.State(), p.q.ExitCode.String()
+				if s := p.q.ArrayStepID(); s != "" {
+					label = s
+				}
+			} else if p.a != nil {
+				st, ec = p.a.StateName(), p.a.ExitCode.String()
+				if s := p.a.ArrayStepID(); s != "" {
+					label = s
+				}
+			}
+			switch {
+			case st == "PENDING" || st == "REQUEUED" || st == "SUSPENDED":
+				sum.Pending++
+			case isJobActive(st):
+				sum.Running++
+			case st == "COMPLETED" && (ec == "" || ec == "0" || ec == "0:0"):
+				sum.Completed++
+			case isJobFailed(st, ec):
+				sum.Failed++
+				if len(sum.FailedTasks) < 10 {
+					sum.FailedTasks = append(sum.FailedTasks, label)
+				}
+			default:
+				sum.Other++
+			}
+		}
+		if r := taskRank(p); r > bestRank {
+			best, bestRank = p, r
+		}
+	}
+	return best.q, best.a, sum
+}
+
+func summarizeSummaryTasks(tasks []JobSummary) (*ArraySummary, JobSummary, string) {
+	sum := &ArraySummary{Total: len(tasks)}
+	best := tasks[0]
+	bestRank := -1
+	failedLogID := ""
+	for _, t := range tasks {
+		label := t.JobID
+		if t.ArrayJobID != "" && t.ArrayTaskID != "" {
+			label = t.ArrayJobID + "_" + t.ArrayTaskID
+		}
+		rank := 1
+		switch {
+		case t.State == "PENDING" || t.State == "REQUEUED" || t.State == "SUSPENDED":
+			sum.Pending++
+			rank = 2
+		case isJobActive(t.State):
+			sum.Running++
+			rank = 3
+		case t.State == "COMPLETED" && (t.ExitCode == "" || t.ExitCode == "0" || t.ExitCode == "0:0"):
+			sum.Completed++
+			rank = 1
+		case isJobFailed(t.State, t.ExitCode):
+			sum.Failed++
+			rank = 4
+			if failedLogID == "" {
+				failedLogID = label
+			}
+			if len(sum.FailedTasks) < 10 {
+				sum.FailedTasks = append(sum.FailedTasks, label)
+			}
+		default:
+			sum.Other++
+		}
+		if rank > bestRank {
+			best, bestRank = t, rank
+		}
+	}
+	switch {
+	case sum.Running > 0:
+		best.State = "RUNNING"
+	case sum.Pending > 0:
+		best.State = "PENDING"
+	case sum.Failed > 0:
+		best.State = "FAILED"
+	case sum.Completed == sum.Total && sum.Total > 0:
+		best.State = "COMPLETED"
+	}
+	return sum, best, failedLogID
 }
 
 // JobWait blocks until the listed jobs finish or timeout.
@@ -770,7 +991,7 @@ func (s *Service) JobWait(ctx context.Context, in JobWaitInput) (*JobWaitResult,
 	}
 	timeoutS := in.TimeoutS
 	if timeoutS <= 0 {
-		timeoutS = 300
+		timeoutS = DefaultWaitTimeoutS
 	}
 	if timeoutS > MaxWaitTimeoutS {
 		timeoutS = MaxWaitTimeoutS
@@ -791,45 +1012,77 @@ func (s *Service) JobWait(ctx context.Context, in JobWaitInput) (*JobWaitResult,
 	deadline := wallStart.Add(time.Duration(timeoutS) * time.Second)
 	pollDur := time.Duration(pollS) * time.Second
 
-	var latestMap map[string]JobSummary
+	var latestList []JobSummary
 	timedOut := false
 
-	for {
-		list, err := s.JobsList(ctx, JobsListInput{JobIDs: in.JobIDs, Limit: max(len(in.JobIDs)*10, 100)})
-		if err != nil {
-			return nil, err
-		}
-		m := make(map[string]JobSummary, len(list))
+	matchTasks := func(list []JobSummary, wantID string) []JobSummary {
+		var out []JobSummary
 		for _, j := range list {
-			m[j.JobID] = j
-		}
-		latestMap = m
-
-		allDone := true
-		for _, wantID := range in.JobIDs {
-			j, ok := m[wantID]
-			if !ok {
-				// check if any task with prefix exists
-				foundTask := false
-				for k, task := range m {
-					if strings.HasPrefix(k, wantID+"_") {
-						foundTask = true
-						if isJobActive(task.State) {
-							allDone = false
-							break
-						}
-					}
-				}
-				if !foundTask || !allDone {
-					allDone = false
-					break
-				}
-				continue
+			step := ""
+			if j.ArrayJobID != "" && j.ArrayTaskID != "" {
+				step = j.ArrayJobID + "_" + j.ArrayTaskID
 			}
-			if isJobActive(j.State) {
-				allDone = false
+			if j.JobID == wantID || strings.HasPrefix(j.JobID, wantID+"_") || j.ArrayJobID == wantID || step == wantID {
+				out = append(out, j)
+			}
+		}
+		return out
+	}
+
+	pollNum := 0
+	for {
+		pollCtx := ctx
+		var cancel context.CancelFunc
+		if pollNum > 0 {
+			pollDeadline := deadline
+			if timeoutS >= 20 {
+				pollDeadline = deadline.Add(-3 * time.Second)
+			}
+			if !time.Now().Before(pollDeadline) {
+				timedOut = true
 				break
 			}
+			pollCtx, cancel = context.WithDeadline(ctx, pollDeadline)
+		}
+		list, err := s.JobsList(pollCtx, JobsListInput{JobIDs: in.JobIDs, Limit: max(len(in.JobIDs)*32, 200)})
+		if cancel != nil {
+			cancel()
+		}
+		if err != nil {
+			if pollNum > 0 && errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+				timedOut = true
+				break
+			}
+			return nil, err
+		}
+		latestList = list
+		pollNum++
+
+		activeCount, doneCount := 0, 0
+		allDone := true
+		for _, wantID := range in.JobIDs {
+			tasks := matchTasks(list, wantID)
+			if len(tasks) == 0 {
+				allDone = false
+				activeCount++
+				continue
+			}
+			jobActive := false
+			for _, t := range tasks {
+				if isJobActive(t.State) {
+					jobActive = true
+					break
+				}
+			}
+			if jobActive {
+				allDone = false
+				activeCount++
+			} else {
+				doneCount++
+			}
+		}
+		if in.OnPoll != nil {
+			in.OnPoll(int64(time.Since(wallStart).Seconds()), activeCount, doneCount)
 		}
 
 		if allDone {
@@ -863,34 +1116,50 @@ func (s *Service) JobWait(ctx context.Context, in JobWaitInput) (*JobWaitResult,
 		TimedOut: timedOut,
 		ElapsedS: elapsed,
 	}
+	if timedOut {
+		res.Note = "One or more jobs are still active; call job_wait again to continue waiting."
+	}
 
 	for _, id := range in.JobIDs {
 		item := JobWaitItem{JobID: id}
-		j, ok := latestMap[id]
-		if !ok {
-			// check for task
-			for k, task := range latestMap {
-				if strings.HasPrefix(k, id+"_") {
-					j = task
-					ok = true
-					break
-				}
-			}
-		}
-		if !ok {
+		tasks := matchTasks(latestList, id)
+		if len(tasks) == 0 {
 			item.State = "UNKNOWN"
 			item.Note = "job not found in queue or accounting for caller"
 			res.Jobs = append(res.Jobs, item)
 			continue
 		}
+		j := tasks[0]
+		logID := id
+		if len(tasks) > 1 || (j.ArrayJobID == id && !strings.Contains(id, "_")) {
+			var failedID string
+			item.Array, j, failedID = summarizeSummaryTasks(tasks)
+			if failedID != "" {
+				logID = failedID
+			}
+		}
 		item.State = j.State
 		item.ExitCode = j.ExitCode
 		item.ElapsedS = j.ElapsedS
+		item.Restarts = j.Restarts
 
 		if isJobFailed(j.State, j.ExitCode) && !isJobActive(j.State) {
-			lt, err := s.JobLog(ctx, LogInput{JobID: id, Stream: "stdout", Lines: 20})
+			lt, err := s.JobLog(ctx, LogInput{JobID: logID, Stream: "stdout", Lines: 25})
+			var combined string
 			if err == nil && lt != nil && lt.Tail != nil && lt.Tail.Text != "" {
-				item.LogTail = lt.Tail
+				combined = lt.Tail.Text
+			}
+			if ltErr, err2 := s.JobLog(ctx, LogInput{JobID: logID, Stream: "stderr", Lines: 25}); err2 == nil && ltErr != nil && ltErr.Tail != nil && ltErr.Tail.Text != "" {
+				if lt == nil || ltErr.Path != lt.Path {
+					if combined != "" {
+						combined += "\n--- stderr ---\n" + ltErr.Tail.Text
+					} else {
+						combined = ltErr.Tail.Text
+					}
+				}
+			}
+			if combined != "" {
+				item.LogTail = policy.Wrap(combined, s.Cfg.Limits.UntrustedCh)
 				markUntrusted(ctx)
 			} else if err != nil {
 				item.Note = err.Error()

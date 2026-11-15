@@ -233,6 +233,34 @@ func PutFile(p, signedURL string) (Command, error) {
 	return Command{argv: []string{"curl", "-sS", "-f", "--retry", "2", "--max-time", "840", "-T", p, signedURL}, kind: KindNoCache, big: true}, nil
 }
 
+const putTarGzTemplate = `set -e; set -o pipefail; url="$1"; dir="$2"; shift 2; tar -C "$dir" -czf - --exclude-vcs -- "$@" | curl -sS -f --retry 2 --max-time 840 -T - "$url"`
+
+// PutTarGz streams a gzip tar of relFiles inside dir directly to a signed Cloud Storage URL
+// without creating temporary files in the user's folder.
+func PutTarGz(dir string, relFiles []string, signedURL string) (Command, error) {
+	if err := validDir(dir); err != nil {
+		return Command{}, err
+	}
+	if err := ValidSignedURL(signedURL); err != nil {
+		return Command{}, err
+	}
+	argv := []string{"bash", "-c", putTarGzTemplate, "bifrost", signedURL, dir}
+	if len(relFiles) == 0 {
+		argv = append(argv, ".")
+	} else {
+		if len(relFiles) > 2000 {
+			return Command{}, fmt.Errorf("at most 2000 files in one archive")
+		}
+		for _, f := range relFiles {
+			if err := ValidRelPath(f); err != nil {
+				return Command{}, err
+			}
+			argv = append(argv, f)
+		}
+	}
+	return Command{argv: argv, kind: KindNoCache, big: true}, nil
+}
+
 // DuTemplateForTest and EnvTemplateForTest let fixtures answer these templates.
 func DuTemplateForTest() string { return duTemplate }
 

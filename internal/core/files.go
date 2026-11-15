@@ -196,24 +196,65 @@ func checkUserPath(p string, roots []string) error {
 	return fmt.Errorf("%w: %s is outside your home and scratch folders (%s)", policy.ErrDenied, p, strings.Join(roots, ", "))
 }
 
+// publicListRoots and publicReadRoots are read-only cluster documentation and
+// container folders open to every authenticated cluster user.
+var (
+	publicListRoots = []string{"/apps/docs", "/apps/containers"}
+	publicReadRoots = []string{"/apps/docs"}
+)
+
+// cleanDotSegments removes benign "." path segments ("./a", "a/.") while leaving
+// ".." intact so checkUserPath continues to reject traversal attempts explicitly.
+func cleanDotSegments(p string) string {
+	parts := strings.Split(p, "/")
+	out := make([]string, 0, len(parts))
+	for i, seg := range parts {
+		if seg == "." && i > 0 {
+			continue
+		}
+		if seg == "" && i > 0 {
+			continue
+		}
+		out = append(out, seg)
+	}
+	if len(out) == 1 && out[0] == "" {
+		return "/"
+	}
+	return strings.Join(out, "/")
+}
+
+func underAnyRoot(p string, roots []string) bool {
+	for _, r := range roots {
+		if p == r || strings.HasPrefix(p, r+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveUserPath expands ~, checks the path, resolves symlinks on the cluster
 // and checks the resolved path again (a link must not lead out of the roots or
 // into a hidden folder).
 func (s *Service) resolveUserPath(ctx context.Context, p string) (string, error) {
-	_, roots, err := s.userRoots(ctx)
+	return s.resolveAllowedPath(ctx, p, nil)
+}
+
+func (s *Service) resolveAllowedPath(ctx context.Context, p string, extraRoots []string) (string, error) {
+	_, userRoots, err := s.userRoots(ctx)
 	if err != nil {
 		return "", err
 	}
+	roots := append(append([]string{}, userRoots...), extraRoots...)
 	p = strings.TrimSpace(p)
 	switch {
-	case p == "" || p == "~":
+	case p == "" || p == "~" || p == ".":
 		p = roots[0]
 	case strings.HasPrefix(p, "~/"):
 		p = roots[0] + "/" + strings.TrimPrefix(p, "~/")
 	case !strings.HasPrefix(p, "/"):
 		p = roots[0] + "/" + p
 	}
-	p = strings.TrimSuffix(p, "/")
+	p = cleanDotSegments(strings.TrimSuffix(p, "/"))
 	if p == "" {
 		p = "/"
 	}
@@ -232,6 +273,11 @@ func (s *Service) resolveUserPath(ctx context.Context, p string) (string, error)
 		return "", fmt.Errorf("%s does not exist or cannot be read", p)
 	}
 	real := strings.TrimSpace(string(out))
+	// A path inside a public root must stay inside public roots; a user path must stay inside user roots.
+	roots = userRoots
+	if underAnyRoot(p, extraRoots) {
+		roots = extraRoots
+	}
 	if err := checkUserPath(real, roots); err != nil {
 		return "", fmt.Errorf("%s is a link to %s: %w", p, real, err)
 	}
@@ -267,12 +313,12 @@ type FilesListInput struct {
 	Limit   int
 }
 
-// FilesList lists one folder under the caller's home or scratch.
+// FilesList lists one folder under the caller's home, scratch, or read-only /apps/docs and /apps/containers.
 func (s *Service) FilesList(ctx context.Context, in FilesListInput) (*DirListing, error) {
 	if err := validGlob(in.Pattern); err != nil {
 		return nil, err
 	}
-	dir, err := s.resolveUserPath(ctx, in.Path)
+	dir, err := s.resolveAllowedPath(ctx, in.Path, publicListRoots)
 	if err != nil {
 		return nil, err
 	}
@@ -386,17 +432,21 @@ type FilesReadInput struct {
 	Grep   string
 }
 
-// FilesRead reads one text file under the caller's home or scratch.
+// FilesRead reads one text file under the caller's home, scratch, or read-only /apps/docs.
 func (s *Service) FilesRead(ctx context.Context, in FilesReadInput) (*FileRead, error) {
 	if strings.TrimSpace(in.Path) == "" {
 		return nil, errors.New("path is required")
 	}
-	p, err := s.resolveUserPath(ctx, in.Path)
+	trimmed := strings.TrimRight(strings.TrimSpace(in.Path), "/")
+	if trimmed == "/apps/containers" || strings.HasPrefix(trimmed, "/apps/containers/") {
+		return nil, fmt.Errorf("%w: /apps/containers holds binary Apptainer images (.sif); list them with files_list and run them in a job with `module load apptainer && apptainer exec ...`", policy.ErrDenied)
+	}
+	p, err := s.resolveAllowedPath(ctx, in.Path, publicReadRoots)
 	if err != nil {
 		return nil, err
 	}
 	_, roots, _ := s.userRoots(ctx)
-	for _, r := range roots {
+	for _, r := range append(roots, publicReadRoots...) {
 		if p == r {
 			return nil, fmt.Errorf("%s is a folder; use files_list", p)
 		}

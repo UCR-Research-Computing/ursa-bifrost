@@ -820,6 +820,9 @@ func (f *fakeStage) List(context.Context, string) ([]staging.Object, error) { re
 func (f *fakeStage) Stat(context.Context, string) (staging.Object, bool, error) {
 	return staging.Object{}, false, nil
 }
+func (f *fakeStage) Put(_ context.Context, object string, data []byte) (staging.Object, error) {
+	return staging.Object{Name: object, Size: int64(len(data)), Generation: "1"}, nil
+}
 
 // TestStagingIsPerPerson: each signed-in person stages under their own owner
 // key (derived from the verified email), and bob without A1 cannot upload.

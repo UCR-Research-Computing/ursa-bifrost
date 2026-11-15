@@ -86,12 +86,13 @@ type Confirmed struct {
 
 // SubmitInput is a submit request.
 type SubmitInput struct {
-	Script    string
-	Partition string   // overrides #SBATCH -p
-	Nodes     int      // overrides #SBATCH -N
-	Time      string   // overrides #SBATCH -t (Slurm format)
-	JobName   string   // overrides #SBATCH -J
-	Inputs    []string // staged upload ids (SPEC 18.1)
+	Script         string
+	Partition      string   // overrides #SBATCH -p
+	Nodes          int      // overrides #SBATCH -N
+	Time           string   // overrides #SBATCH -t (Slurm format)
+	JobName        string   // overrides #SBATCH -J
+	Inputs         []string // staged upload ids (SPEC 18.1)
+	UnpackArchives bool     // auto-extract .tar.gz/.tgz/.tar/.zip inputs into inputs/
 }
 
 // pending is one stored action awaiting confirmation.
@@ -429,6 +430,13 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 	if err != nil {
 		return nil, err
 	}
+	if in.UnpackArchives {
+		for i := range inputs {
+			if isArchiveFilename(inputs[i].Filename) {
+				inputs[i].Unpack = true
+			}
+		}
+	}
 
 	lk, err := s.lockState()
 	if err != nil {
@@ -507,6 +515,9 @@ func (s *Service) PrepareSubmit(ctx context.Context, in SubmitInput) (*SubmitPla
 	}
 	if len(inputs) > 0 {
 		plan.Next += fmt.Sprintf(" When it starts, the job first downloads %d staged file(s) into inputs/ in its folder.", len(inputs))
+		if hasUnpackInput(inputs) {
+			plan.Next += " Staged archive(s) will be unpacked automatically into inputs/."
+		}
 	}
 	if !s.Cfg.ShowCost {
 		plan.USDPerNodeH = 0
@@ -553,17 +564,55 @@ func (s *Service) partitionTrouble(ctx context.Context, part string) string {
 		why = fmt.Sprintf("GCP has no capacity for %s right now (%d node(s) failed with ZONE_RESOURCE_POOL_EXHAUSTED); the job may wait a long time", part, bad)
 	}
 	alt := ""
-	for _, p := range altPartitions {
-		if p != part && upIdle[p] {
-			alt = p + " (a node is already up and idle)"
-			break
+	cat, _ := s.Catalog(ctx)
+	if cp, ok := func() (CatalogPartition, bool) {
+		if cat == nil {
+			return CatalogPartition{}, false
 		}
-	}
-	if alt == "" {
-		for _, p := range altColdPartitions {
-			if p != part && !troubled[p] {
-				alt = p
+		return cat.Partition(part)
+	}(); ok && cp.GPUsPerNode > 0 {
+		for _, p := range []string{"gpul4", "gpu1v1"} {
+			if p == part {
+				continue
+			}
+			if peer, pok := cat.Partition(p); pok && s.accessIssue(ctx, peer) == "" {
+				if upIdle[p] {
+					alt = p + " (a GPU node is already up and idle)"
+					break
+				}
+				if alt == "" && !troubled[p] {
+					alt = p
+				}
+			}
+		}
+	} else if strings.HasPrefix(part, "tpu") && cat != nil {
+		for _, p := range []string{"tpu6spot", "tpuspot", "tpu"} {
+			if p == part {
+				continue
+			}
+			if peer, pok := cat.Partition(p); pok && s.accessIssue(ctx, peer) == "" {
+				if upIdle[p] {
+					alt = p + " (a TPU node is already up and idle)"
+					break
+				}
+				if alt == "" && !troubled[p] {
+					alt = p
+				}
+			}
+		}
+	} else {
+		for _, p := range altPartitions {
+			if p != part && upIdle[p] {
+				alt = p + " (a node is already up and idle)"
 				break
+			}
+		}
+		if alt == "" {
+			for _, p := range altColdPartitions {
+				if p != part && !troubled[p] {
+					alt = p
+					break
+				}
 			}
 		}
 	}
@@ -662,7 +711,7 @@ func (s *Service) ConfirmSubmit(ctx context.Context, tok string) (*Confirmed, er
 		_ = s.saveState(st)
 		return nil, fmt.Errorf("%w: %d submissions today since the plan was made (cap %d)", ErrCapExceeded, n, s.Cfg.Caps.MaxSubmitsPerDay)
 	}
-	script, err := s.withInputs(ctx, p.Script, p.Inputs)
+	script, err := s.withInputsOpts(ctx, p.Script, p.Inputs, hasUnpackInput(p.Inputs))
 	if err != nil {
 		_ = s.saveState(st)
 		return nil, err
