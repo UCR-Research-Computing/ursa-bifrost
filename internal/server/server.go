@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -27,6 +28,9 @@ import (
 	"github.com/UCR-Research-Computing/ursa-bifrost/internal/version"
 )
 
+// DefaultAtriumBrokerIssuer is the canonical Atrium issuer for atr1.* assertions.
+const DefaultAtriumBrokerIssuer = "https://atrium-staging-492106370716.us-central1.run.app"
+
 // Server is the hosted bifrost.
 type Server struct {
 	cfg    config.Config
@@ -38,6 +42,10 @@ type Server struct {
 	tokens *tokenCache
 	audits *policy.Audit
 	logger *log.Logger
+
+	brokerPub *ecdsa.PublicKey
+	brokerIss string
+	brokerAud string
 
 	mu    sync.Mutex
 	conns map[string]*userConn // per signed-in email (+ "|program-id" for program clients)
@@ -102,7 +110,42 @@ func New(cfg config.Config, google *Google, secret string) (*Server, error) {
 			Token:    func(ctx context.Context) (string, error) { return s.tokens.get(ctx, email) },
 			HostKeys: ic.HostKeys, Idle: 10 * time.Minute, Keys: keyStore{store}}
 	}
+	if err := s.SetBroker(
+		os.Getenv("ATRIUM_BROKER_PUBKEY"),
+		os.Getenv("ATRIUM_BROKER_ISSUER"),
+		os.Getenv("ATRIUM_BROKER_AUDIENCE"),
+	); err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+// SetBroker configures Atrium atr1.* brokered assertion verification.
+// When pubKeyB64 is empty, atr1.* assertions fail closed with 401.
+func (s *Server) SetBroker(pubKeyB64, issuer, audience string) error {
+	iss := strings.TrimRight(strings.TrimSpace(issuer), "/")
+	if iss == "" {
+		iss = DefaultAtriumBrokerIssuer
+	}
+	aud := strings.TrimRight(strings.TrimSpace(audience), "/")
+	if aud == "" {
+		aud = strings.TrimRight(s.base, "/") + "/mcp"
+	}
+	pubKeyB64 = strings.TrimSpace(pubKeyB64)
+	if pubKeyB64 == "" {
+		s.brokerPub = nil
+		s.brokerIss = iss
+		s.brokerAud = aud
+		return nil
+	}
+	pub, err := parseBrokerPubKey(pubKeyB64)
+	if err != nil {
+		return fmt.Errorf("ATRIUM_BROKER_PUBKEY: %w", err)
+	}
+	s.brokerPub = pub
+	s.brokerIss = iss
+	s.brokerAud = aud
+	return nil
 }
 
 func (s *Server) logf(format string, a ...any) { s.logger.Printf(format, a...) }
@@ -318,7 +361,7 @@ func (s *Server) Handler() http.Handler {
 				`It lets an AI app (Claude, ChatGPT, Gemini, Hermes) check and run jobs on the cluster <b>as you</b>.</p>` +
 				`<p>Add this address to your AI app as an MCP server:</p><p><code>` + template.HTMLEscapeString(s.base) + `/mcp</code></p>` +
 				`<p>It signs you in with your ` + template.HTMLEscapeString(s.users.Domain()) + ` Google account. Only people on the Ursa Major user list can sign in.</p>` +
-				`<p>Prefer a web page? The <a href="https://ursa-agent-125853442225.us-central1.run.app/">Ursa Major dashboard</a> shows your jobs, costs and storage, and <a href="` + atriumURL + `">Atrium</a> shows Ursa next to your cloud, AI keys and Nautilus. ` +
+				`<p>Prefer a web page? <a href="` + atriumURL + `desk/compute">Atrium</a> shows your Ursa Major jobs, allocations and storage next to your cloud, AI keys and Nautilus. ` +
 				`New to the cluster? Read <a href="https://ucr-research-computing.github.io/services/ursa-major/">about Ursa Major</a>.</p>` +
 				`<p class="n">Version ` + template.HTMLEscapeString(version.Version) + `.</p>`)
 			rcPage(w, 200, "Ursa Major", "Ursa Major MCP server", body, false)
@@ -453,9 +496,9 @@ func (s *Server) expireIdle(idle time.Duration) {
 	}
 }
 
-// handleWhoami tells a client (e.g. the ursa-agent web app) who its bearer
-// token belongs to: the email and tiers. It reveals nothing the token holder
-// could not learn by calling tools, and nothing about anyone else.
+// handleWhoami tells a client (e.g. Atrium) who its bearer token belongs to:
+// the email and tiers. It reveals nothing the token holder could not learn by
+// calling tools, and nothing about anyone else.
 func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
 	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || tok == "" {

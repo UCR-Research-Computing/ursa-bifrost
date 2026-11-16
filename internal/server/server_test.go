@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -1543,5 +1545,337 @@ func TestServerNeedsHostKeys(t *testing.T) {
 	_, err := New(cfg, nil, base64.StdEncoding.EncodeToString(key))
 	if err == nil || !strings.Contains(err.Error(), "host_keys is required") {
 		t.Fatalf("server started without host keys: %v", err)
+	}
+}
+
+// ---- v0.11.0: Atrium atr1.* brokered assertions ------------------------------------
+
+const withAtriumProgram = `domain: ucr.edu
+users:
+  - email: alice@ucr.edu
+    tiers: [R1, R2, A1]
+  - email: bob@ucr.edu
+    tiers: [R1]
+clients:
+  - id: bifrost-atrium
+    name: Atrium
+    tiers: [R1, A1]
+    calls_per_min: 5
+    redirect_uris: ["https://atrium-staging-492106370716.us-central1.run.app/oauth/callback"]
+  - id: bifrost-off
+    name: Retired
+    tiers: [R1]
+    redirect_uris: ["http://127.0.0.1/callback"]
+    disabled: true
+`
+
+func newTestBrokerKey(t *testing.T) (*ecdsa.PrivateKey, string) {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := priv.PublicKey.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return priv, base64.RawURLEncoding.EncodeToString(raw)
+}
+
+func mintAtriumAssertion(t *testing.T, priv *ecdsa.PrivateKey, claims map[string]any) string {
+	t.Helper()
+	pb, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloadB64 := base64.RawURLEncoding.EncodeToString(pb)
+	sum := sha256.Sum256([]byte("atr1." + payloadB64))
+	r, s, err := ecdsa.Sign(rand.Reader, priv, sum[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sig [64]byte
+	r.FillBytes(sig[:32])
+	s.FillBytes(sig[32:64])
+	return "atr1." + payloadB64 + "." + base64.RawURLEncoding.EncodeToString(sig[:])
+}
+
+func TestBrokerPubKeyValidation(t *testing.T) {
+	// Real Atrium broker public key from BROKER_CONTRACT.md parses cleanly (unpadded and padded).
+	const realPub = "BPk1yjPNObjzEnlhMugwRwa69KSBp0znzS7C3_R146n1QJ_0QyZxiJvvnglYTtrib27KRAxV6yFlPs5JAhEJlyQ"
+	if _, err := parseBrokerPubKey(realPub); err != nil {
+		t.Fatalf("real Atrium pubkey rejected: %v", err)
+	}
+	if _, err := parseBrokerPubKey("  " + realPub + "=  "); err != nil {
+		t.Fatalf("padded Atrium pubkey rejected: %v", err)
+	}
+	// Reject wrong length, wrong prefix, bad base64, and off-curve 65-byte point.
+	offCurve := make([]byte, 65)
+	offCurve[0] = 0x04
+	offCurve[32] = 1
+	offCurve[64] = 1
+	for name, bad := range map[string]string{
+		"not base64":   "!!!not-base64!!!",
+		"short":        base64.RawURLEncoding.EncodeToString(make([]byte, 64)),
+		"compressed":   base64.RawURLEncoding.EncodeToString(append([]byte{0x02}, make([]byte, 64)...)),
+		"not on curve": base64.RawURLEncoding.EncodeToString(offCurve),
+	} {
+		if _, err := parseBrokerPubKey(bad); err == nil {
+			t.Errorf("%s: accepted invalid broker pubkey", name)
+		}
+	}
+}
+
+func TestAtriumBrokerUnsetPubKeyFailsClosed(t *testing.T) {
+	t.Setenv("ATRIUM_BROKER_PUBKEY", "")
+	h := newHarness(t, withAtriumProgram)
+	priv, _ := newTestBrokerKey(t)
+	now := time.Now().Unix()
+	tok := mintAtriumAssertion(t, priv, map[string]any{
+		"iss": DefaultAtriumBrokerIssuer,
+		"aud": h.ts.URL + "/mcp",
+		"sub": "alice@ucr.edu",
+		"cid": "bifrost-atrium",
+		"iat": now,
+		"exp": now + 300,
+		"jti": "0123456789abcdef0123456789abcdef",
+	})
+	if code, _ := h.whoami(tok); code != 401 {
+		t.Fatalf("unset pubkey whoami: got %d, want 401", code)
+	}
+	if _, err := h.mcp(tok); err == nil {
+		t.Fatal("unset pubkey accepted atr1.* on /mcp")
+	}
+	// Standard OAuth flow still works unchanged when ATRIUM_BROKER_PUBKEY is unset.
+	own, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatalf("oauth sign-in failed: %v", err)
+	}
+	if code, _ := h.whoami(own["access_token"].(string)); code != 200 {
+		t.Fatalf("oauth token failed when broker unset: %d", code)
+	}
+}
+
+func TestAtriumBrokerValidAssertionTiersRateLimitAndAudit(t *testing.T) {
+	priv, pubB64 := newTestBrokerKey(t)
+	t.Setenv("ATRIUM_BROKER_PUBKEY", pubB64)
+	t.Setenv("ATRIUM_BROKER_ISSUER", DefaultAtriumBrokerIssuer)
+	t.Setenv("ATRIUM_BROKER_AUDIENCE", "https://bifrost-mcp-125853442225.us-central1.run.app/mcp")
+	h := newHarness(t, withAtriumProgram)
+
+	// Seed Google IAP session for alice & bob via their own OAuth sign-ins first.
+	ownAlice, err := h.signIn("alice@ucr.edu", "ucr.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.signIn("bob@ucr.edu", "ucr.edu"); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().Unix()
+	// Both ATRIUM_BROKER_AUDIENCE and <s.base>/mcp are accepted as valid audiences.
+	tokAlice := mintAtriumAssertion(t, priv, map[string]any{
+		"iss": DefaultAtriumBrokerIssuer + "/",
+		"aud": "https://bifrost-mcp-125853442225.us-central1.run.app/mcp/",
+		"sub": "alice@ucr.edu",
+		"cid": "bifrost-atrium",
+		"iat": now - 5,
+		"exp": now + 300,
+		"jti": "0123456789abcdef0123456789abcdef",
+	})
+	tokBobBaseAud := mintAtriumAssertion(t, priv, map[string]any{
+		"iss": DefaultAtriumBrokerIssuer,
+		"aud": h.ts.URL + "/mcp",
+		"sub": "bob@ucr.edu",
+		"cid": "bifrost-atrium",
+		"iat": now,
+		"exp": now + 360, // exact 360s max lifetime boundary
+		"jti": "fedcba9876543210fedcba9876543210",
+	})
+
+	// 1. /whoami reflects program_client tier ceiling ([R1, R2, A1] ∩ [R1, A1] = [R1, A1]) and calls_per_min.
+	if code, got := h.whoami(tokAlice); code != 200 || got["email"] != "alice@ucr.edu" ||
+		fmt.Sprint(got["tiers"]) != "[R1 A1]" || got["program"] != "bifrost-atrium" || got["calls_per_min"] != float64(5) {
+		t.Fatalf("alice broker whoami: %d %v", code, got)
+	}
+	// Bob ([R1]) intersected with bifrost-atrium ([R1, A1]) stays [R1] (ceiling never grants A1).
+	if code, got := h.whoami(tokBobBaseAud); code != 200 || got["email"] != "bob@ucr.edu" ||
+		fmt.Sprint(got["tiers"]) != "[R1]" || got["program"] != "bifrost-atrium" {
+		t.Fatalf("bob broker whoami: %d %v", code, got)
+	}
+
+	// 2. MCP tools enforce tier ceiling: Alice via bifrost-atrium gets R1+A1 (job_submit) but NOT R2 (health).
+	ca, err := h.mcp(tokAlice)
+	if err != nil {
+		t.Fatalf("alice broker mcp connect: %v", err)
+	}
+	ta := toolSet(t, ca)
+	if !ta["jobs_list"] || !ta["job_submit"] || ta["health"] {
+		t.Fatalf("alice via bifrost-atrium tools: %v", ta)
+	}
+	if _, err := ca.CallTool(context.Background(), &mcp.CallToolParams{Name: "health"}); err == nil {
+		t.Error("alice via bifrost-atrium called R2 tool health")
+	}
+	cb, err := h.mcp(tokBobBaseAud)
+	if err != nil {
+		t.Fatalf("bob broker mcp connect: %v", err)
+	}
+	if tb := toolSet(t, cb); tb["job_submit"] || tb["health"] || !tb["jobs_list"] {
+		t.Fatalf("bob via bifrost-atrium tools: %v", tb)
+	}
+
+	// 3. Per-program calls_per_min (5) rate limit enforced without starving Alice's own OAuth client.
+	var errs []bool
+	for i := 0; i < 7; i++ {
+		_, isErr := callJSON(t, ca, "partitions", nil)
+		errs = append(errs, isErr)
+	}
+	if fmt.Sprint(errs) != "[false false false false false true true]" {
+		t.Errorf("broker program rate limit: got %v, want [false false false false false true true]", errs)
+	}
+	co, err := h.mcp(ownAlice["access_token"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, isErr := callJSON(t, co, "partitions", nil); isErr {
+		t.Error("alice's own OAuth client was rate-limited by broker program calls")
+	}
+
+	// 4. Audit log records caller email and program:bifrost-atrium client tag.
+	rawAudit, _ := os.ReadFile(h.s.cfg.AuditPath)
+	if !strings.Contains(string(rawAudit), `"caller":"alice@ucr.edu"`) || !strings.Contains(string(rawAudit), `"client":"program:bifrost-atrium/mcp:test"`) {
+		t.Errorf("audit missing program:bifrost-atrium tag: %s", rawAudit)
+	}
+}
+
+func TestAtriumBrokerRejections(t *testing.T) {
+	priv, pubB64 := newTestBrokerKey(t)
+	otherPriv, _ := newTestBrokerKey(t)
+	t.Setenv("ATRIUM_BROKER_PUBKEY", pubB64)
+	t.Setenv("ATRIUM_BROKER_ISSUER", "")
+	t.Setenv("ATRIUM_BROKER_AUDIENCE", "")
+	h := newHarness(t, withAtriumProgram)
+
+	// Register a dynamic OAuth client to verify its bfc_* ID is rejected as cid in atr1.*.
+	reg, _ := json.Marshal(map[string]any{"redirect_uris": []string{"http://127.0.0.1:33418/callback"}, "client_name": "dyn", "token_endpoint_auth_method": "none"})
+	rReg, err := http.Post(h.ts.URL+"/register", "application/json", strings.NewReader(string(reg)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dyn map[string]any
+	_ = json.NewDecoder(rReg.Body).Decode(&dyn)
+	rReg.Body.Close()
+	dynCID := dyn["client_id"].(string)
+
+	now := time.Now().Unix()
+	validClaims := func() map[string]any {
+		return map[string]any{
+			"iss": DefaultAtriumBrokerIssuer,
+			"aud": h.ts.URL + "/mcp",
+			"sub": "alice@ucr.edu",
+			"cid": "bifrost-atrium",
+			"iat": now,
+			"exp": now + 300,
+			"jti": "0123456789abcdef0123456789abcdef",
+		}
+	}
+
+	// Sanity check: baseline valid assertion succeeds, and clock-skew boundary (+/- 25s) succeeds.
+	if code, _ := h.whoami(mintAtriumAssertion(t, priv, validClaims())); code != 200 {
+		t.Fatalf("baseline valid assertion failed: %d", code)
+	}
+	skewOK := validClaims()
+	skewOK["iat"] = now + 25
+	skewOK["exp"] = now + 300
+	if code, _ := h.whoami(mintAtriumAssertion(t, priv, skewOK)); code != 200 {
+		t.Fatalf("within-skew future iat failed: %d", code)
+	}
+
+	// Signature computed over payload_b64url WITHOUT "atr1." prefix must fail.
+	pbNoPrefix, _ := json.Marshal(validClaims())
+	pB64 := base64.RawURLEncoding.EncodeToString(pbNoPrefix)
+	sumNoPrefix := sha256.Sum256([]byte(pB64))
+	rNP, sNP, _ := ecdsa.Sign(rand.Reader, priv, sumNoPrefix[:])
+	var sigNP [64]byte
+	rNP.FillBytes(sigNP[:32])
+	sNP.FillBytes(sigNP[32:64])
+	wrongPrefixTok := "atr1." + pB64 + "." + base64.RawURLEncoding.EncodeToString(sigNP[:])
+
+	// Tampered payload with original signature.
+	goodParts := strings.Split(mintAtriumAssertion(t, priv, validClaims()), ".")
+	evilClaims := validClaims()
+	evilClaims["sub"] = "bob@ucr.edu"
+	evilPB, _ := json.Marshal(evilClaims)
+	tamperedTok := "atr1." + base64.RawURLEncoding.EncodeToString(evilPB) + "." + goodParts[2]
+
+	// Out-of-range r=0 signature and N signature.
+	var zeroR [64]byte
+	zeroR[63] = 1
+	zeroRTok := "atr1." + goodParts[1] + "." + base64.RawURLEncoding.EncodeToString(zeroR[:])
+	var nSig [64]byte
+	elliptic.P256().Params().N.FillBytes(nSig[:32])
+	nSig[63] = 1
+	nRTok := "atr1." + goodParts[1] + "." + base64.RawURLEncoding.EncodeToString(nSig[:])
+
+	// Oversized token (> 2048 bytes) with valid signature.
+	hugeClaims := validClaims()
+	hugeClaims["jti"] = strings.Repeat("a", 2100)
+	hugeTok := mintAtriumAssertion(t, priv, hugeClaims)
+
+	modify := func(fn func(m map[string]any)) string {
+		c := validClaims()
+		fn(c)
+		return mintAtriumAssertion(t, priv, c)
+	}
+
+	badTokens := map[string]string{
+		"wrong signing key":       mintAtriumAssertion(t, otherPriv, validClaims()),
+		"tampered payload":        tamperedTok,
+		"missing atr1 sig prefix": wrongPrefixTok,
+		"zero r signature":        zeroRTok,
+		"r == N signature":        nRTok,
+		"short signature":         "atr1." + goodParts[1] + "." + base64.RawURLEncoding.EncodeToString(make([]byte, 63)),
+		"two segments":            "atr1." + goodParts[1],
+		"four segments":           "atr1." + goodParts[1] + "." + goodParts[2] + ".extra",
+		"empty payload segment":   "atr1.." + goodParts[2],
+		"token > 2048 bytes":      hugeTok,
+		"wrong iss":               modify(func(m map[string]any) { m["iss"] = "https://evil.example" }),
+		"empty iss":               modify(func(m map[string]any) { m["iss"] = "" }),
+		"wrong aud other service": modify(func(m map[string]any) { m["aud"] = "https://nexus-mcp-server-492106370716.us-central1.run.app/mcp" }),
+		"wrong aud missing /mcp":  modify(func(m map[string]any) { m["aud"] = h.ts.URL }),
+		"empty aud":               modify(func(m map[string]any) { m["aud"] = "" }),
+		"expired":                 modify(func(m map[string]any) { m["iat"] = now - 90; m["exp"] = now - 31 }),
+		"future iat":              modify(func(m map[string]any) { m["iat"] = now + 31; m["exp"] = now + 91 }),
+		"exp-iat > 360":           modify(func(m map[string]any) { m["iat"] = now; m["exp"] = now + 361 }),
+		"exp == iat":              modify(func(m map[string]any) { m["iat"] = now + 5; m["exp"] = now + 5 }),
+		"exp < iat":               modify(func(m map[string]any) { m["iat"] = now + 10; m["exp"] = now + 5 }),
+		"string exp":              modify(func(m map[string]any) { m["exp"] = fmt.Sprintf("%d", now+300) }),
+		"uppercase sub":           modify(func(m map[string]any) { m["sub"] = "Alice@ucr.edu" }),
+		"whitespace sub":          modify(func(m map[string]any) { m["sub"] = " alice@ucr.edu " }),
+		"wrong domain sub":        modify(func(m map[string]any) { m["sub"] = "alice@gmail.com" }),
+		"unlisted user sub":       modify(func(m map[string]any) { m["sub"] = "mallory@ucr.edu" }),
+		"empty cid":               modify(func(m map[string]any) { m["cid"] = "" }),
+		"unknown cid":             modify(func(m map[string]any) { m["cid"] = "bifrost-unknown" }),
+		"dynamic oauth cid":       modify(func(m map[string]any) { m["cid"] = dynCID }),
+		"disabled cid":            modify(func(m map[string]any) { m["cid"] = "bifrost-off" }),
+	}
+
+	for name, bad := range badTokens {
+		if code, body := h.whoami(bad); code != 401 {
+			t.Errorf("%s: /whoami returned %d (%v), want 401", name, code, body)
+		}
+		if _, err := h.mcp(bad); err == nil {
+			t.Errorf("%s: /mcp accepted invalid assertion", name)
+		}
+	}
+
+	// Disabling bifrost-atrium live in users.yaml immediately rejects previously valid assertions.
+	goodTok := mintAtriumAssertion(t, priv, validClaims())
+	time.Sleep(10 * time.Millisecond)
+	_ = os.WriteFile(h.users, []byte(strings.Replace(withAtriumProgram, "    calls_per_min: 5\n", "    calls_per_min: 5\n    disabled: true\n", 1)), 0o600)
+	future := time.Now().Add(2 * time.Second)
+	_ = os.Chtimes(h.users, future, future)
+	if code, _ := h.whoami(goodTok); code != 401 {
+		t.Errorf("live-disabled program client accepted: %d", code)
 	}
 }

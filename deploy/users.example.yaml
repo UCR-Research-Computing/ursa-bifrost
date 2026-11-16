@@ -26,6 +26,11 @@ users:
 # clients (0 or absent = the global limit, max 600). The id is the OAuth
 # client_id the program uses; it cannot be registered by anyone else.
 # clients:
+#   - id: bifrost-atrium
+#     name: Atrium
+#     tiers: [R1, A1]
+#     calls_per_min: 120
+#     redirect_uris: ["https://atrium-staging-492106370716.us-central1.run.app/oauth/callback"]
 #   - id: bifrost-ultra
 #     name: Ultra
 #     tiers: [R1, R2]          # read-only: no submit/cancel even for an A1 person

@@ -121,19 +121,11 @@ the next token refresh and ends the session.
   Verified live: a signed upload works, a body over the signed size is refused (400), a changed
   size header breaks the signature (403), unsigned and bad-signature reads are refused (403).
 
-## ursa-agent (C4)
+## Atrium integration (v0.11.0)
 
-1. Gateway key (once): `gateway-admin --json generate --user ursa-agent --role Staff --college ITS
-   --department "Research Computing" --pi "Chuck Forsyth" --pi-email <pi email> --lab "Research Computing"
-   --budget 50 --tpm 1000000 --rpm 300 --duration 365d`, then pipe the `key` field straight into
-   `gcloud secrets create ursa-agent-gateway-key --data-file=-` (never print it).
-2. `agent/deploy.sh plan`, then `agent/deploy.sh apply`. It creates the `ursa-agent` service account
-   (no cluster, no Vertex access), the session secret, builds and deploys
-   `https://ursa-agent-<project number>.us-central1.run.app`.
-3. Open the URL and sign in. The agent registers itself as a bifrost OAuth client on first use.
-4. Since 0.3.0 the page is a read-only dashboard (SPEC section 20) with the chat in a drawer. Panels
-   call bifrost tools directly with the signed-in person's token (no model, no gateway spend);
-   staff panels appear for people with tier R2. Redeploy after a change: `agent/deploy.sh apply`
-   (answer y to the deploy step; secrets and the service account already exist), then
-   `curl <url>/health` shows the new version.
+The standalone `ursa-agent` web app was retired into **Atrium** (`/desk/compute` + Concierge).
+`deploy/deploy.sh` configures `ATRIUM_BROKER_PUBKEY`, `ATRIUM_BROKER_ISSUER`, and
+`ATRIUM_BROKER_AUDIENCE` on `bifrost-mcp` (and sets staging bucket `PUT` CORS to the Atrium
+origin) so Atrium can call `bifrost-mcp` with short-lived ECDSA P-256 `atr1.*` assertions
+bound to the pre-registered `bifrost-atrium` program client in `users.yaml`.
 
