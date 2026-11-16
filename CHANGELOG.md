@@ -5,6 +5,11 @@ tag and a GitHub release. The full design history is in [docs/SPEC.md](docs/SPEC
 
 ## Unreleased
 
+## v0.11.0 - 2026-11-16
+- **Atrium `atr1.*` brokered assertions** (`internal/server/oauth.go`, `internal/server/server.go`, `cmd/bifrost/main.go`): verifies short-lived ECDSA P-256 `atr1.<payload>.<sig>` Bearer assertions signed by Atrium (`ATRIUM_BROKER_PUBKEY`, `ATRIUM_BROKER_ISSUER`, `ATRIUM_BROKER_AUDIENCE`). Fails closed (`401`) when `ATRIUM_BROKER_PUBKEY` is unset; validates 65-byte SEC1 P-256 curve membership, `len <= 2048`, 64-byte IEEE P1363 `r || s` signature over `"atr1." + payload_b64url`, `iss`, `aud` (`ATRIUM_BROKER_AUDIENCE` or `<base_url>/mcp`), `iat`/`exp` (`0 < exp - iat <= 360`, 30 s skew), lowercase `@ucr.edu` `sub` in `users.yaml`, and a pre-registered, non-disabled `program_client` `cid` (e.g. `bifrost-atrium`) — enforcing the exact same `tiers` ceiling, `calls_per_min` rate limit, and `program:<cid>` audit tagging as OAuth tokens while keeping standard OAuth Bearer tokens unchanged.
+- **Standalone `ursa-agent` retired into Atrium**: removes `agent/` and the `agent` CI job; the Ursa Major web dashboard and chat assistant now live in Atrium (`/desk/compute` + Concierge). Updates `deploy/deploy.sh` with `ATRIUM_BROKER_PUBKEY`, `ATRIUM_BROKER_ISSUER`, `ATRIUM_BROKER_AUDIENCE`, and Atrium staging CORS origin.
+- 16 new `v0110` mutation guards (and regex prefix support in `scripts/mutation_check.sh` `ONLY`).
+
 ## v0.10.12 - 2026-11-15
 - **`job_wait` client-timeout resilience & MCP progress**: lowers default `timeout_s` from 300 s to 120 s (below standard 180 s MCP client RPC deadlines), bounds inner `JobsList` polls with a deadline reserve so `{timed_out: true}` returns cleanly, appends separate `stderr` log tails on failed jobs, and emits MCP `notifications/progress` updates on each poll when a `progressToken` is provided.
 - **Slurm job-array rollup & task selection** (`internal/slurm/types.go`, `internal/core/jobs.go`): parses `AcctJob.Array` (`job_id` + `task_id`) so `jobs_list(job_ids=[...])`, `job_show`, `job_explain`, and `job_wait` match all tasks of a parent array ID (as well as specific `<parent>_<task>` IDs), report an `array` summary (`total`, `completed`, `failed`, `running`, `pending`, `failed_tasks`), wait for every task to finish, and diagnose the first failed task's stdout/stderr.

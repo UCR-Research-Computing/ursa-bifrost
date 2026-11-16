@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Document | Specification and design (Draft 9, 2026-11-04: adds section 25, job_wait and watcher ergonomics; 25.5 in v0.10.7; 25.6 in v0.10.8; 25.7 in v0.10.9; built through bifrost v0.10.9 and ursa-agent 0.5.0) |
-| Status | bifrost v0.10.9, ursa-agent 0.5.0 (released tags), 2026-11-04 (spec Draft 9). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in (Cloud Run `bifrost-mcp`), and ursa-agent (Cloud Run): a read-only cluster dashboard with the chat assistant in a drawer. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23-25 and docs/CLOUD_PLAN.md record what was built (22 is planned); open questions left in section 15. |
+| Document | Specification and design (Draft 10, 2026-11-16: adds section 26, Atrium consolidation and `atr1.*` brokered assertions; retires standalone `ursa-agent` into Atrium `/desk/compute` + Concierge; built through bifrost v0.11.0) |
+| Status | bifrost v0.11.0, 2026-11-16 (spec Draft 10). Built and live: CLI, MCP over stdio (laptop) and over HTTP with Google sign-in + Atrium `atr1.*` brokered assertions (Cloud Run `bifrost-mcp`). Standalone `ursa-agent` was absorbed into Atrium (`/desk/compute` + Concierge) in v0.11.0. Ursa Major shares nodes on every partition but highmem and gpul4 since 2026-10-02 (section 19). Sections 17-21 and 23-26 and docs/CLOUD_PLAN.md record what was built (22 is planned); open questions left in section 15. |
 | Owner | Chuck Forsyth (UCR Research Computing) |
 | Name | `ursa-bifrost` (repo, folder); CLI and MCP command `bifrost`. Was working name `hpc-agent`. |
 | Related | deep-research Lab (SPEC section 20), HPC Cluster and CephRDS Storage Architecture (2026-09-16) |
@@ -1277,10 +1277,29 @@ The CLI's ssh connection reuse (`ControlMaster`) puts its socket at `<dir>/bifro
 
 When a cloud node fails to boot or dies (a GCP stockout or internal error), Slurm requeues the job and holds it with reason `BeginTime`. `job_explain` used to read that as "submitted with a start time in the future (--begin)". Since v0.10.9 a PENDING job with `BeginTime` and a restart count above zero gets a `requeued` warning instead ("Job was requeued after node failures", with the restart count and a pointer to `cluster_status`); `BeginTime` with no restarts still reads as a real `--begin`. Found 2026-11-04 on job 1675 (restarts 5, two gpul4 nodes DOWN with a stockout and a GCP internal error).
 
+## 26. Atrium consolidation and `atr1.*` brokered assertions (v0.11.0, 2026-11-16)
+
+### 26.1 Retirement of standalone `ursa-agent`
+
+The standalone `ursa-agent` Cloud Run service (`agent/` in earlier releases, section 20) was consolidated into **Atrium** (`/desk/compute` and the Atrium Concierge drawer), giving researchers and staff one front door across Ursa Major, Cloud, AI Gateway, Nexus, and Nautilus without maintaining a duplicate dashboard and OAuth session store. `agent/` and its CI workflow job were removed in v0.11.0; staging bucket CORS (`PUT`) targets the Atrium origin.
+
+### 26.2 `atr1.*` brokered assertions
+
+Alongside standard OAuth 2.1 Bearer tokens (`bfx_*`), `bifrost serve` accepts short-lived Atrium brokered assertions (`Authorization: Bearer atr1.<payload_b64url>.<sig_b64url>`) on `/mcp` and `/whoami`:
+
+- **Configuration**: `ATRIUM_BROKER_PUBKEY` (65-byte uncompressed SEC1 P-256 public point `0x04 || X(32) || Y(32)` in URL-safe base64), `ATRIUM_BROKER_ISSUER` (default `https://atrium-staging-492106370716.us-central1.run.app`), and `ATRIUM_BROKER_AUDIENCE` (default `<base_url>/mcp`).
+- **Verification**:
+  - Fails closed (`401`) when `ATRIUM_BROKER_PUBKEY` is unset or empty; rejects off-curve public keys at startup.
+  - Requires `len(token) <= 2048`, 3 non-empty `.` segments with `parts[0] == "atr1"`, and a valid 64-byte IEEE P1363 ECDSA P-256 SHA-256 signature (`0 < r < N`, `0 < s < N`) over `"atr1." + parts[1]`.
+  - Verifies `iss` against `ATRIUM_BROKER_ISSUER`, `aud` against `ATRIUM_BROKER_AUDIENCE` or `<base_url>/mcp`, and numeric Unix timestamps (`iat <= now + 30`, `now <= exp + 30`, `0 < exp - iat <= 360`).
+  - Verifies `sub` is a lowercase email in the configured Workspace domain (`@ucr.edu`) enabled in `users.yaml`, and `cid` matches an enabled pre-registered `program_client` in `users.yaml` (e.g. `bifrost-atrium` with `tiers: [R1, A1]`). Dynamically registered OAuth client IDs and disabled program clients are rejected (`401`).
+  - Applies the exact same `program_client` tier intersection, per-program `calls_per_min` rate limit, optional program A1 caps/ledger, and `program:<cid>` audit tagging as a normal OAuth token for `(sub, cid)`.
+
 ## Change log
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-11-16 | v0.11.0 | Section 26: Atrium consolidation. Verifies short-lived ECDSA P-256 `atr1.*` brokered assertions (`ATRIUM_BROKER_PUBKEY`, `ATRIUM_BROKER_ISSUER`, `ATRIUM_BROKER_AUDIENCE`) bound to pre-registered `users.yaml` program clients (`bifrost-atrium`); retires standalone `ursa-agent` (`agent/`) into Atrium `/desk/compute` + Concierge; updates `deploy/deploy.sh` env vars and staging CORS. 16 new `v0110` mutation guards. |
 | 2026-11-15 | v0.10.12 | Weekly session review fixes (58 Hermes sessions, 1,772 MCP calls): `job_wait` 120 s default + poll deadline reserve + MCP progress notifications + combined stdout/stderr failure tails; Slurm job-array `AcctJob.Array` parsing, `ArraySummary` rollup, and failed-task selection across `jobs_list`, `job_show`, `job_explain`, and `job_wait`; `upload_prepare` batch `files=[...]` and inline `content_text`/`content_base64` (<=256 KB) + `job_submit(unpack_archives=true)`; `results_link(archive=true, prefix, pattern)` streamed `tar -czf -` bundles and new R1 `files_link` for `/home` and `/scratch`; `.` path normalization and read-only `/apps/docs` + `/apps/containers` listing; `NormalizeSince` duration shorthands; `script_check` `--mem-per-cpu`, fallback-list per-member limits, and `partition` override; `cluster_status(partition=...)` + `idle_suspend_min`; CUDA OOM/nvcc/requeued/script-error rule improvements; `PYTHONPATH` stripping + `gcloud` auth error surfacing. 11 new mutation guards. |
 | 2026-11-14 | v0.10.11 | Review fixes (OAuth, R2 burn-rate gate, ursa-agent web/A2A security, bucket IAM): `/authorize` POST confirmation with scoped 90-day `bifrost_seen` cookie (`Path=/authorize`) restricted to pre-registered `program_client` entries; OAuth grant families (`Grant`, 90-day `GrantStart`, `refresh-used` replay revocation, `/revoke` family revocation) and multi-header `X-Forwarded-For` last-hop IP; `cluster_status` gates `current_usd_per_hour` behind `R2`; `ursa-agent` replaces global `A2A_TOKENS` with `ContextVar`, binds `/login` state cookie, enforces `Origin` on `POST /api/*` and `POST /logout`, styles 403 `"Not allowed"`, and makes `ATRIUM_URL` optional; `deploy/deploy.sh` removes legacy project-wide bucket IAM bindings after JSON backup. 9 new mutation guards. |
 | 2026-11-13 | v0.10.10 | Partition-scoped modules (`modules.by_partition`, `tpu*`, `arm`), `python-tpu`/`pytorch-tpu` Python check, `gpus_per_node == 0` check for `apptainer --nv`, and `Arm64 Neoverse V2 (SVE)` CPU note. 5 new mutation guards. |

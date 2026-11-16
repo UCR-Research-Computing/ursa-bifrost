@@ -255,15 +255,16 @@ occasionally be manipulated by text it reads.
 The hosted server adds Google sign-in restricted to your Google Workspace domain and to the people in
 `users.yaml` (re-read on every request), OAuth 2.1 with PKCE and dynamic registration,
 rotating refresh tokens (30 days), sealed token storage, and per-user IAP tunnels and
-OS Login keys, so each person reaches the cluster as themselves. Programs (a dashboard,
+OS Login keys, so each person reaches the cluster as themselves. Programs (Atrium,
 a workstation app) can use a pre-registered client from `users.yaml` with a tier ceiling
-and their own call budget, so a program never holds more than it needs
-([SPEC](docs/SPEC.md) 21).
+and their own call budget (via OAuth or short-lived ECDSA P-256 `atr1.*` brokered
+assertions when `ATRIUM_BROKER_PUBKEY` is configured), so a program never holds more than
+it needs ([SPEC](docs/SPEC.md) 21, 26).
 ## Architecture
 
 ```text
- Claude / Codex / Gemini / Hermes / OpenCode / your scripts
-        |  MCP: Streamable HTTP + OAuth 2.1 (hosted)   or   stdio (local)
+ Claude / Codex / Gemini / Hermes / OpenCode / Atrium / your scripts
+        |  MCP: Streamable HTTP + OAuth 2.1 / atr1.* (hosted)   or   stdio (local)
         v
  +----------------------------- bifrost ------------------------------+
  | mcpserver    tools, resources, prompts                              |
@@ -278,16 +279,15 @@ and their own call budget, so a program never holds more than it needs
  Slurm login node  ->  squeue / sacct / sinfo / scontrol --json, module, sbatch
 ```
 
-### Web dashboard (ursa-agent)
+### Web dashboard (Atrium)
 
-`agent/` is a separate Cloud Run service: sign in with Google through bifrost and get a
-read-only view of the cluster as yourself: cluster pulse, your jobs (with `job_explain`
-for failures), usage and estimated cost, waste, storage, partitions with an
-interactive-session command builder, software search, staged files, and for staff
-(tier R2) health, all jobs, usage and waste by user. Panels call bifrost tools directly
-(no model). The assistant (a Gemini model through an OpenAI-compatible gateway) sits in a drawer and plans
-jobs that only run after you press Approve. Design: [docs/SPEC.md](docs/SPEC.md)
-section 20; deploy: [docs/DEPLOY.md](docs/DEPLOY.md).
+The standalone `ursa-agent` web app (`agent/`) was consolidated into **Atrium**
+(`/desk/compute` + Concierge) in v0.11.0. Atrium signs the researcher in once and calls
+`bifrost-mcp` as that person (`program:bifrost-atrium` via short-lived `atr1.*` ECDSA
+P-256 brokered assertions), showing cluster pulse, jobs (with `job_explain` for failures),
+allocations, usage, waste, storage, partitions, software search, staged files, and
+two-step job approvals alongside Cloud, AI Gateway, Nexus, and Nautilus. Design:
+[docs/SPEC.md](docs/SPEC.md) sections 20 and 26; deploy: [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Self-hosting on your own cluster
 

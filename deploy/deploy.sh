@@ -52,12 +52,12 @@ run gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member "servi
 
 say "4b. Staging bucket (file uploads and download links, SPEC 18; private, 7-day delete, no versioning)"
 STAGING=${PROJECT}-bifrost-staging
-AGENT_ORIGIN="https://ursa-agent-$(gcloud projects describe "$PROJECT" --format='value(projectNumber)' 2>/dev/null)-${REGION}.run.app"
+ATRIUM_ORIGIN=${ATRIUM_BROKER_ISSUER:-https://atrium-staging-492106370716.us-central1.run.app}
 if have gcloud storage buckets describe "gs://$STAGING"; then echo "ok   gs://$STAGING"
 else ask "create gs://$STAGING?" && run gcloud storage buckets create "gs://$STAGING" --project "$PROJECT" --location "$REGION" --uniform-bucket-level-access --public-access-prevention --soft-delete-duration=0; fi
 if [ "$MODE" = apply ]; then
   printf '{"rule":[{"action":{"type":"Delete"},"condition":{"age":7}}]}' > /tmp/bifrost-staging-lifecycle.json
-  printf '[{"origin":["%s"],"method":["PUT"],"responseHeader":["Content-Type","x-goog-content-length-range"],"maxAgeSeconds":3600}]' "$AGENT_ORIGIN" > /tmp/bifrost-staging-cors.json
+  printf '[{"origin":["%s"],"method":["PUT"],"responseHeader":["Content-Type","x-goog-content-length-range"],"maxAgeSeconds":3600}]' "$ATRIUM_ORIGIN" > /tmp/bifrost-staging-cors.json
   run gcloud storage buckets update "gs://$STAGING" --lifecycle-file=/tmp/bifrost-staging-lifecycle.json --cors-file=/tmp/bifrost-staging-cors.json
 fi
 run gcloud storage buckets add-iam-policy-binding "gs://$STAGING" --member "serviceAccount:$SA" --role roles/storage.objectAdmin
@@ -138,10 +138,14 @@ run docker build --build-arg VERSION="$VERSION" -t "$IMAGE" .
 run gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 run docker push "$IMAGE"
 
-say "7. Deploy Cloud Run (public URL; every MCP request needs a bifrost token from Google sign-in)"
+say "7. Deploy Cloud Run (public URL; every MCP request needs a bifrost token or Atrium atr1.* brokered assertion)"
+ATRIUM_BROKER_PUBKEY=${ATRIUM_BROKER_PUBKEY:-BPk1yjPNObjzEnlhMugwRwa69KSBp0znzS7C3_R146n1QJ_0QyZxiJvvnglYTtrib27KRAxV6yFlPs5JAhEJlyQ}
+ATRIUM_BROKER_ISSUER=${ATRIUM_BROKER_ISSUER:-https://atrium-staging-492106370716.us-central1.run.app}
+ATRIUM_BROKER_AUDIENCE=${ATRIUM_BROKER_AUDIENCE:-https://bifrost-mcp-125853442225.us-central1.run.app/mcp}
 ask "deploy $SERVICE?" && run gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --image "$IMAGE" \
   --service-account "$SA" --allow-unauthenticated --min-instances "${MIN_INSTANCES:-1}" --max-instances 1 --concurrency 40 \
   --cpu 1 --memory 512Mi --timeout 900 --execution-environment gen2 \
+  --set-env-vars "ATRIUM_BROKER_PUBKEY=${ATRIUM_BROKER_PUBKEY},ATRIUM_BROKER_ISSUER=${ATRIUM_BROKER_ISSUER},ATRIUM_BROKER_AUDIENCE=${ATRIUM_BROKER_AUDIENCE}" \
   --set-secrets "BIFROST_SECRET_KEY=bifrost-secret-key:latest,BIFROST_GOOGLE_CLIENT_SECRET=bifrost-google-client-secret:latest,/config/config.yaml=bifrost-config:latest,/users/users.yaml=bifrost-users:latest" \
   --add-volume "name=data,type=cloud-storage,bucket=$BUCKET" --add-volume-mount "volume=data,mount-path=/data"
 

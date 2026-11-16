@@ -1,6 +1,9 @@
 package server
 
 import (
+	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -10,6 +13,8 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"math"
+	"math/big"
 	"net/http"
 	"net/url"
 	"strings"
@@ -808,9 +813,13 @@ func (s *Server) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200) // RFC 7009: always 200
 }
 
-// verifyAccess checks a bifrost access token and the user list (re-checked on
-// every request so removing someone takes effect immediately).
+// verifyAccess checks a bifrost access token (or an Atrium atr1.* brokered
+// assertion) and the user list (re-checked on every request so removing
+// someone takes effect immediately).
 func (s *Server) verifyAccess(tok string) (*accessRec, *User, error) {
+	if strings.HasPrefix(tok, "atr1.") {
+		return s.verifyBrokerAssertion(tok)
+	}
 	a, ok := s.lookupAccess(tok)
 	if !ok || time.Now().After(a.Expires) {
 		return nil, nil, errors.New("invalid or expired token")
@@ -826,6 +835,136 @@ func (s *Server) verifyAccess(tok string) (*accessRec, *User, error) {
 		return nil, nil, fmt.Errorf("%s is no longer allowed", a.Email)
 	}
 	return &a, u, nil
+}
+
+const (
+	maxBrokerTokenLen = 2048
+	maxBrokerSkewSec  = 30
+	maxBrokerTTLSec   = 360
+)
+
+func parseBrokerPubKey(b64 string) (*ecdsa.PublicKey, error) {
+	cleaned := strings.TrimRight(strings.TrimSpace(b64), "=")
+	raw, err := base64.RawURLEncoding.DecodeString(cleaned)
+	if err != nil {
+		return nil, errors.New("invalid base64url encoding")
+	}
+	if len(raw) != 65 || raw[0] != 0x04 {
+		return nil, errors.New("must be 65-byte uncompressed P-256 point")
+	}
+	pub, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), raw)
+	if err != nil {
+		return nil, errors.New("point is not on P-256 curve")
+	}
+	return pub, nil
+}
+
+func parseUnixSec(n json.Number) (int64, bool) {
+	if n == "" {
+		return 0, false
+	}
+	if v, err := n.Int64(); err == nil {
+		return v, true
+	}
+	f, err := n.Float64()
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || math.Trunc(f) != f {
+		return 0, false
+	}
+	return int64(f), true
+}
+
+// verifyBrokerAssertion verifies an Atrium atr1.<payload_b64url>.<sig_b64url>
+// ECDSA P-256 assertion and binds it to a pre-registered program_client in users.yaml.
+func (s *Server) verifyBrokerAssertion(tok string) (*accessRec, *User, error) {
+	if s.brokerPub == nil {
+		return nil, nil, errors.New("broker assertions disabled")
+	}
+	if len(tok) > maxBrokerTokenLen {
+		return nil, nil, errors.New("broker assertion too long")
+	}
+	parts := strings.Split(tok, ".")
+	if len(parts) != 3 || parts[0] != "atr1" || parts[1] == "" || parts[2] == "" {
+		return nil, nil, errors.New("malformed broker assertion")
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || len(sig) != 64 {
+		return nil, nil, errors.New("broker assertion: bad signature encoding")
+	}
+	rInt := new(big.Int).SetBytes(sig[:32])
+	sInt := new(big.Int).SetBytes(sig[32:64])
+	curveN := elliptic.P256().Params().N
+	if rInt.Sign() <= 0 || rInt.Cmp(curveN) >= 0 || sInt.Sign() <= 0 || sInt.Cmp(curveN) >= 0 {
+		return nil, nil, errors.New("broker assertion: signature out of range")
+	}
+	sum := sha256.Sum256([]byte("atr1." + parts[1]))
+	if !ecdsa.Verify(s.brokerPub, sum[:], rInt, sInt) {
+		return nil, nil, errors.New("broker assertion: invalid signature")
+	}
+	pb, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, nil, errors.New("broker assertion: bad payload encoding")
+	}
+	var raw map[string]any
+	dec := json.NewDecoder(bytes.NewReader(pb))
+	dec.UseNumber()
+	if err := dec.Decode(&raw); err != nil || raw == nil {
+		return nil, nil, errors.New("broker assertion: bad payload")
+	}
+	var extra any
+	if dec.Decode(&extra) != io.EOF {
+		return nil, nil, errors.New("broker assertion: trailing payload data")
+	}
+	iss, _ := raw["iss"].(string)
+	aud, _ := raw["aud"].(string)
+	sub, _ := raw["sub"].(string)
+	cid, _ := raw["cid"].(string)
+	iatNum, okIat := raw["iat"].(json.Number)
+	expNum, okExp := raw["exp"].(json.Number)
+	iat, ok1 := parseUnixSec(iatNum)
+	exp, ok2 := parseUnixSec(expNum)
+	if !okIat || !okExp || !ok1 || !ok2 {
+		return nil, nil, errors.New("broker assertion: invalid timestamps")
+	}
+	wantIss := strings.TrimRight(s.brokerIss, "/")
+	if iss == "" || strings.TrimRight(iss, "/") != wantIss {
+		return nil, nil, errors.New("broker assertion: wrong issuer")
+	}
+	audTrim := strings.TrimRight(aud, "/")
+	baseAud := strings.TrimRight(s.base, "/") + "/mcp"
+	wantAud := strings.TrimRight(s.brokerAud, "/")
+	if audTrim == "" || (audTrim != wantAud && audTrim != baseAud) {
+		return nil, nil, errors.New("broker assertion: wrong audience")
+	}
+	now := time.Now().Unix()
+	if iat > now+maxBrokerSkewSec {
+		return nil, nil, errors.New("broker assertion: issued in the future")
+	}
+	if now > exp+maxBrokerSkewSec {
+		return nil, nil, errors.New("broker assertion: expired")
+	}
+	if exp <= iat || exp-iat > maxBrokerTTLSec {
+		return nil, nil, errors.New("broker assertion: invalid lifetime")
+	}
+	if sub == "" || sub != strings.ToLower(strings.TrimSpace(sub)) {
+		return nil, nil, errors.New("broker assertion: sub must be lowercase email")
+	}
+	domain := strings.ToLower(strings.TrimSpace(s.users.Domain()))
+	local, subDom, hasAt := strings.Cut(sub, "@")
+	if !hasAt || local == "" || strings.Contains(local, "@") || domain == "" || subDom != domain {
+		return nil, nil, errors.New("broker assertion: wrong email domain")
+	}
+	bu := s.users.Lookup(sub)
+	if bu == nil {
+		return nil, nil, fmt.Errorf("%s is no longer allowed", sub)
+	}
+	bp := s.users.Program(cid)
+	if bp == nil {
+		if cid != "" && s.users.isProgramID(cid) {
+			return nil, nil, fmt.Errorf("client %s is disabled", cid)
+		}
+		return nil, nil, errors.New("broker assertion: unknown program client")
+	}
+	return &accessRec{Email: bu.Email, ClientID: bp.ID, Expires: time.Unix(exp, 0)}, bu, nil
 }
 
 // lookupAccess finds an access token in memory, then in the sealed store

@@ -841,6 +841,14 @@ func serveCmd(cfg config.Config, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "bifrost serve:", err)
 		return 1
 	}
+	if err := srv.SetBroker(
+		os.Getenv("ATRIUM_BROKER_PUBKEY"),
+		os.Getenv("ATRIUM_BROKER_ISSUER"),
+		os.Getenv("ATRIUM_BROKER_AUDIENCE"),
+	); err != nil {
+		fmt.Fprintln(stderr, "bifrost serve:", err)
+		return 1
+	}
 	addr := sc.Listen
 	if p := os.Getenv("PORT"); p != "" {
 		addr = ":" + p

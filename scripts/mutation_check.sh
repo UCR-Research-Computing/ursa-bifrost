@@ -16,8 +16,8 @@ run_tests() {
 
 mutate() { # name file python-replace(old,new)
   local name=$1 file=$2 old=$3 new=$4
-  # ONLY=<prefix> runs just the guards whose name starts with it (e.g. ONLY=v093)
-  case "$name" in "${ONLY:-}"*) ;; *) return;; esac
+  # ONLY=<regex-prefix> runs just the guards whose name matches ^(ONLY) (e.g. ONLY="srv|v0110")
+  if [ -n "${ONLY:-}" ] && ! printf '%s\n' "$name" | grep -qE "^(${ONLY})"; then return; fi
   case " $FILES " in *" $file "*) ;; *) echo "ERROR $name: $file is not in FILES (would not be restored)"; exit 2;; esac
   if python3 - "$file" "$old" "$new" <<'EOF'
 import sys
@@ -32,7 +32,7 @@ EOF
 }
 mutate2() { # name file old1 new1 old2 new2: two mutations in one file at once
   local name=$1 file=$2
-  case "$name" in "${ONLY:-}"*) ;; *) return;; esac
+  if [ -n "${ONLY:-}" ] && ! printf '%s\n' "$name" | grep -qE "^(${ONLY})"; then return; fi
   if python3 -c '
 import sys
 p, o1, n1, o2, n2 = sys.argv[1:]
@@ -444,6 +444,27 @@ mutate "v01012 ssh strips PYTHONPATH"       internal/backend/ssh.go 'if !strings
 mutate "v01012 put object traversal"        internal/staging/staging.go '	if err := validObjectName(object); err != nil {
 		return Object{}, err' '	if false {
 		return Object{}, nil'
+# v0.11.0 Atrium atr1.* brokered assertions
+mutate "v0110 broker fail closed unset pubkey" internal/server/oauth.go 'if s.brokerPub == nil {' 'if false {'
+mutate "v0110 broker max token len"            internal/server/oauth.go 'if len(tok) > maxBrokerTokenLen {' 'if false {'
+mutate "v0110 broker three segments"           internal/server/oauth.go 'if len(parts) != 3 || parts[0] != "atr1" || parts[1] == "" || parts[2] == "" {' 'if false {'
+mutate "v0110 broker sig range check"          internal/server/oauth.go 'if rInt.Sign() <= 0 || rInt.Cmp(curveN) >= 0 || sInt.Sign() <= 0 || sInt.Cmp(curveN) >= 0 {' 'if false {'
+mutate "v0110 broker signing prefix"           internal/server/oauth.go 'sum := sha256.Sum256([]byte("atr1." + parts[1]))' 'sum := sha256.Sum256([]byte(parts[1]))'
+mutate "v0110 broker ecdsa verify"             internal/server/oauth.go 'if !ecdsa.Verify(s.brokerPub, sum[:], rInt, sInt) {' 'if false {'
+mutate "v0110 broker issuer check"             internal/server/oauth.go 'if iss == "" || strings.TrimRight(iss, "/") != wantIss {' 'if false {'
+mutate "v0110 broker audience check"           internal/server/oauth.go 'if audTrim == "" || (audTrim != wantAud && audTrim != baseAud) {' 'if false {'
+mutate "v0110 broker future iat check"         internal/server/oauth.go 'if iat > now+maxBrokerSkewSec {' 'if false {'
+mutate "v0110 broker exp check"                internal/server/oauth.go 'if now > exp+maxBrokerSkewSec {' 'if false {'
+mutate "v0110 broker ttl max 360s"             internal/server/oauth.go 'if exp <= iat || exp-iat > maxBrokerTTLSec {' 'if exp <= iat {'
+mutate "v0110 broker exp after iat"            internal/server/oauth.go 'if exp <= iat || exp-iat > maxBrokerTTLSec {' 'if exp-iat > maxBrokerTTLSec {'
+mutate "v0110 broker sub lowercase"            internal/server/oauth.go 'if sub == "" || sub != strings.ToLower(strings.TrimSpace(sub)) {' 'if sub == "" {'
+mutate "v0110 broker sub domain check"         internal/server/oauth.go 'if !hasAt || local == "" || strings.Contains(local, "@") || domain == "" || subDom != domain {' 'if false {'
+mutate "v0110 broker user allowlist"           internal/server/oauth.go '	bu := s.users.Lookup(sub)
+	if bu == nil {' '	bu := &User{Email: sub, Tiers: []string{"R1"}}
+	if bu == nil {'
+mutate "v0110 broker cid must be program"      internal/server/oauth.go '	bp := s.users.Program(cid)
+	if bp == nil {' '	bp := &ProgramClient{ID: cid, Tiers: []string{"R1"}}
+	if bp == nil {'
 restore
 for f in $FILES; do diff -q "$BK/$f" "$f" >/dev/null || { echo "NOT RESTORED: $f"; FAIL=1; }; done
 exit $FAIL
